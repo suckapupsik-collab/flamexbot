@@ -405,10 +405,19 @@ async function renderAdmin(host) {
 }
 
 async function renderTariffs(host) {
- const premium=isPremium(); const expires=state.subscription?.expires_at?new Date(state.subscription.expires_at).toLocaleDateString('ru-RU'):'Без срока';
+ const premium=isPremium();
+ const expires=state.subscription?.expires_at?new Date(state.subscription.expires_at).toLocaleDateString('ru-RU'):'Без срока';
  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT PLANS</div><h1>Тарифы</h1><p class="muted">Выбери уровень возможностей FLAMEXBOT.</p></div><div class="tariff-grid">
  <section class="business-card tariff-card ${!premium?'tariff-current':''}"><div class="eyebrow">БАЗОВЫЙ ДОСТУП</div><h2>Free</h2><p class="muted">Основные функции FLAMEXBOT.</p><ul><li>Telegram Business-чаты</li><li>Сообщения и файлы</li><li>Профиль и настройки</li><li>Уведомления и статистика</li></ul><span class="business-status ${!premium?'is-connected':''}">${!premium?'Текущий тариф':'Доступен всем'}</span></section>
- <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}"><div class="eyebrow">РАСШИРЕННЫЕ ВОЗМОЖНОСТИ</div><h2>✦ Premium</h2><p class="muted">Дополнительные команды и управление чатами.</p><ul><li><code>.spam 2-5 текст</code> в чате приложения или <code>.spam @username 3 текст</code> в боте — повторная отправка до 5 раз</li><li><code>.mute</code> / <code>.unmute</code> в чате или с <code>@username</code> в боте — уведомления FLAMEXBOT<li><code>.untime</code> / <code>.time</code> — скрыть / показать время профиля</li><li><code>.help</code> / <code>.inf</code> — список команд</li></ul><span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+expires:'Требуется Premium'}</span></section></div><p class="business-note">Самостоятельная оплата Premium пока не подключена. Подписку выдаёт владелец FLAMEXBOT.</p>`;
+ <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}"><div class="eyebrow">РАСШИРЕННЫЕ ВОЗМОЖНОСТИ</div><h2>✦ Premium</h2><p class="muted">Расширенные команды Telegram Business.</p><ul><li><code>.spam 2-5 текст</code> — повторная отправка до 5 раз</li><li><code>.mute</code> / <code>.unmute</code> — отключить / включить уведомления чата</li><li><code>.untime</code> / <code>.time</code> — скрыть / показать время профиля</li><li><code>.help</code> / <code>.inf</code> — справка по командам</li></ul><span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+expires:'100 ⭐ · 30 дней'}</span>${premium?'': '<button class="primary" id="buy-premium" type="button">Купить за 100 ⭐</button>'}</section></div><p class="business-note">Оплата проходит внутри Telegram Stars. После успешной оплаты Premium включается автоматически на 30 дней. Сначала привяжи Telegram и запусти бота командой /start.</p>`;
+ const buyButton=host.querySelector('#buy-premium');
+ buyButton?.addEventListener('click',async()=>{
+   buyButton.disabled=true;buyButton.textContent='Создаю счёт…';
+   const {data,error}=await supabase.functions.invoke('create-premium-invoice');
+   buyButton.disabled=false;buyButton.textContent='Купить за 100 ⭐';
+   if(error||data?.error){toast(data?.error||error?.message||'Не удалось создать счёт');return;}
+   toast('Счёт отправлен в Telegram. Открой чат с FLAMEXBOT и оплати его.');
+ });
 }
 async function renderStreaks(host) {
   const { data, error } = await supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false});
