@@ -310,3 +310,14 @@ input,button{max-width:100%}
 .chat-choice-copy b,.chat-choice-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chat-unread-badge{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;padding:0 6px;flex:none;border-radius:12px;background:var(--orange);color:#171717;font-size:9px;font-style:normal;font-weight:900}
 @media(max-width:600px){.chat-unread-badge{min-width:17px;height:17px;font-size:8px}.chat-choice{gap:8px;padding:10px 8px}}
+
+/* FLAMEXBOT plans and profile time */
+.tariff-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:18px 0}
+.tariff-card{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.tariff-card h2{font-size:30px;margin:0}
+.tariff-card ul{padding-left:20px;margin:4px 0 12px;color:var(--muted);line-height:1.9}
+.tariff-card li::marker{color:var(--accent)}
+.tariff-current{border-color:var(--accent)!important;box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 24%,transparent)}
+.premium-card{background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,var(--panel)),var(--panel))}
+.profile-time-display{padding:12px 14px;border:1px solid var(--border);border-radius:12px;color:var(--muted);font-size:13px}
+@media(max-width:720px){.tariff-grid{grid-template-columns:1fr}}
