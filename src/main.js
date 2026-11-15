@@ -153,11 +153,29 @@ async function renderFriends(host) {
 }
 
 function renderBusinessChatChoices(chats) {
-  return chats.length ? chats.map(c => {
+  const q=(document.querySelector('#business-chat-search')?.value||'').trim().toLowerCase();
+  const filtered=chats.filter(c=>!q||[c.username,c.first_name,c.last_name].filter(Boolean).join(' ').toLowerCase().includes(q))
+    .sort((a,b)=>Number(Boolean(b.is_pinned))-Number(Boolean(a.is_pinned))||Number(Boolean(b.is_favorite))-Number(Boolean(a.is_favorite))||new Date(b.last_message_at)-new Date(a.last_message_at));
+  return filtered.length ? filtered.map(c => {
     const name = [c.first_name,c.last_name].filter(Boolean).join(' ') || (c.username ? '@'+c.username : 'Telegram-пользователь');
     const active = state.activeBusinessChat === c.id;
-    return `<button class="chat-choice ${active ? 'active' : ''}" data-business-chat="${c.id}">${avatar(c.photo_url,name)}<span><b>${esc(name)}</b><small>${c.username ? '@'+esc(c.username)+' · ' : ''}${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Новый чат'}</small></span></button>`;
-  }).join('') : '<div class="empty-state">Пока нет входящих переписок. Когда кто-нибудь напишет на подключённый Telegram Business-аккаунт, чат появится здесь.</div>';
+    return `<div class="business-chat-item"><button class="chat-choice ${active ? 'active' : ''}" data-business-chat="${c.id}">${avatar(c.photo_url,name)}<span><b>${c.is_pinned?'📌 ':''}${c.is_favorite?'★ ':''}${esc(name)}</b><small>${c.username ? '@'+esc(c.username)+' · ' : ''}${c.unread_count?'Непрочитано: '+c.unread_count+' · ':''}${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Новый чат'}</small></span></button><button class="chat-pref" data-favorite="${c.id}" title="Избранное">${c.is_favorite?'★':'☆'}</button><button class="chat-pref" data-pin="${c.id}" title="Закрепить">${c.is_pinned?'📌':'⌖'}</button></div>`;
+  }).join('') : '<div class="empty-state">Чаты не найдены.</div>';
+}
+
+function bindBusinessChatPreferences(root) {
+  root.querySelectorAll('[data-favorite],[data-pin]').forEach(btn=>btn.addEventListener('click',async e=>{
+    e.stopPropagation();const id=btn.dataset.favorite||btn.dataset.pin;const chat=state.businessChats.find(x=>x.id===id);if(!chat)return;
+    const field=btn.dataset.favorite?'is_favorite':'is_pinned';
+    const {error}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,[field]:!chat[field]},{onConflict:'profile_id,business_chat_id'});
+    if(error){toast('Не удалось сохранить настройку чата');return;}
+    await refreshBusinessChatList(document.querySelector('#page-content'));
+  }));
+}
+
+function bindBusinessSearch(host) {
+  const input=host.querySelector('#business-chat-search');if(!input||input.dataset.bound)return;
+  input.dataset.bound='1';input.addEventListener('input',()=>{const list=host.querySelector('.chat-list');list.innerHTML=renderBusinessChatChoices(state.businessChats);bindBusinessChatChoices(list);bindBusinessChatPreferences(list);});
 }
 
 function bindBusinessChatChoices(root) {
@@ -170,11 +188,18 @@ async function refreshBusinessChatList(host) {
     .select('id,telegram_chat_id,telegram_user_id,username,first_name,last_name,photo_url,last_message_at,business_connection_id')
     .eq('profile_id', state.session.user.id).order('last_message_at', { ascending: false }).limit(100);
   if (error) { toast('Не удалось обновить список Business-чатов'); return; }
-  state.businessChats = data || [];
+  const chats=data||[];const ids=chats.map(x=>x.id);
+  const [prefs,recent]=ids.length?await Promise.all([
+    supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,last_read_at').in('business_chat_id',ids),
+    supabase.from('flamexbot_business_messages').select('business_chat_id,created_at').in('business_chat_id',ids).eq('direction','incoming').order('created_at',{ascending:false}).limit(300)
+  ]):[{data:[]},{data:[]}];
+  const prefMap=Object.fromEntries((prefs.data||[]).map(x=>[x.business_chat_id,x]));
+  const unread={};(recent.data||[]).forEach(m=>{const p=prefMap[m.business_chat_id];if(!p?.last_read_at||new Date(m.created_at)>new Date(p.last_read_at))unread[m.business_chat_id]=(unread[m.business_chat_id]||0)+1;});
+  state.businessChats=chats.map(x=>({...x,...(prefMap[x.id]||{}),unread_count:unread[x.id]||0}));
   const list = host.querySelector('.business-inbox .chat-list');
   if (!list) return;
   list.innerHTML = renderBusinessChatChoices(state.businessChats);
-  bindBusinessChatChoices(list);
+  bindBusinessChatChoices(list);bindBusinessChatPreferences(list);
 }
 
 async function renderBusinessMessages(host) {
@@ -191,14 +216,20 @@ async function renderBusinessMessages(host) {
     return;
   }
   state.businessChats = chats || [];
+  if(state.businessChats.length){
+    const {data:prefs}=await supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,last_read_at').in('business_chat_id',state.businessChats.map(x=>x.id));
+    const map=Object.fromEntries((prefs||[]).map(x=>[x.business_chat_id,x]));
+    state.businessChats=state.businessChats.map(x=>({...x,...(map[x.id]||{}),unread_count:0}));
+  }
   const { data: connection } = await supabase.from('flamexbot_business_connections')
     .select('is_enabled,rights').eq('profile_id', uid).maybeSingle();
   const connected = Boolean(connection?.is_enabled);
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS INBOX</div><h1>Business-чаты</h1><p class="muted">Все переписки приходят из Telegram Business. Ответы отправляются от имени твоего Telegram-аккаунта.</p></div>
     <div class="business-inbox-status ${connected ? 'online' : ''}"><span></span><div><b>${connected ? 'Бизнес-бот подключён' : 'Бизнес-бот не подключён'}</b><small>${connected ? 'Входящие чаты синхронизируются через Telegram.' : 'Подключи FLAMEXBOT в Telegram → Настройки → Telegram Business → Чат-боты.'}</small></div></div>
-    <div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
+    <div class="business-inbox-tools"><input id="business-chat-search" type="search" placeholder="Поиск по имени или @username"/><div class="quick-replies"><button type="button" data-quick-reply="Привет! Чем могу помочь?">Привет</button><button type="button" data-quick-reply="Спасибо за сообщение!">Спасибо</button><button type="button" data-quick-reply="Сейчас уточню и вернусь с ответом.">Уточню</button></div></div><div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
     <section class="chat-window" id="business-chat-window"><div class="chat-placeholder"><span>✈</span><b>Твои Business-переписки</b><small>Выбери чат слева.</small></div></section></div>`;
-  bindBusinessChatChoices(host);
+  bindBusinessChatChoices(host);bindBusinessChatPreferences(host);bindBusinessSearch(host);
+  host.querySelectorAll('[data-quick-reply]').forEach(btn=>btn.addEventListener('click',()=>{const input=document.querySelector('#business-send-form input[name=content]');if(input){input.value=btn.dataset.quickReply;input.focus();}}));
   state.businessListChannel = supabase.channel(`business-chat-list-${uid}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'flamexbot_business_chats', filter: `profile_id=eq.${uid}` }, () => refreshBusinessChatList(host))
     .subscribe(status => {
@@ -236,6 +267,7 @@ async function openBusinessChat(id) {
   const box = document.querySelector('#business-chat-window');
   if (!box || !chat) return;
   const name = [chat.first_name,chat.last_name].filter(Boolean).join(' ') || (chat.username ? '@'+chat.username : 'Telegram-пользователь');
+  await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,last_read_at:new Date().toISOString()},{onConflict:'profile_id,business_chat_id'});
   box.innerHTML = `<div class="chat-head"><b>${esc(name)}</b><small>${chat.username ? '@'+esc(chat.username)+' · ' : ''}Переписка через Telegram Business</small></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><form class="send-form" id="business-send-form"><input name="content" placeholder="Ответить от имени бизнес-аккаунта…" maxlength="4096" required/><button class="primary" type="submit">➤</button></form><div class="upload-hint">Ответ будет отправлен через подключённый Telegram Business-бот.</div>`;
   await refreshBusinessMessages(id);
   state.businessChatChannel = supabase.channel(`business-chat-${id}`)
