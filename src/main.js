@@ -123,27 +123,85 @@ async function renderFriends(host) {
 
 async function renderMessages(host) {
   const uid = state.session.user.id;
-  const { data: memberships } = await supabase.from('conversation_members').select('conversation_id').eq('user_id',uid);
+  const { data: memberships, error: memberError } = await supabase.from('conversation_members').select('conversation_id').eq('user_id',uid);
+  if (memberError) { host.innerHTML = `<div class="empty-state">${esc(memberError.message)}</div>`; return; }
   const ids = (memberships || []).map(x => x.conversation_id);
-  const { data: conversations } = ids.length ? await supabase.from('conversations').select('*').in('id',ids).order('last_message_at',{ascending:false}) : {data:[]};
+  const { data: conversations, error } = ids.length ? await supabase.from('conversations').select('*').in('id',ids).order('last_message_at',{ascending:false}) : {data:[],error:null};
+  if (error) { host.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; return; }
   state.conversations = conversations || [];
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">STAY IN TOUCH</div><h1>Сообщения</h1><p class="muted">Ваши личные разговоры.</p></div><div class="chat-layout"><aside class="chat-list">${state.conversations.length ? state.conversations.map(c => `<button class="chat-choice" data-chat="${c.id}"><span class="avatar avatar-fallback">F</span><span><b>Личный чат</b><small>Откройте переписку</small></span></button>`).join('') : '<div class="empty-state">Пока нет чатов. Сначала добавь друга.</div>'}</aside><section class="chat-window" id="chat-window"><div class="chat-placeholder"><span>✉</span><b>Твои разговоры начинаются здесь</b><small>Выбери чат слева.</small></div></section></div>`;
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">STAY IN TOUCH</div><h1>Сообщения</h1><p class="muted">Личные разговоры и обмен фотографиями и видео.</p></div><div class="chat-layout"><aside class="chat-list">${state.conversations.length ? state.conversations.map(c => `<button class="chat-choice" data-chat="${c.id}"><span class="avatar avatar-fallback">🔥</span><span><b>Личный чат</b><small>${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Начать разговор'}</small></span></button>`).join('') : '<div class="empty-state">Пока нет чатов. Добавь друга и нажми «Написать» в его профиле.</div>'}</aside><section class="chat-window" id="chat-window"><div class="chat-placeholder"><span>✉</span><b>Твои разговоры начинаются здесь</b><small>Выбери чат слева.</small></div></section></div>`;
   host.querySelectorAll('[data-chat]').forEach(btn => btn.addEventListener('click', () => openChat(btn.dataset.chat)));
+}
+
+async function renderMessageBubble(m) {
+  let media = '';
+  if (m.media_url) {
+    const { data } = await supabase.storage.from('chat-media').createSignedUrl(m.media_url, 3600);
+    if (data?.signedUrl) {
+      media = m.message_type === 'video'
+        ? `<video class="chat-media" controls preload="metadata" src="${esc(data.signedUrl)}"></video>`
+        : `<a class="media-link" href="${esc(data.signedUrl)}" target="_blank" rel="noopener"><img class="chat-media" loading="lazy" src="${esc(data.signedUrl)}" alt="Вложение"/></a>`;
+    } else media = '<small class="media-unavailable">Вложение недоступно</small>';
+  }
+  return `<div class="bubble ${m.sender_id === state.session.user.id ? 'mine' : ''}">${m.content ? `<div>${esc(m.content)}</div>` : ''}${media}<small>${new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small></div>`;
+}
+
+async function refreshChatMessages(id) {
+  if (state.activeConversation !== id) return;
+  const list = document.querySelector('#message-list');
+  if (!list) return;
+  const { data: messages, error } = await supabase.from('messages').select('*').eq('conversation_id',id).order('created_at',{ascending:true}).limit(100);
+  if (state.activeConversation !== id) return;
+  if (error) { list.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; return; }
+  state.messages = messages || [];
+  list.innerHTML = (await Promise.all(state.messages.map(renderMessageBubble))).join('') || '<div class="chat-placeholder"><b>Пока нет сообщений</b><small>Отправь первое сообщение!</small></div>';
+  list.scrollTop = list.scrollHeight;
 }
 
 async function openChat(id) {
   state.activeConversation = id;
+  if (state.chatChannel) { await supabase.removeChannel(state.chatChannel); state.chatChannel = null; }
   const box = document.querySelector('#chat-window'); if (!box) return;
-  const { data: messages, error } = await supabase.from('messages').select('*').eq('conversation_id',id).order('created_at',{ascending:true}).limit(100);
-  state.messages = messages || [];
-  box.innerHTML = `<div class="chat-head"><b>Личный разговор</b><small>Сообщения доступны участникам чата</small></div><div class="message-list">${error ? esc(error.message) : state.messages.map(m => `<div class="bubble ${m.sender_id === state.session.user.id ? 'mine' : ''}">${esc(m.content || 'Медиа-сообщение')}<small>${new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small></div>`).join('')}</div><form class="send-form" id="send-message"><input name="content" placeholder="Напиши сообщение…" required maxlength="4000"/><button class="primary">➤</button></form>`;
-  document.querySelector('#send-message').addEventListener('submit', async e => {
-    e.preventDefault(); const content = new FormData(e.currentTarget).get('content').trim(); if (!content) return;
-    const { error } = await supabase.from('messages').insert({conversation_id:id,sender_id:state.session.user.id,content});
-    if (error) toast(error.message); else openChat(id);
+  box.innerHTML = `<div class="chat-head"><b>Личный разговор</b><small>Сообщения и вложения доступны только участникам</small></div><div class="message-list" id="message-list"><div class="empty-state">Загружаю сообщения…</div></div><form class="send-form" id="send-message"><label class="attach-button" title="Прикрепить фото или видео">＋<input name="media" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" hidden/></label><input name="content" placeholder="Напиши сообщение…" maxlength="4000"/><button class="primary" type="submit">➤</button></form><div class="upload-hint" id="upload-hint">Фото и видео до 20 МБ</div>`;
+  await refreshChatMessages(id);
+  state.chatChannel = supabase.channel(`chat-${id}`)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`conversation_id=eq.${id}`},() => refreshChatMessages(id))
+    .subscribe();
+  const form = document.querySelector('#send-message');
+  const fileInput = form.querySelector('input[type=file]');
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    document.querySelector('#upload-hint').textContent = file ? `Выбрано: ${file.name}` : 'Фото и видео до 20 МБ';
+  });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const submit = form.querySelector('button[type=submit]');
+    const content = new FormData(form).get('content').trim();
+    const file = fileInput.files?.[0];
+    if (!content && !file) return;
+    if (file && file.size > 20 * 1024 * 1024) { toast('Файл больше 20 МБ'); return; }
+    submit.disabled = true;
+    let mediaPath = null;
+    let messageType = 'text';
+    if (file) {
+      const extension = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g,'') || 'bin';
+      mediaPath = `${id}/${state.session.user.id}/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabase.storage.from('chat-media').upload(mediaPath,file,{contentType:file.type,upsert:false});
+      if (uploadError) { toast(uploadError.message); submit.disabled = false; return; }
+      messageType = file.type.startsWith('video/') ? 'video' : 'image';
+    }
+    const { error: sendError } = await supabase.from('messages').insert({conversation_id:id,sender_id:state.session.user.id,content,message_type:messageType,media_url:mediaPath});
+    submit.disabled = false;
+    if (sendError) {
+      if (mediaPath) await supabase.storage.from('chat-media').remove([mediaPath]);
+      toast(sendError.message);
+    } else {
+      form.reset();
+      document.querySelector('#upload-hint').textContent = 'Фото и видео до 20 МБ';
+      await refreshChatMessages(id);
+    }
   });
 }
-
 async function renderStreaks(host) {
   const { data, error } = await supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false});
   state.streaks = data || [];
