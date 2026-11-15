@@ -14,6 +14,49 @@ const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
 const toast = message => { const el = document.querySelector('.toast'); if (!el) return; el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3000); };
 const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" />` : `<span class="avatar avatar-fallback ${size}">${esc(initials(name))}</span>`;
 
+async function telegramAuthFlow({ linkCurrent = false } = {}) {
+  const webApp = window.Telegram?.WebApp;
+  const initData = webApp?.initData;
+  if (!initData) {
+    toast('Открой FLAMEXBOT из Telegram Mini App, чтобы продолжить.');
+    return;
+  }
+  webApp.ready?.();
+  webApp.expand?.();
+  const button = document.querySelector(linkCurrent ? '[data-telegram-link]' : '#telegram-login');
+  if (button) button.disabled = true;
+  try {
+    const { data, error } = await supabase.functions.invoke('telegram-auth', { body: { initData } });
+    if (error) {
+      let message = error.message || 'Ошибка Telegram-входа.';
+      try { const details = await error.context?.json?.(); if (details?.error) message = details.error; } catch {}
+      throw new Error(message);
+    }
+    if (data?.linked_existing_session) {
+      const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', state.session.user.id).maybeSingle();
+      if (profileError) throw profileError;
+      state.profile = profile || state.profile;
+      renderApp();
+      toast('Telegram успешно привязан к аккаунту.');
+      return;
+    }
+    if (!data?.token_hash) throw new Error('Сервер не вернул токен входа.');
+    const { data: authData, error: authError } = await supabase.auth.verifyOtp({
+      token_hash: data.token_hash,
+      type: 'magiclink',
+    });
+    if (authError) throw authError;
+    await boot(authData.session);
+  } catch (error) {
+    const target = document.querySelector('#auth-error');
+    if (target) target.textContent = error.message || 'Не удалось войти через Telegram.';
+    else toast(error.message || 'Не удалось привязать Telegram.');
+  } finally {
+    const current = document.querySelector(linkCurrent ? '[data-telegram-link]' : '#telegram-login');
+    if (current) current.disabled = false;
+  }
+}
+
 function renderAuth() {
   app.innerHTML = `
     <main class="auth-shell">
@@ -26,7 +69,7 @@ function renderAuth() {
         <div class="eyebrow">WELCOME TO FLAMEXBOT</div><h2 id="auth-title">С возвращением</h2><p class="muted" id="auth-subtitle">Войди, чтобы продолжить общение.</p>
         <div class="auth-tabs"><button class="tab active" data-mode="login">Вход</button><button class="tab" data-mode="signup">Регистрация</button></div>
         <form id="auth-form"><label>Электронная почта<input name="email" type="email" placeholder="you@example.com" autocomplete="email" required /></label><label>Пароль<input name="password" type="password" placeholder="Минимум 6 символов" minlength="6" autocomplete="current-password" required /></label><button class="primary full" type="submit"><span id="auth-submit">Войти в аккаунт</span><b>→</b></button></form>
-        <div class="separator"><span>или продолжить с</span></div><button class="google full" id="google-login"><span class="google-g">G</span> Google</button>
+        <div class="separator"><span>или продолжить с</span></div><button class="google full" id="google-login"><span class="google-g">G</span> Google</button><button class="telegram-login full" id="telegram-login" hidden><span>✈</span> Войти через Telegram</button>
         <p class="auth-note">Продолжая, ты соглашаешься с правилами использования FLAMEXBOT.</p><div class="auth-error" id="auth-error"></div>
       </div><div class="panel-bottom">ТВОИ ЛЮДИ. ТВОЯ ИСТОРИЯ. ТВОЙ ОГОНЁК.</div></section>
     </main><div class="toast"></div>`;
@@ -45,7 +88,7 @@ function renderAuth() {
     if (result.error) document.querySelector('#auth-error').textContent = result.error.message;
     else if (mode === 'signup' && !result.data.session) document.querySelector('#auth-error').textContent = 'Проверь почту и подтверди регистрацию.';
   });
-  document.querySelector('#google-login').addEventListener('click', async () => {
+  const telegramButton = document.querySelector('#telegram-login');\n  if (window.Telegram?.WebApp?.initData) telegramButton.hidden = false;\n  telegramButton.addEventListener('click', () => telegramAuthFlow());\n  document.querySelector('#google-login').addEventListener('click', async () => {
     const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
     if (error) document.querySelector('#auth-error').textContent = error.message;
   });
@@ -211,6 +254,7 @@ async function renderStreaks(host) {
 function renderProfile(host) {
   const p = state.profile || {};
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">YOUR IDENTITY</div><h1>Профиль</h1><p class="muted">Настрой свой профиль FLAMEXBOT.</p></div><form class="profile-card" id="profile-form">${avatar(p.avatar_url,p.username,'avatar-xl')}<label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label><label>Ссылка на аватар<input name="avatar_url" type="url" value="${esc(p.avatar_url || '')}" placeholder="https://…"/></label><div class="profile-id">ID аккаунта <code>${esc(state.session.user.id)}</code></div><button class="primary">Сохранить изменения <b>→</b></button></form>`;
+  document.querySelector('[data-telegram-link]').addEventListener('click', () => telegramAuthFlow({ linkCurrent: true }));
   document.querySelector('#profile-form').addEventListener('submit', async e => {
     e.preventDefault(); const fd = new FormData(e.currentTarget);
     const { error } = await supabase.from('profiles').update({username:fd.get('username'),avatar_url:fd.get('avatar_url') || null}).eq('id',state.session.user.id);
