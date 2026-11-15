@@ -58,6 +58,7 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
 }
 
 function renderAuth() {
+  const inTelegram = Boolean(window.Telegram?.WebApp?.initData);
   app.innerHTML = `
     <main class="auth-shell">
       <section class="auth-visual">
@@ -66,35 +67,14 @@ function renderAuth() {
         <div class="visual-footer">© 2026 FLAMEXBOT <span>MADE FOR YOUR PEOPLE</span></div>
       </section>
       <section class="auth-panel"><div class="mobile-brand brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="auth-card">
-        <div class="eyebrow">WELCOME TO FLAMEXBOT</div><h2 id="auth-title">С возвращением</h2><p class="muted" id="auth-subtitle">Войди, чтобы продолжить общение.</p>
-        <div class="auth-tabs"><button class="tab active" data-mode="login">Вход</button><button class="tab" data-mode="signup">Регистрация</button></div>
-        <form id="auth-form"><label>Электронная почта<input name="email" type="email" placeholder="you@example.com" autocomplete="email" required /></label><label>Пароль<input name="password" type="password" placeholder="Минимум 6 символов" minlength="6" autocomplete="current-password" required /></label><button class="primary full" type="submit"><span id="auth-submit">Войти в аккаунт</span><b>→</b></button></form>
-        <div class="separator"><span>или продолжить с</span></div><button class="google full" id="google-login"><span class="google-g">G</span> Google</button><button class="telegram-login full" id="telegram-login" hidden><span>✈</span> Войти через Telegram</button>
-        <p class="auth-note">Продолжая, ты соглашаешься с правилами использования FLAMEXBOT.</p><div class="auth-error" id="auth-error"></div>
+        <div class="eyebrow">WELCOME TO FLAMEXBOT</div><h2>Вход через Telegram</h2><p class="muted">Без паролей и почты. Используй свой Telegram-аккаунт.</p>
+        <button class="telegram-login full" id="telegram-login" ${inTelegram ? '' : 'disabled'}><span>✈</span> Продолжить через Telegram</button>
+        <p class="auth-note">${inTelegram ? 'Подтверди вход, чтобы открыть своё пространство FLAMEXBOT.' : 'Открой FLAMEXBOT через кнопку Mini App в нашем Telegram-боте.'}</p>
+        <div class="auth-error" id="auth-error"></div>
       </div><div class="panel-bottom">ТВОИ ЛЮДИ. ТВОЯ ИСТОРИЯ. ТВОЙ ОГОНЁК.</div></section>
     </main><div class="toast"></div>`;
-  let mode = 'login';
-  document.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
-    mode = btn.dataset.mode; document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('active', x === btn));
-    document.querySelector('#auth-title').textContent = mode === 'login' ? 'С возвращением' : 'Создай аккаунт';
-    document.querySelector('#auth-subtitle').textContent = mode === 'login' ? 'Войди, чтобы продолжить общение.' : 'Зарегистрируйся и зажги свой первый огонёк.';
-    document.querySelector('#auth-submit').textContent = mode === 'login' ? 'Войти в аккаунт' : 'Создать аккаунт';
-  }));
-  document.querySelector('#auth-form').addEventListener('submit', async e => {
-    e.preventDefault(); const fd = new FormData(e.currentTarget); const email = fd.get('email'); const password = fd.get('password');
-    const button = e.currentTarget.querySelector('button[type=submit]'); button.disabled = true; document.querySelector('#auth-error').textContent = '';
-    const result = mode === 'login' ? await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signUp({ email, password });
-    button.disabled = false;
-    if (result.error) document.querySelector('#auth-error').textContent = result.error.message;
-    else if (mode === 'signup' && !result.data.session) document.querySelector('#auth-error').textContent = 'Проверь почту и подтверди регистрацию.';
-  });
   const telegramButton = document.querySelector('#telegram-login');
-  if (window.Telegram?.WebApp?.initData) telegramButton.hidden = false;
   telegramButton.addEventListener('click', () => telegramAuthFlow());
-  document.querySelector('#google-login').addEventListener('click', async () => {
-    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
-    if (error) document.querySelector('#auth-error').textContent = error.message;
-  });
 }
 
 function navItem(page, icon, label) { return `<button class="nav-item ${state.page === page ? 'selected' : ''}" data-page="${page}"><span>${icon}</span>${label}</button>`; }
