@@ -191,7 +191,7 @@ async function refreshBusinessChatList(host) {
   const chats=data||[];const ids=chats.map(x=>x.id);
   const [prefs,recent]=ids.length?await Promise.all([
     supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,last_read_at').in('business_chat_id',ids),
-    supabase.from('flamexbot_business_messages').select('business_chat_id,created_at').in('business_chat_id',ids).eq('direction','incoming').order('created_at',{ascending:false}).limit(300)
+    supabase.from('flamexbot_business_messages').select('business_chat_id,created_at').in('business_chat_id',ids).eq('direction','inbound').order('created_at',{ascending:false}).limit(300)
   ]):[{data:[]},{data:[]}];
   const prefMap=Object.fromEntries((prefs.data||[]).map(x=>[x.business_chat_id,x]));
   const unread={};(recent.data||[]).forEach(m=>{const p=prefMap[m.business_chat_id];if(!p?.last_read_at||new Date(m.created_at)>new Date(p.last_read_at))unread[m.business_chat_id]=(unread[m.business_chat_id]||0)+1;});
@@ -235,6 +235,7 @@ async function renderBusinessMessages(host) {
     .subscribe(status => {
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') toast('Не удалось включить обновление списка чатов');
     });
+  await refreshBusinessChatList(host);
 }
 
 function renderBusinessBubble(message) {
