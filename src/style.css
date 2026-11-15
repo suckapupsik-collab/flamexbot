@@ -232,3 +232,22 @@ input,button{max-width:100%}
 .reply-preview button{border:0;background:transparent;color:#fff;font-size:19px;cursor:pointer}
 .send-form{display:flex;align-items:center;gap:8px}
 .send-form input[name="content"]{min-width:0;flex:1}
+
+
+/* Rich media in Telegram Business conversations */
+.business-media-preview{display:block;max-width:min(100%,360px);margin-top:8px;border-radius:12px;overflow:hidden;background:#111}
+.business-media-preview img{display:block;width:100%;max-height:420px;object-fit:contain}
+.business-animation-preview{max-width:240px}
+.business-animation-preview img{max-height:300px}
+.business-video-preview{display:block;width:min(100%,360px);max-height:420px;margin-top:8px;border-radius:12px;background:#050505}
+.business-audio-card{display:grid;gap:7px;min-width:220px;margin-top:8px;padding:10px;border-radius:10px;background:rgba(255,255,255,.045)}
+.business-audio-card>span{font-size:11px;font-weight:700;color:#ddd}
+.business-audio-preview{display:block;width:min(100%,290px);height:38px}
+.business-file-link{display:flex;align-items:center;gap:10px;max-width:320px;margin-top:8px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.04);color:inherit;text-decoration:none}
+.business-file-link>span:first-child{font-size:22px}
+.business-file-link>span:nth-child(2){flex:1;min-width:0}
+.business-file-link b,.business-file-link small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.business-file-link b{font-size:11px}.business-file-link small{margin-top:3px;color:#999;font-size:9px}
+.business-file-link>span:last-child{color:var(--orange);font-size:18px}
+.bubble>div:not(.bubble-footer):not(.reply-reference){overflow-wrap:anywhere}
+@media(max-width:600px){.business-video-preview{max-height:300px}.business-media-preview img{max-height:320px}}
