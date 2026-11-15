@@ -608,6 +608,11 @@ async function boot(session) {
   const { data, error } = await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
   const { data: preferences } = await supabase.from('flamexbot_user_preferences').select('timezone_offset').eq('profile_id',session.user.id).maybeSingle();
   state.profile = {...(data || {username:session.user.email?.split('@')[0] || 'Flame user'}), timezone_offset: preferences?.timezone_offset ?? 0};
+  if (state.profile.telegram_id) {
+    supabase.functions.invoke('setup-flamexbot-webhook').then(({error}) => {
+      if (error) console.warn('Telegram webhook setup:', error.message);
+    });
+  }
   const { data: subscription } = await supabase.from('user_subscriptions').select('plan,starts_at,expires_at').eq('user_id',session.user.id).maybeSingle();
   state.subscription = subscription && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now()) ? subscription : { plan: 'free', expires_at: null };
   applyTheme(state.profile.theme);
