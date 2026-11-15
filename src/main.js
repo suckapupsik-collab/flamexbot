@@ -88,7 +88,10 @@ function renderAuth() {
     if (result.error) document.querySelector('#auth-error').textContent = result.error.message;
     else if (mode === 'signup' && !result.data.session) document.querySelector('#auth-error').textContent = 'Проверь почту и подтверди регистрацию.';
   });
-  const telegramButton = document.querySelector('#telegram-login');\n  if (window.Telegram?.WebApp?.initData) telegramButton.hidden = false;\n  telegramButton.addEventListener('click', () => telegramAuthFlow());\n  document.querySelector('#google-login').addEventListener('click', async () => {
+  const telegramButton = document.querySelector('#telegram-login');
+  if (window.Telegram?.WebApp?.initData) telegramButton.hidden = false;
+  telegramButton.addEventListener('click', () => telegramAuthFlow());
+  document.querySelector('#google-login').addEventListener('click', async () => {
     const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
     if (error) document.querySelector('#auth-error').textContent = error.message;
   });
