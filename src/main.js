@@ -208,12 +208,12 @@ async function refreshBusinessChatList(host) {
     .eq('profile_id', state.session.user.id).order('last_message_at', { ascending: false }).limit(100);
   if (error) { toast('Не удалось обновить список Business-чатов'); return; }
   const chats=data||[];const ids=chats.map(x=>x.id);
-  const [prefs,recent]=ids.length?await Promise.all([
+  const [prefs,unreadResult]=ids.length?await Promise.all([
     supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,last_read_at').in('business_chat_id',ids),
-    supabase.from('flamexbot_business_messages').select('business_chat_id,created_at').in('business_chat_id',ids).eq('direction','inbound').order('created_at',{ascending:false}).limit(300)
+    supabase.rpc('flamexbot_business_unread_counts')
   ]):[{data:[]},{data:[]}];
   const prefMap=Object.fromEntries((prefs.data||[]).map(x=>[x.business_chat_id,x]));
-  const unread={};(recent.data||[]).forEach(m=>{const p=prefMap[m.business_chat_id];if(!p?.last_read_at||new Date(m.created_at)>new Date(p.last_read_at))unread[m.business_chat_id]=(unread[m.business_chat_id]||0)+1;});
+  const unread=Object.fromEntries((unreadResult.data||[]).map(x=>[x.business_chat_id,Number(x.unread_count)||0]));
   state.businessChats=chats.map(x=>({...x,...(prefMap[x.id]||{}),unread_count:unread[x.id]||0}));
   const list = host.querySelector('.business-inbox .chat-list');
   if (!list) return;
@@ -285,12 +285,24 @@ async function refreshBusinessMessages(chatId) {
   if (!list) return;
   const { data, error } = await supabase.from('flamexbot_business_messages')
     .select('id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at,raw')
-    .eq('business_chat_id', chatId).order('created_at', { ascending: true }).limit(100);
+    .eq('business_chat_id', chatId).order('created_at', { ascending: true }).limit(300);
   if (state.activeBusinessChat !== chatId) return;
   if (error) { list.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; return; }
   state.businessMessages = data || [];
+  const latestInbound=state.businessMessages.filter(m=>m.direction==='inbound').reduce((latest,m)=>!latest||new Date(m.created_at)>new Date(latest)?m.created_at:latest,null);
+  const openChat=state.businessChats.find(chat=>chat.id===chatId);
+  if(latestInbound&&(!openChat?.last_read_at||new Date(latestInbound)>new Date(openChat.last_read_at))){
+    const readAt=new Date().toISOString();
+    const {error:readError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:chatId,last_read_at:readAt},{onConflict:'profile_id,business_chat_id'});
+    if(!readError){if(openChat){openChat.last_read_at=readAt;openChat.unread_count=0;}const inbox=document.querySelector('#page-content');if(inbox?.querySelector('.business-inbox'))await refreshBusinessChatList(inbox);}
+  }
   const query=(document.querySelector('#business-message-search')?.value||'').trim().toLowerCase();
-  const visible=state.businessMessages.filter(m=>!query||String(m.content||'').toLowerCase().includes(query));
+  const visible=state.businessMessages.filter(m=>{
+    if(!query)return true;
+    const raw=m.raw||{};
+    const fileName=raw.document?.file_name||raw.audio?.file_name||raw.video?.file_name||raw.animation?.file_name||'';
+    return [m.content,fileName,m.message_type].filter(Boolean).join(' ').toLowerCase().includes(query);
+  });
   const mediaUrls = {};
   await Promise.all(visible.filter(m=>m.media_url).map(async m=>{
     const {data}=await supabase.storage.from('flamex-business-media').createSignedUrl(m.media_url,3600);
