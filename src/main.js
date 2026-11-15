@@ -341,7 +341,7 @@ async function openBusinessChat(id) {
     }
     const command=!file&&text.startsWith('.')?text.trim():'';
     if(command){
-      const [rawName,...rest]=command.slice(1).split(/\\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
+      const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
       if(['help','inf'].includes(name)){toast('.spam 2-5 текст · .mute · .unmute · .time · .untime');button.disabled=false;return;}
       if(!isPremium()){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
       if(name==='mute'||name==='unmute'){
@@ -353,7 +353,7 @@ async function openBusinessChat(id) {
         button.disabled=false;if(timeError){toast('Не удалось обновить время профиля');return;}state.profile={...state.profile,show_profile_time:enabled};toast(enabled?'Время в профиле включено':'Время в профиле выключено');form.reset();return;
       }
       if(name==='spam'){
-        const match=args.match(/^(\\d{1,2})\\s+([\\s\\S]+)$/);if(!match){button.disabled=false;toast('Формат: .spam 2-5 текст сообщения');return;}
+        const match=args.match(/^(\d{1,2})\s+([\s\S]+)$/);if(!match){button.disabled=false;toast('Формат: .spam 2-5 текст сообщения');return;}
         const count=Number(match[1]),spamText=match[2].trim();if(count<2||count>5||!spamText){button.disabled=false;toast('Разрешено отправить от 2 до 5 повторов.');return;}
         const replyId=form.querySelector('[name=reply_to_message_id]').value||null;
         for(let i=0;i<count;i++){const {data:spamData,error:spamError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text:spamText,reply_to_message_id:i===0?replyId:null}});
