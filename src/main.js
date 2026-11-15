@@ -81,8 +81,8 @@ function navItem(page, icon, label) { return `<button class="nav-item ${state.pa
 function renderApp() {
   const p = state.profile || {}; const profileAvatar = p.avatar_url || p.telegram_photo_url;
   app.innerHTML = `
-    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Business-чаты')}${navItem('friends','♧','Друзья')}${navItem('streaks','🔥','Огоньки')}${navItem('profile','◉','Профиль')}${navItem('achievements','🏆','Достижения')}${navItem('notifications','♧','Уведомления')}${navItem('stats','▥','Статистика')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(profileAvatar, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
-    <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Главная',messages:'Business-чаты',friends:'Друзья',streaks:'Огоньки',profile:'Профиль',admin:'Админ-панель',achievements:'Достижения',notifications:'Уведомления',stats:'Статистика'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(profileAvatar,p.username)}</span></div></header>
+    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Business-чаты')}${navItem('friends','♧','Друзья')}${navItem('streaks','🔥','Огоньки')}${navItem('missions','⚡','Задания')}${navItem('profile','◉','Профиль')}${navItem('achievements','🏆','Достижения')}${navItem('notifications','♧','Уведомления')}${navItem('stats','▥','Статистика')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(profileAvatar, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
+    <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Главная',messages:'Business-чаты',friends:'Друзья',streaks:'Огоньки',missions:'Задания',profile:'Профиль',admin:'Админ-панель',achievements:'Достижения',notifications:'Уведомления',stats:'Статистика'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(profileAvatar,p.username)}</span></div></header>
     <section class="page-content" id="page-content"></section></main></div><div class="toast"></div>`;
   document.querySelectorAll('[data-page]').forEach(btn => btn.addEventListener('click', () => {
     if (state.page === 'messages' && btn.dataset.page !== 'messages') {
@@ -114,6 +114,7 @@ async function loadPage() {
   } else if (state.page === 'friends') await renderFriends(host);
   else if (state.page === 'messages') await renderBusinessMessages(host);
   else if (state.page === 'streaks') await renderStreaks(host);
+  else if (state.page === 'missions') await renderDailyMissions(host);
   else if (state.page === 'profile') await renderProfile(host);
   else if (state.page === 'achievements') await renderAchievements(host);
   else if (state.page === 'notifications') await renderNotifications(host);
@@ -379,14 +380,42 @@ async function renderProfile(host) {
 }
 
 
+async function renderDailyMissions(host) {
+  const uid=state.session.user.id;
+  const now=new Date();const dayStart=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));const dayEnd=new Date(dayStart.getTime()+86400000);
+  const start=dayStart.toISOString();const end=dayEnd.toISOString();const today=dayStart.toISOString().slice(0,10);
+  const [sent,received,friends,streaks,claims]=await Promise.all([
+    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}).eq('direction','outbound').gte('created_at',start).lt('created_at',end),
+    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}).eq('direction','inbound').gte('created_at',start).lt('created_at',end),
+    supabase.from('friendships').select('*',{count:'exact',head:true}).or(`user_low.eq.${uid},user_high.eq.${uid}`).gte('created_at',start).lt('created_at',end),
+    supabase.from('streaks').select('id',{count:'exact',head:true}).or(`user_low.eq.${uid},user_high.eq.${uid}`).eq('last_activity_date',today),
+    supabase.from('flamexbot_daily_task_claims').select('task_code,xp_reward').eq('user_id',uid).eq('task_date',today)
+  ]);
+  const completed=new Set((claims.data||[]).map(x=>x.task_code));
+  const tasks=[
+    {code:'send_message',title:'Зажечь диалог',desc:'Отправь хотя бы одно сообщение через Business',reward:10,done:(sent.count||0)>0,progress:Math.min(1,sent.count||0)},
+    {code:'receive_message',title:'Быть на связи',desc:'Получи хотя бы одно входящее сообщение',reward:5,done:(received.count||0)>0,progress:Math.min(1,received.count||0)},
+    {code:'add_friend',title:'Расширить круг',desc:'Добавь нового друга сегодня',reward:20,done:(friends.count||0)>0,progress:Math.min(1,friends.count||0)},
+    {code:'keep_streak',title:'Сохранить огонёк',desc:'Поддержи совместную серию сегодня',reward:10,done:(streaks.count||0)>0,progress:Math.min(1,streaks.count||0)}
+  ];
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">DAILY FLAME QUESTS</div><h1>Ежедневные задания ⚡</h1><p class="muted">Выполняй реальные действия и забирай опыт. Сброс заданий — ежедневно в 00:00 UTC.</p></div><div class="daily-task-list">${tasks.map(t=>{const claimed=completed.has(t.code);return `<article class="daily-task ${claimed?'claimed':t.done?'ready':''}"><div class="daily-task-icon">${t.code==='send_message'?'💬':t.code==='receive_message'?'📩':t.code==='add_friend'?'🤝':'🔥'}</div><div class="daily-task-copy"><b>${t.title}</b><p>${t.desc}</p><small>${claimed?'Награда получена':t.done?'Задание выполнено':'Прогресс: '+(t.progress?'1':'0')+'/1'} · +${t.reward} XP</small></div><button class="${t.done&&!claimed?'primary':'outline'} small" data-claim-task="${t.code}" ${!t.done||claimed?'disabled':''}>${claimed?'Получено':t.done?'Забрать':'В процессе'}</button></article>`;}).join('')}</div>${sent.error||received.error||friends.error||streaks.error||claims.error?'<p class="business-warning">Часть прогресса не удалось загрузить. Попробуй обновить страницу.</p>':''}`;
+  host.querySelectorAll('[data-claim-task]').forEach(btn=>btn.addEventListener('click',async()=>{
+    btn.disabled=true;const {data,error}=await supabase.rpc('claim_flamexbot_daily_task',{p_task_code:btn.dataset.claimTask});
+    if(error){toast(error.message.includes('already claimed')?'Награда уже получена сегодня':'Не удалось забрать награду: '+error.message);btn.disabled=false;return;}
+    toast('Получено +'+(data?.xp_reward||0)+' XP');renderDailyMissions(host);
+  }));
+}
+
 async function renderAchievements(host) {
   const uid=state.session.user.id;
-  const [all,earned]=await Promise.all([
+  const [all,earned,taskClaims]=await Promise.all([
     supabase.from('achievements').select('id,code,title,description,icon,points').order('points'),
-    supabase.from('user_achievements').select('achievement_id,earned_at').eq('user_id',uid)
+    supabase.from('user_achievements').select('achievement_id,earned_at').eq('user_id',uid),
+    supabase.from('flamexbot_daily_task_claims').select('xp_reward').eq('user_id',uid)
   ]);
   const got=new Map((earned.data||[]).map(x=>[x.achievement_id,x]));
-  const totalXp=(all.data||[]).filter(a=>got.has(a.id)).reduce((sum,a)=>sum+(a.points||0),0);
+  const achievementXp=(all.data||[]).filter(a=>got.has(a.id)).reduce((sum,a)=>sum+(a.points||0),0);
+  const totalXp=achievementXp+(taskClaims.data||[]).reduce((sum,x)=>sum+(x.xp_reward||0),0);
   const level=Math.floor(totalXp/100)+1;
   const nextXp=level*100;
   const progress=totalXp%100;
