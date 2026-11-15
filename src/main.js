@@ -7,7 +7,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, businessConnection: null, isAdmin: false, page: 'home', busy: false, friends: [], requests: [], streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, onlineUserIds: [] };
+const state = { session: null, profile: null, businessConnection: null, isAdmin: false, page: 'home', busy: false, friends: [], requests: [], streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0 };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -82,7 +82,7 @@ function navItem(page, icon, label) { return `<button class="nav-item ${state.pa
 function renderApp() {
   const p = state.profile || {}; const profileAvatar = p.avatar_url || p.telegram_photo_url;
   app.innerHTML = `
-    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Business-чаты')}${navItem('friends','♧','Друзья')}${navItem('streaks','🔥','Огоньки')}${navItem('missions','⚡','Задания')}${navItem('profile','◉','Профиль')}${navItem('achievements','🏆','Достижения')}${navItem('notifications','♧','Уведомления')}${navItem('stats','▥','Статистика')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(profileAvatar, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
+    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Business-чаты')}${navItem('friends','♧','Друзья')}${navItem('streaks','🔥','Огоньки')}${navItem('missions','⚡','Задания')}${navItem('profile','◉','Профиль')}${navItem('achievements','🏆','Достижения')}${`<button class="nav-item ${state.page === 'notifications' ? 'selected' : ''}" data-page="notifications"><span>♧</span>Уведомления${state.notificationCount ? `<i class="nav-unread-count">${state.notificationCount > 99 ? '99+' : state.notificationCount}</i>` : ''}</button>`}${navItem('stats','▥','Статистика')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(profileAvatar, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
     <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Главная',messages:'Business-чаты',friends:'Друзья',streaks:'Огоньки',missions:'Задания',profile:'Профиль',admin:'Админ-панель',achievements:'Достижения',notifications:'Уведомления',stats:'Статистика'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(profileAvatar,p.username)}</span></div></header>
     <section class="page-content" id="page-content"></section></main></div><div class="toast"></div>`;
   document.querySelectorAll('[data-page]').forEach(btn => btn.addEventListener('click', () => {
@@ -516,14 +516,16 @@ async function renderAchievements(host) {
 async function renderNotifications(host) {
   const uid=state.session.user.id;
   const {data,error}=await supabase.from('notifications').select('id,type,title,body,data,created_at,read_at').eq('user_id',uid).order('created_at',{ascending:false}).limit(50);
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ACTIVITY CENTER</div><h1>Уведомления</h1><p class="muted">События, заявки и важные обновления аккаунта.</p><button class="outline small" type="button" id="read-all-notifications">Отметить всё прочитанным</button></div><div class="notification-list">${(data||[]).map(n=>`<button class="notification-item ${n.read_at?'read':'unread'}" data-notification="${n.id}"><span class="notification-mark">${n.read_at?'✓':'•'}</span><span><b>${esc(n.title)}</b><small>${esc(n.body||'')}</small><time>${new Date(n.created_at).toLocaleString('ru-RU')}</time></span></button>`).join('')||'<div class="empty-state">Новых уведомлений пока нет.</div>'}</div>${error?'<p class="business-warning">Не удалось загрузить уведомления.</p>':''}`;
+  state.notificationCount=(data||[]).filter(n=>!n.read_at).length;
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ACTIVITY CENTER</div><h1>Уведомления</h1><p class="muted">События, заявки и важные обновления аккаунта.</p><div class="notification-toolbar"><span class="muted">${state.notificationCount} непрочитанных</span><button class="outline small" type="button" id="read-all-notifications" ${state.notificationCount?'':'disabled'}>Отметить всё прочитанным</button></div></div><div class="notification-list">${(data||[]).map(n=>`<button class="notification-item ${n.read_at?'read':'unread'}" data-notification="${n.id}"><span class="notification-mark">${n.read_at?'✓':'•'}</span><span><b>${esc(n.title)}</b><small>${esc(n.body||'')}</small><time>${new Date(n.created_at).toLocaleString('ru-RU')}</time></span></button>`).join('')||'<div class="empty-state">Пока нет уведомлений. Новые события появятся здесь.</div>'}</div>${error?'<p class="business-warning">Не удалось загрузить уведомления.</p>':''}`;
   host.querySelector('#read-all-notifications')?.addEventListener('click',async()=>{
     const {error:markError}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('user_id',uid).is('read_at',null);
-    if(markError)toast('Не удалось обновить уведомления');else{toast('Все уведомления прочитаны');renderNotifications(host);}
+    if(markError)toast('Не удалось обновить уведомления');else{state.notificationCount=0;renderNotifications(host);renderApp();}
   });
   host.querySelectorAll('[data-notification]').forEach(btn=>btn.addEventListener('click',async()=>{
+    if(btn.classList.contains('read'))return;
     const {error:updateError}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('id',btn.dataset.notification).eq('user_id',uid);
-    if(updateError)toast('Не удалось отметить уведомление');else{btn.classList.remove('unread');btn.classList.add('read');btn.querySelector('.notification-mark').textContent='✓';}
+    if(updateError)toast('Не удалось отметить уведомление');else{state.notificationCount=Math.max(0,state.notificationCount-1);btn.classList.remove('unread');btn.classList.add('read');btn.querySelector('.notification-mark').textContent='✓';const count=host.querySelector('.notification-toolbar .muted');if(count)count.textContent=state.notificationCount+' непрочитанных';renderApp();}
   }));
 }
 async function renderStats(host) {
@@ -569,9 +571,34 @@ document.addEventListener('visibilitychange',()=>{
   if(channel&&state.session?.user?.id) channel.track({user_id:state.session.user.id,online:!document.hidden,seen_at:new Date().toISOString()});
 });
 
+async function startNotificationRealtime(session) {
+  if(state.notificationChannel){await supabase.removeChannel(state.notificationChannel);state.notificationChannel=null;}
+  state.notificationCount=0;
+  if(!session?.user?.id)return;
+  const uid=session.user.id;
+  const refreshCount=async()=>{
+    const {count,error}=await supabase.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',uid).is('read_at',null);
+    if(error)return;
+    state.notificationCount=count||0;
+    const nav=document.querySelector('[data-page="notifications"]');
+    if(nav){const badge=nav.querySelector('.nav-unread-count');if(state.notificationCount){if(badge)badge.textContent=state.notificationCount>99?'99+':String(state.notificationCount);else nav.insertAdjacentHTML('beforeend',`<i class="nav-unread-count">${state.notificationCount>99?'99+':state.notificationCount}</i>`);}else badge?.remove();}
+  };
+  const channel=supabase.channel(`flamexbot-notifications-${uid}`)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:`user_id=eq.${uid}`},payload=>{
+      state.notificationCount+=1;
+      const nav=document.querySelector('[data-page="notifications"]');
+      if(nav){const badge=nav.querySelector('.nav-unread-count');if(badge)badge.textContent=state.notificationCount>99?'99+':String(state.notificationCount);else nav.insertAdjacentHTML('beforeend',`<i class="nav-unread-count">${state.notificationCount>99?'99+':state.notificationCount}</i>`);}
+      const n=payload.new||{};
+      if(n.title)toast(`Новое уведомление: ${n.title}`);
+      if(state.page==='notifications'){const host=document.querySelector('#page-content');if(host)renderNotifications(host);}
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'notifications',filter:`user_id=eq.${uid}`},()=>refreshCount())
+    .subscribe(status=>{if(status==='SUBSCRIBED')refreshCount();});
+  state.notificationChannel=channel;
+}
 async function boot(session) {
   state.session = session;
-  if (!session) { if(state.presenceChannel){supabase.removeChannel(state.presenceChannel);state.presenceChannel=null;} state.onlineUserIds=[]; renderAuth(); return; }
+  if (!session) { if(state.presenceChannel){supabase.removeChannel(state.presenceChannel);state.presenceChannel=null;} if(state.notificationChannel){supabase.removeChannel(state.notificationChannel);state.notificationChannel=null;} state.onlineUserIds=[]; state.notificationCount=0; renderAuth(); return; }
   const { error: achievementSyncError } = await supabase.rpc('sync_flamexbot_achievements');
   if (achievementSyncError) console.warn('Achievement sync:', achievementSyncError.message);
   const { data, error } = await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
@@ -580,7 +607,7 @@ async function boot(session) {
   if (error) console.warn('Profile load:', error.message);
   const { data: adminAccess, error: adminError } = await supabase.rpc('is_flamexbot_admin');
   state.isAdmin = !adminError && adminAccess === true;
-  await startPresence(session);
+  await Promise.all([startPresence(session),startNotificationRealtime(session)]);
   renderApp();
 }
 
