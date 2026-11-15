@@ -152,6 +152,7 @@ async function renderFriends(host) {
   });
   host.querySelectorAll('[data-accept]').forEach(btn => btn.addEventListener('click', async () => {
     const { error } = await supabase.from('friend_requests').update({status:'accepted',responded_at:new Date().toISOString()}).eq('id',btn.dataset.accept);
+    if(!error) await supabase.rpc('sync_flamexbot_achievements');
     toast(error ? error.message : 'Заявка принята'); renderFriends(host);
   }));
 }
@@ -298,6 +299,7 @@ async function openBusinessChat(id) {
     if (error || data?.error) { toast(data?.error || error.message || 'Не удалось отправить сообщение'); return; }
     form.reset();
     await refreshBusinessMessages(id);
+    await supabase.rpc('sync_flamexbot_achievements');
   });
 }
 
