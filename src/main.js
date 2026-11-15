@@ -386,7 +386,11 @@ async function renderAchievements(host) {
     supabase.from('user_achievements').select('achievement_id,earned_at').eq('user_id',uid)
   ]);
   const got=new Map((earned.data||[]).map(x=>[x.achievement_id,x]));
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR COLLECTION</div><h1>Достижения 🏆</h1><p class="muted">Коллекция наград FLAMEXBOT.</p></div><div class="achievement-grid">${(all.data||[]).map(a=>{const e=got.get(a.id);return `<article class="achievement-card ${e?'earned':'locked'}"><div class="achievement-icon">${esc(a.icon||'✦')}</div><div><b>${esc(a.title)}</b><p>${esc(a.description||'')}</p><small>${e?'Получено '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Пока не получено'} · ${a.points} XP</small></div></article>`;}).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div>${all.error||earned.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию.</p>':''}`;
+  const totalXp=(all.data||[]).filter(a=>got.has(a.id)).reduce((sum,a)=>sum+(a.points||0),0);
+  const level=Math.floor(totalXp/100)+1;
+  const nextXp=level*100;
+  const progress=totalXp%100;
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR COLLECTION</div><h1>Достижения 🏆</h1><p class="muted">Награды открываются за реальные действия в FLAMEXBOT.</p></div><section class="business-card level-card"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ</small><h2>Уровень ${level}</h2></div><strong>${totalXp} XP</strong></div><div class="xp-track"><span style="width:${progress}%"></span></div><small>${progress}/100 XP до следующего уровня</small></section><div class="achievement-grid">${(all.data||[]).map(a=>{const e=got.get(a.id);return `<article class="achievement-card ${e?'earned':'locked'}"><div class="achievement-icon">${esc(a.icon||'✦')}</div><div><b>${esc(a.title)}</b><p>${esc(a.description||'')}</p><small>${e?'Получено '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Пока не получено'} · ${a.points} XP</small></div></article>`;}).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div>${all.error||earned.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию.</p>':''}`;
 }
 async function renderNotifications(host) {
   const uid=state.session.user.id;
@@ -415,6 +419,8 @@ async function renderStats(host) {
 async function boot(session) {
   state.session = session;
   if (!session) { renderAuth(); return; }
+  const { error: achievementSyncError } = await supabase.rpc('sync_flamexbot_achievements');
+  if (achievementSyncError) console.warn('Achievement sync:', achievementSyncError.message);
   const { data, error } = await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
   state.profile = data || {username:session.user.email?.split('@')[0] || 'Flame user'};
   if (error) console.warn('Profile load:', error.message);
