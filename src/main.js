@@ -244,12 +244,20 @@ async function renderBusinessMessages(host) {
   await refreshBusinessChatList(host);
 }
 
-function renderBusinessBubble(message) {
+function renderBusinessBubble(message, mediaUrl = '') {
   const mine = message.direction === 'outbound';
   const content = message.deleted_at ? 'Сообщение удалено в Telegram' : (message.content || '');
-  const media = message.message_type && message.message_type !== 'text'
-    ? `<div class="business-media-note">Вложение: ${esc(message.message_type)}${message.media_file_id ? ' · файл получен от Telegram' : ''}</div>` : '';
-  return `<div class="bubble ${mine ? 'mine' : ''}">${content ? `<div>${esc(content)}</div>` : ''}${media}<small>${new Date(message.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small></div>`;
+  let media = '';
+  if (message.message_type && message.message_type !== 'text') {
+    if (mediaUrl && message.message_type === 'photo') media = `<a class="business-media-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" alt="Фото"/></a>`;
+    else if (mediaUrl && message.message_type === 'video') media = `<video class="business-video-preview" controls preload="metadata" src="${esc(mediaUrl)}"></video>`;
+    else if (mediaUrl && ['audio','voice'].includes(message.message_type)) media = `<audio class="business-audio-preview" controls preload="metadata" src="${esc(mediaUrl)}"></audio>`;
+    else if (mediaUrl) media = `<a class="business-file-link" href="${esc(mediaUrl)}" target="_blank" rel="noopener">📎 Открыть вложение</a>`;
+    else media = `<div class="business-media-note">Вложение: ${esc(message.message_type)}${message.media_file_id ? ' · получено от Telegram' : ''}</div>`;
+  }
+  const reply = message.reply_to_message_id ? `<div class="reply-reference">↪ Ответ на сообщение #${message.reply_to_message_id}</div>` : '';
+  const replyButton = !message.deleted_at && message.telegram_message_id ? `<button type="button" class="reply-message" data-reply-to="${message.telegram_message_id}">Ответить</button>` : '';
+  return `<div class="bubble ${mine ? 'mine' : ''}">${reply}${content ? `<div>${esc(content)}</div>` : ''}${media}<div class="bubble-footer"><small>${new Date(message.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small>${replyButton}</div></div>`;
 }
 
 async function refreshBusinessMessages(chatId) {
@@ -257,14 +265,28 @@ async function refreshBusinessMessages(chatId) {
   const list = document.querySelector('#business-message-list');
   if (!list) return;
   const { data, error } = await supabase.from('flamexbot_business_messages')
-    .select('id,telegram_message_id,direction,content,message_type,media_file_id,created_at,deleted_at')
+    .select('id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at')
     .eq('business_chat_id', chatId).order('created_at', { ascending: true }).limit(100);
   if (state.activeBusinessChat !== chatId) return;
   if (error) { list.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; return; }
   state.businessMessages = data || [];
   const query=(document.querySelector('#business-message-search')?.value||'').trim().toLowerCase();
   const visible=state.businessMessages.filter(m=>!query||String(m.content||'').toLowerCase().includes(query));
-  list.innerHTML = visible.map(renderBusinessBubble).join('') || '<div class="chat-placeholder"><b>Сообщений не найдено</b><small>Измени поисковый запрос.</small></div>';
+  const mediaUrls = {};
+  await Promise.all(visible.filter(m=>m.media_url).map(async m=>{
+    const {data}=await supabase.storage.from('flamex-business-media').createSignedUrl(m.media_url,3600);
+    if(data?.signedUrl) mediaUrls[m.id]=data.signedUrl;
+  }));
+  list.innerHTML = visible.map(m=>renderBusinessBubble(m,mediaUrls[m.id]||'')).join('') || '<div class="chat-placeholder"><b>Сообщений не найдено</b><small>Измени поисковый запрос.</small></div>';
+  list.querySelectorAll('[data-reply-to]').forEach(btn=>btn.addEventListener('click',()=>{
+    const form=document.querySelector('#business-send-form');
+    const preview=document.querySelector('#business-reply-preview');
+    if(!form||!preview)return;
+    form.querySelector('[name=reply_to_message_id]').value=btn.dataset.replyTo;
+    preview.hidden=false;
+    preview.querySelector('span').textContent='Ответ на сообщение #'+btn.dataset.replyTo;
+    form.querySelector('input[name=content]').focus();
+  }));
   list.scrollTop = list.scrollHeight;
 }
 
@@ -278,7 +300,7 @@ async function openBusinessChat(id) {
   const name = [chat.first_name,chat.last_name].filter(Boolean).join(' ') || (chat.username ? '@'+chat.username : 'Telegram-пользователь');
   await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:new Date().toISOString()},{onConflict:'profile_id,business_chat_id'});
   await refreshBusinessChatList(document.querySelector('#page-content'));
-  box.innerHTML = `<div class="chat-head"><div><b>${esc(name)}</b><small>${chat.username ? '@'+esc(chat.username)+' · ' : ''}Переписка через Telegram Business</small></div><input class="message-search" id="business-message-search" type="search" placeholder="Найти сообщение…"/></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><form class="send-form" id="business-send-form"><input name="content" placeholder="Ответить от имени бизнес-аккаунта…" maxlength="4096" required/><button class="primary" type="submit">➤</button></form><div class="upload-hint">Ответ будет отправлен через подключённый Telegram Business-бот.</div>`;
+  box.innerHTML = `<div class="chat-head"><div><b>${esc(name)}</b><small>${chat.username ? '@'+esc(chat.username)+' · ' : ''}Переписка через Telegram Business</small></div><input class="message-search" id="business-message-search" type="search" placeholder="Найти сообщение…"/></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,.zip" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
   await refreshBusinessMessages(id);
   document.querySelector('#business-message-search')?.addEventListener('input',()=>refreshBusinessMessages(id));
   state.businessChatChannel = supabase.channel(`business-chat-${id}`)
@@ -287,18 +309,48 @@ async function openBusinessChat(id) {
       if (status === 'SUBSCRIBED') refreshBusinessMessages(id);
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') toast('Потеряно обновление переписки в реальном времени');
     });
-  document.querySelector('#business-send-form').addEventListener('submit', async event => {
+  const sendForm=document.querySelector('#business-send-form');
+  const mediaInput=document.querySelector('#business-media-input');
+  const selectedMedia=document.querySelector('#selected-business-media');
+  const cancelReply=document.querySelector('#cancel-business-reply');
+  cancelReply?.addEventListener('click',()=>{
+    sendForm.querySelector('[name=reply_to_message_id]').value='';
+    document.querySelector('#business-reply-preview').hidden=true;
+  });
+  mediaInput?.addEventListener('change',()=>{
+    const file=mediaInput.files?.[0];
+    if(!file){selectedMedia.hidden=true;selectedMedia.textContent='';return;}
+    selectedMedia.textContent=file.name+' · '+(file.size/1024/1024).toFixed(1)+' МБ';
+    selectedMedia.hidden=false;
+  });
+  sendForm.addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget;
-    const button = form.querySelector('button');
+    const button = form.querySelector('button[type=submit]');
     const input = form.querySelector('input[name=content]');
     const text = input.value.trim();
-    if (!text) return;
+    const file=mediaInput.files?.[0]||null;
+    if (!text && !file) return;
+    if(file && file.size>20*1024*1024){toast('Максимальный размер файла — 20 МБ');return;}
     button.disabled = true;
-    const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id: id, text } });
+    let storagePath=null;
+    let mediaType=null;
+    if(file){
+      mediaType=file.type.startsWith('image/')?'photo':file.type.startsWith('video/')?'video':file.type.startsWith('audio/')?'audio':'document';
+      storagePath=state.session.user.id+'/'+id+'/'+crypto.randomUUID()+'-'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+      const {error:uploadError}=await supabase.storage.from('flamex-business-media').upload(storagePath,file,{contentType:file.type||'application/octet-stream',upsert:false});
+      if(uploadError){button.disabled=false;toast('Не удалось загрузить файл: '+uploadError.message);return;}
+    }
+    const replyId=form.querySelector('[name=reply_to_message_id]').value||null;
+    const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id:id,text,storage_path:storagePath,media_type:mediaType,reply_to_message_id:replyId } });
     button.disabled = false;
-    if (error || data?.error) { toast(data?.error || error.message || 'Не удалось отправить сообщение'); return; }
+    if (error || data?.error) {
+      if(storagePath) await supabase.storage.from('flamex-business-media').remove([storagePath]);
+      toast(data?.error || error.message || 'Не удалось отправить сообщение'); return;
+    }
     form.reset();
+    selectedMedia.hidden=true;selectedMedia.textContent='';
+    document.querySelector('#business-reply-preview').hidden=true;
     await refreshBusinessMessages(id);
     await supabase.rpc('sync_flamexbot_achievements');
   });
