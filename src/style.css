@@ -194,3 +194,9 @@ input,button{max-width:100%}
 .leaderboard-row b,.leaderboard-row small{display:block}
 .leaderboard-row b{font-size:12px}.leaderboard-row small{font-size:10px;color:#888;margin-top:3px}
 .leaderboard-row em{font-style:normal;font-size:12px;font-weight:800;color:#ffad72}
+
+
+.chat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.chat-head>div{min-width:0}
+.message-search{width:min(230px,100%);margin:0;padding:8px 10px;background:#191919;border:1px solid #353535;border-radius:8px;color:#fff;font-size:11px}
+@media(max-width:600px){.message-search{width:100%}}
