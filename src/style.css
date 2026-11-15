@@ -269,3 +269,19 @@ input,button{max-width:100%}
 .friend-streak{display:inline-flex;align-items:center;margin-top:2px;padding:4px 7px;border-radius:7px;background:#242424;color:#999;font-size:10px;white-space:nowrap}
 .friend-streak.active{background:#302018;color:#ffad72}
 @media(max-width:600px){.friend-detail-row .business-only-tag{display:none}.friend-streak{font-size:9px}}
+
+
+/* FLAMEX live friends and social activity feed */
+.online-count{font-size:10px;color:#72d69a;font-weight:700}
+.online-label{color:#72d69a;font-weight:700}
+.offline-label{color:#888}
+.friend-person-row .person-info small{display:flex;align-items:center;gap:5px}
+.activity-feed{display:grid;gap:0;border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden}
+.activity-item{display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid var(--line);font-size:12px;line-height:1.45}
+.activity-item:last-child{border-bottom:0}
+.activity-item .avatar{width:34px;height:34px;flex:none}
+.activity-item>div{flex:1;min-width:0;color:#bcbcbc}
+.activity-item>div b{color:#fff}
+.activity-item>div small{display:block;margin-top:3px;color:#858585;font-size:10px}
+.activity-new-dot{width:7px;height:7px;flex:none;border-radius:50%;background:var(--orange);box-shadow:0 0 9px color-mix(in srgb,var(--orange) 55%,transparent)}
+@media(max-width:600px){.activity-item{padding:11px 10px}.friend-person-row .business-only-tag{font-size:8px}}
