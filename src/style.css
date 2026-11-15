@@ -293,3 +293,12 @@ input,button{max-width:100%}
 .friend-streak.active{background:#302018;color:#ffad72}
 .activity-detail{color:var(--orange);font-size:10px;font-weight:700}
 @media(max-width:600px){.friend-person-row .business-only-tag{display:none}.friend-streak{font-size:9px}}
+
+
+/* Live notification counter and toolbar */
+.nav-item{position:relative}
+.nav-unread-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;margin-left:auto;padding:0 5px;border-radius:10px;background:var(--orange);color:#151515;font-size:9px;font-style:normal;font-weight:900}
+.notification-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:13px}
+.notification-item.read{opacity:.72}
+.notification-item:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:600px){.nav-unread-count{min-width:16px;height:16px;font-size:8px}}
