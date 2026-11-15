@@ -285,3 +285,11 @@ input,button{max-width:100%}
 .activity-item>div small{display:block;margin-top:3px;color:#858585;font-size:10px}
 .activity-new-dot{width:7px;height:7px;flex:none;border-radius:50%;background:var(--orange);box-shadow:0 0 9px color-mix(in srgb,var(--orange) 55%,transparent)}
 @media(max-width:600px){.activity-item{padding:11px 10px}.friend-person-row .business-only-tag{font-size:8px}}
+
+
+/* Friend streak context and activity event details */
+.friend-person-row .person-info{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0}
+.friend-streak{display:inline-flex;align-items:center;margin-top:2px;padding:4px 7px;border-radius:7px;background:#242424;color:#999;font-size:10px;white-space:nowrap}
+.friend-streak.active{background:#302018;color:#ffad72}
+.activity-detail{color:var(--orange);font-size:10px;font-weight:700}
+@media(max-width:600px){.friend-person-row .business-only-tag{display:none}.friend-streak{font-size:9px}}
