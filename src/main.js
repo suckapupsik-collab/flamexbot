@@ -224,7 +224,7 @@ async function renderAdmin(host) {
   const [connections, chats, messages] = await Promise.all([
     supabase.from('flamexbot_business_connections').select('is_enabled,connected_at,rights').eq('profile_id',state.session.user.id).maybeSingle(),
     supabase.from('flamexbot_business_chats').select('id',{count:'exact',head:true}).eq('profile_id',state.session.user.id),
-    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}).in('business_chat_id', (state.businessChats || []).map(c => c.id).length ? (state.businessChats || []).map(c => c.id) : ['00000000-0000-0000-0000-000000000000'])
+    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true})
   ]);
   const connection = connections.data;
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">FOUNDER CONTROL</div><h1>Админ-панель</h1><p class="muted">Закрытая панель владельца FLAMEXBOT.</p></div>
