@@ -302,16 +302,23 @@ async function renderAdmin(host) {
     host.innerHTML = '<div class="page-heading"><div class="eyebrow">ACCESS DENIED</div><h1>Нет доступа</h1><p class="muted">Админ-панель доступна только владельцу @Racer_Video.</p></div>';
     return;
   }
-  const [connections, chats, messages] = await Promise.all([
+  const [connections, chats, messages, users, recentChats] = await Promise.all([
     supabase.from('flamexbot_business_connections').select('is_enabled,connected_at,rights').eq('profile_id',state.session.user.id).maybeSingle(),
     supabase.from('flamexbot_business_chats').select('id',{count:'exact',head:true}).eq('profile_id',state.session.user.id),
-    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true})
+    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}),
+    supabase.from('profiles').select('id,username,display_name,telegram_username,telegram_id,created_at').order('created_at',{ascending:false}).limit(8),
+    supabase.from('flamexbot_business_chats').select('id,username,first_name,last_name,last_message_at').eq('profile_id',state.session.user.id).order('last_message_at',{ascending:false}).limit(8)
   ]);
   const connection = connections.data;
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">FOUNDER CONTROL</div><h1>Админ-панель</h1><p class="muted">Закрытая панель владельца FLAMEXBOT.</p></div>
     <div class="admin-owner-card"><span class="admin-crown">✦</span><div><b>@Racer_Video</b><small>Единственный администратор · Founder</small></div><span class="business-status is-connected">Доступ подтверждён</span></div>
     <div class="stats-grid"><div class="stat-card"><small>BUSINESS BOT</small><strong>${connection?.is_enabled ? 'ON' : 'OFF'}</strong><span class="stat-foot">Подключение Telegram</span></div><div class="stat-card"><small>BUSINESS-ЧАТЫ</small><strong>${chats.count || 0}</strong><span class="stat-foot">Полученные переписки</span></div><div class="stat-card"><small>СООБЩЕНИЯ</small><strong>${messages.count || 0}</strong><span class="stat-foot">Сохранённые сообщения</span></div></div>
-    <section class="business-card"><div class="business-card-head"><div><div class="eyebrow">SECURITY</div><h2>Права доступа</h2><p class="muted">Обычные личные чаты отключены. В приложении используются только переписки Telegram Business.</p></div><span class="business-status is-connected">Founder only</span></div></section>`;
+    <section class="business-card"><div class="business-card-head"><div><div class="eyebrow">SECURITY</div><h2>Права доступа</h2><p class="muted">Обычные личные чаты отключены. В приложении используются только переписки Telegram Business.</p></div><span class="business-status is-connected">Founder only</span></div></section>
+    <div class="section-heading"><div><div class="eyebrow">COMMUNITY</div><h3>Последние пользователи</h3></div></div>
+    <div class="people-list">${(users.data||[]).map(u=>`<div class="person-row"><div class="person-info"><b>${esc(u.display_name||u.username)}</b><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${new Date(u.created_at).toLocaleDateString('ru-RU')}</small></div><span class="business-status">${u.telegram_id?'Telegram':'Web ID'}</span></div>`).join('')||'<div class="empty-state">Пользователей пока нет.</div>'}</div>
+    <div class="section-heading"><div><div class="eyebrow">BUSINESS INBOX</div><h3>Последние переписки</h3></div></div>
+    <div class="people-list">${(recentChats.data||[]).map(ch=>`<div class="person-row"><div class="person-info"><b>${esc([ch.first_name,ch.last_name].filter(Boolean).join(' ')||ch.username||'Telegram-пользователь')}</b><small>${ch.username?'@'+esc(ch.username)+' · ':''}${ch.last_message_at?new Date(ch.last_message_at).toLocaleString('ru-RU'):'Нет сообщений'}</small></div><span class="business-only-tag">Business</span></div>`).join('')||'<div class="empty-state">Business-чатов пока нет.</div>'}</div>`;
+
 }
 
 async function renderStreaks(host) {
