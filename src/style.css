@@ -184,3 +184,13 @@ input,button{max-width:100%}
 .flame-id-line{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .flame-id-line h2{margin:7px 0;font:800 25px Manrope;letter-spacing:1px;color:#ff9a65}
 @media(max-width:600px){.daily-task{align-items:flex-start;flex-wrap:wrap}.daily-task-copy{flex-basis:calc(100% - 60px)}.daily-task button{margin-left:56px}}
+
+
+.leaderboard-panel{max-width:850px;margin-top:28px}
+.leaderboard-list{display:grid;gap:7px}
+.leaderboard-row{display:flex;align-items:center;gap:13px;padding:12px 14px;border:1px solid var(--line);background:var(--panel);border-radius:10px}
+.leaderboard-row>strong{width:34px;color:#ff9a65;font:800 15px Manrope}
+.leaderboard-row>span{flex:1;min-width:0}
+.leaderboard-row b,.leaderboard-row small{display:block}
+.leaderboard-row b{font-size:12px}.leaderboard-row small{font-size:10px;color:#888;margin-top:3px}
+.leaderboard-row em{font-style:normal;font-size:12px;font-weight:800;color:#ffad72}
