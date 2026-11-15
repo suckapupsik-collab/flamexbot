@@ -247,13 +247,19 @@ async function renderBusinessMessages(host) {
 function renderBusinessBubble(message, mediaUrl = '') {
   const mine = message.direction === 'outbound';
   const content = message.deleted_at ? 'Сообщение удалено в Telegram' : (message.content || '');
+  const raw = message.raw || {};
+  const mediaName = raw.document?.file_name || raw.audio?.file_name || raw.video?.file_name || 'Вложение';
+  const mediaSize = [raw.document?.file_size,raw.audio?.file_size,raw.video?.file_size].find(Boolean);
+  const mediaSizeLabel = mediaSize ? ' · '+(mediaSize/1024/1024).toFixed(1)+' МБ' : '';
+  const mediaType = message.message_type || 'text';
   let media = '';
-  if (message.message_type && message.message_type !== 'text') {
-    if (mediaUrl && message.message_type === 'photo') media = `<a class="business-media-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" alt="Фото"/></a>`;
-    else if (mediaUrl && message.message_type === 'video') media = `<video class="business-video-preview" controls preload="metadata" src="${esc(mediaUrl)}"></video>`;
-    else if (mediaUrl && ['audio','voice'].includes(message.message_type)) media = `<audio class="business-audio-preview" controls preload="metadata" src="${esc(mediaUrl)}"></audio>`;
-    else if (mediaUrl) media = `<a class="business-file-link" href="${esc(mediaUrl)}" target="_blank" rel="noopener">📎 Открыть вложение</a>`;
-    else media = `<div class="business-media-note">Вложение: ${esc(message.message_type)}${message.media_file_id ? ' · получено от Telegram' : ''}</div>`;
+  if (mediaType !== 'text' && !message.deleted_at) {
+    if (mediaUrl && mediaType === 'photo') media = `<a class="business-media-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="Фото"/></a>`;
+    else if (mediaUrl && ['animation','sticker'].includes(mediaType)) media = `<a class="business-media-preview business-animation-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="${mediaType==='sticker'?'Стикер':'GIF-анимация'}"/></a>`;
+    else if (mediaUrl && ['video','video_note'].includes(mediaType)) media = `<video class="business-video-preview" controls playsinline preload="metadata" src="${esc(mediaUrl)}"></video>`;
+    else if (mediaUrl && ['audio','voice'].includes(mediaType)) media = `<div class="business-audio-card"><span>${mediaType==='voice'?'🎙 Голосовое сообщение':'🎵 Аудио'}</span><audio class="business-audio-preview" controls preload="metadata" src="${esc(mediaUrl)}"></audio></div>`;
+    else if (mediaUrl) media = `<a class="business-file-link" href="${esc(mediaUrl)}" target="_blank" rel="noopener" download="${esc(mediaName)}"><span>📎</span><span><b>${esc(mediaName)}</b><small>${esc(mediaType.toUpperCase())}${mediaSizeLabel}</small></span><span>↓</span></a>`;
+    else media = `<div class="business-media-note">Вложение: ${esc(mediaType)}${message.media_file_id ? ' · получено от Telegram' : ''}</div>`;
   }
   const reply = message.reply_to_message_id ? `<div class="reply-reference">↪ Ответ на сообщение #${message.reply_to_message_id}</div>` : '';
   const replyButton = !message.deleted_at && message.telegram_message_id ? `<button type="button" class="reply-message" data-reply-to="${message.telegram_message_id}">Ответить</button>` : '';
@@ -265,7 +271,7 @@ async function refreshBusinessMessages(chatId) {
   const list = document.querySelector('#business-message-list');
   if (!list) return;
   const { data, error } = await supabase.from('flamexbot_business_messages')
-    .select('id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at')
+    .select('id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at,raw')
     .eq('business_chat_id', chatId).order('created_at', { ascending: true }).limit(100);
   if (state.activeBusinessChat !== chatId) return;
   if (error) { list.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; return; }
