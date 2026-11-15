@@ -408,10 +408,11 @@ async function renderDailyMissions(host) {
 
 async function renderAchievements(host) {
   const uid=state.session.user.id;
-  const [all,earned,taskClaims]=await Promise.all([
+  const [all,earned,taskClaims,leaderboard]=await Promise.all([
     supabase.from('achievements').select('id,code,title,description,icon,points').order('points'),
     supabase.from('user_achievements').select('achievement_id,earned_at').eq('user_id',uid),
-    supabase.from('flamexbot_daily_task_claims').select('xp_reward').eq('user_id',uid)
+    supabase.from('flamexbot_daily_task_claims').select('xp_reward').eq('user_id',uid),
+    supabase.rpc('get_flamexbot_leaderboard')
   ]);
   const got=new Map((earned.data||[]).map(x=>[x.achievement_id,x]));
   const achievementXp=(all.data||[]).filter(a=>got.has(a.id)).reduce((sum,a)=>sum+(a.points||0),0);
@@ -419,7 +420,7 @@ async function renderAchievements(host) {
   const level=Math.floor(totalXp/100)+1;
   const nextXp=level*100;
   const progress=totalXp%100;
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR COLLECTION</div><h1>Достижения 🏆</h1><p class="muted">Награды открываются за реальные действия в FLAMEXBOT.</p></div><section class="business-card level-card"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ</small><h2>Уровень ${level}</h2></div><strong>${totalXp} XP</strong></div><div class="xp-track"><span style="width:${progress}%"></span></div><small>${progress}/100 XP до следующего уровня</small></section><div class="achievement-grid">${(all.data||[]).map(a=>{const e=got.get(a.id);return `<article class="achievement-card ${e?'earned':'locked'}"><div class="achievement-icon">${esc(a.icon||'✦')}</div><div><b>${esc(a.title)}</b><p>${esc(a.description||'')}</p><small>${e?'Получено '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Пока не получено'} · ${a.points} XP</small></div></article>`;}).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div>${all.error||earned.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию.</p>':''}`;
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR COLLECTION</div><h1>Достижения 🏆</h1><p class="muted">Награды открываются за реальные действия в FLAMEXBOT.</p></div><section class="business-card level-card"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ</small><h2>Уровень ${level}</h2></div><strong>${totalXp} XP</strong></div><div class="xp-track"><span style="width:${progress}%"></span></div><small>${progress}/100 XP до следующего уровня</small></section><div class="achievement-grid">${(all.data||[]).map(a=>{const e=got.get(a.id);return `<article class="achievement-card ${e?'earned':'locked'}"><div class="achievement-icon">${esc(a.icon||'✦')}</div><div><b>${esc(a.title)}</b><p>${esc(a.description||'')}</p><small>${e?'Получено '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Пока не получено'} · ${a.points} XP</small></div></article>`;}).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div><section class="leaderboard-panel"><div class="section-heading"><div><div class="eyebrow">FLAME RANKING</div><h3>Таблица лидеров</h3></div></div><div class="leaderboard-list">${(leaderboard.data||[]).map((u,i)=>`<div class="leaderboard-row"><strong>#${i+1}</strong><span><b>${esc(u.display_name||u.username)}</b><small>Уровень ${u.level}</small></span><em>${u.xp} XP</em></div>`).join('')||'<div class="empty-state">Рейтинг появится, когда участники начнут получать XP.</div>'}</div></section>${all.error||earned.error||taskClaims.error||leaderboard.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию или рейтинг.</p>':''}`;
 }
 async function renderNotifications(host) {
   const uid=state.session.user.id;
