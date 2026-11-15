@@ -336,7 +336,7 @@ async function openBusinessChat(id) {
     let storagePath=null;
     let mediaType=null;
     if(file){
-      mediaType=file.type.startsWith('image/')?'photo':file.type.startsWith('video/')?'video':file.type.startsWith('audio/')?'audio':'document';
+      mediaType=file.type.startsWith('image/')?'photo':file.type.startsWith('video/')?'video':file.type==='audio/ogg'?'voice':file.type==='audio/mpeg'||file.type==='audio/mp4'?'audio':'document';
       storagePath=state.session.user.id+'/'+id+'/'+crypto.randomUUID()+'-'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
       const {error:uploadError}=await supabase.storage.from('flamex-business-media').upload(storagePath,file,{contentType:file.type||'application/octet-stream',upsert:false});
       if(uploadError){button.disabled=false;toast('Не удалось загрузить файл: '+uploadError.message);return;}
