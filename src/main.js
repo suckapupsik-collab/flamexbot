@@ -81,8 +81,8 @@ function navItem(page, icon, label) { return `<button class="nav-item ${state.pa
 function renderApp() {
   const p = state.profile || {};
   app.innerHTML = `
-    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Business-чаты')}${navItem('friends','♧','Друзья')}${navItem('streaks','🔥','Огоньки')}${navItem('profile','◉','Профиль')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(p.avatar_url, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
-    <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Главная',messages:'Business-чаты',friends:'Друзья',streaks:'Огоньки',profile:'Профиль',admin:'Админ-панель'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(p.avatar_url,p.username)}</span></div></header>
+    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Business-чаты')}${navItem('friends','♧','Друзья')}${navItem('streaks','🔥','Огоньки')}${navItem('profile','◉','Профиль')}${navItem('achievements','🏆','Достижения')}${navItem('notifications','♧','Уведомления')}${navItem('stats','▥','Статистика')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(p.avatar_url, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
+    <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Главная',messages:'Business-чаты',friends:'Друзья',streaks:'Огоньки',profile:'Профиль',admin:'Админ-панель',achievements:'Достижения',notifications:'Уведомления',stats:'Статистика'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(p.avatar_url,p.username)}</span></div></header>
     <section class="page-content" id="page-content"></section></main></div><div class="toast"></div>`;
   document.querySelectorAll('[data-page]').forEach(btn => btn.addEventListener('click', () => {
     if (state.page === 'messages' && btn.dataset.page !== 'messages') {
@@ -115,6 +115,9 @@ async function loadPage() {
   else if (state.page === 'messages') await renderBusinessMessages(host);
   else if (state.page === 'streaks') await renderStreaks(host);
   else if (state.page === 'profile') await renderProfile(host);
+  else if (state.page === 'achievements') await renderAchievements(host);
+  else if (state.page === 'notifications') await renderNotifications(host);
+  else if (state.page === 'stats') await renderStats(host);
   else if (state.page === 'admin') await renderAdmin(host);
   host.querySelectorAll('[data-go]').forEach(btn => btn.addEventListener('click', () => { state.page = btn.dataset.go; renderApp(); }));
 }
@@ -327,6 +330,40 @@ async function renderProfile(host) {
     const { error } = await supabase.from('profiles').update({username:fd.get('username'),avatar_url:fd.get('avatar_url') || null}).eq('id',state.session.user.id);
     if (error) toast(error.message); else { state.profile = {...p,username:fd.get('username'),avatar_url:fd.get('avatar_url')}; toast('Профиль сохранён'); renderApp(); }
   });
+}
+
+
+async function renderAchievements(host) {
+  const uid=state.session.user.id;
+  const [all,earned]=await Promise.all([
+    supabase.from('achievements').select('id,code,title,description,icon,points').order('points'),
+    supabase.from('user_achievements').select('achievement_id,earned_at').eq('user_id',uid)
+  ]);
+  const got=new Map((earned.data||[]).map(x=>[x.achievement_id,x]));
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR COLLECTION</div><h1>Достижения 🏆</h1><p class="muted">Коллекция наград FLAMEXBOT.</p></div><div class="achievement-grid">${(all.data||[]).map(a=>{const e=got.get(a.id);return `<article class="achievement-card ${e?'earned':'locked'}"><div class="achievement-icon">${esc(a.icon||'✦')}</div><div><b>${esc(a.title)}</b><p>${esc(a.description||'')}</p><small>${e?'Получено '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Пока не получено'} · ${a.points} XP</small></div></article>`;}).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div>${all.error||earned.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию.</p>':''}`;
+}
+async function renderNotifications(host) {
+  const uid=state.session.user.id;
+  const {data,error}=await supabase.from('notifications').select('id,type,title,body,data,created_at,read_at').eq('user_id',uid).order('created_at',{ascending:false}).limit(50);
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ACTIVITY CENTER</div><h1>Уведомления</h1><p class="muted">События, заявки и важные обновления аккаунта.</p></div><div class="notification-list">${(data||[]).map(n=>`<button class="notification-item ${n.read_at?'read':'unread'}" data-notification="${n.id}"><span class="notification-mark">${n.read_at?'✓':'•'}</span><span><b>${esc(n.title)}</b><small>${esc(n.body||'')}</small><time>${new Date(n.created_at).toLocaleString('ru-RU')}</time></span></button>`).join('')||'<div class="empty-state">Новых уведомлений пока нет.</div>'}</div>${error?'<p class="business-warning">Не удалось загрузить уведомления.</p>':''}`;
+  host.querySelectorAll('[data-notification]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const {error:updateError}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('id',btn.dataset.notification).eq('user_id',uid);
+    if(updateError)toast('Не удалось отметить уведомление');else{btn.classList.remove('unread');btn.classList.add('read');btn.querySelector('.notification-mark').textContent='✓';}
+  }));
+}
+async function renderStats(host) {
+  const uid=state.session.user.id;
+  const [friends,streaks,chats,messages,earned,profile]=await Promise.all([
+    supabase.from('friendships').select('*',{count:'exact',head:true}).or(`user_low.eq.${uid},user_high.eq.${uid}`),
+    supabase.from('streaks').select('current_days,best_days').or(`user_low.eq.${uid},user_high.eq.${uid}`),
+    supabase.from('flamexbot_business_chats').select('id',{count:'exact',head:true}).eq('profile_id',uid),
+    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}),
+    supabase.from('user_achievements').select('achievement_id',{count:'exact',head:true}).eq('user_id',uid),
+    supabase.from('profiles').select('created_at,telegram_id').eq('id',uid).maybeSingle()
+  ]);
+  const best=Math.max(0,...(streaks.data||[]).map(s=>s.best_days||0));
+  const current=Math.max(0,...(streaks.data||[]).map(s=>s.current_days||0));
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR FLAME REPORT</div><h1>Статистика</h1><p class="muted">Твоя история активности в FLAMEXBOT.</p></div><div class="stats-grid"><div class="stat-card"><small>ДРУЗЬЯ</small><strong>${friends.count||0}</strong></div><div class="stat-card"><small>BUSINESS-ЧАТЫ</small><strong>${chats.count||0}</strong></div><div class="stat-card"><small>СООБЩЕНИЯ</small><strong>${messages.count||0}</strong></div><div class="stat-card"><small>ТЕКУЩАЯ СЕРИЯ</small><strong>${current} дн.</strong></div><div class="stat-card"><small>ЛУЧШАЯ СЕРИЯ</small><strong>${best} дн.</strong></div><div class="stat-card"><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong></div></div><section class="business-card"><div class="eyebrow">FLAMEX ID</div><h2>${esc(uid.slice(0,8).toUpperCase())}</h2><p class="muted">Уникальный идентификатор твоего пространства FLAMEXBOT.</p><small>В приложении с ${profile.data?.created_at?new Date(profile.data.created_at).toLocaleDateString('ru-RU'):'—'} · Telegram ${profile.data?.telegram_id?'привязан':'не привязан'}</small></section>`;
 }
 
 async function boot(session) {
