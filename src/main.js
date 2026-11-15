@@ -7,7 +7,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, businessConnection: null, isAdmin: false, page: 'home', busy: false, friends: [], requests: [], streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null };
+const state = { session: null, profile: null, businessConnection: null, isAdmin: false, page: 'home', busy: false, friends: [], requests: [], streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, onlineUserIds: [] };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -126,23 +126,31 @@ async function loadPage() {
 
 async function renderFriends(host) {
   const uid = state.session.user.id;
-  const [requests, friends] = await Promise.all([
+  const [requests, friends, activity] = await Promise.all([
     supabase.from('friend_requests').select('*').eq('receiver_id',uid).eq('status','pending'),
-    supabase.from('friendships').select('*').or(`user_low.eq.${uid},user_high.eq.${uid}`)
+    supabase.from('friendships').select('*').or(`user_low.eq.${uid},user_high.eq.${uid}`),
+    supabase.from('flamexbot_activity').select('id,actor_id,event_type,metadata,created_at,read_at').eq('user_id',uid).order('created_at',{ascending:false}).limit(12)
   ]);
   state.requests = requests.data || []; state.friends = friends.data || [];
   const requestIds=state.requests.map(r=>r.sender_id);
-  const {data:requestProfiles}=requestIds.length?await supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url').in('id',requestIds):{data:[]};
-  const requestProfileById=Object.fromEntries((requestProfiles||[]).map(p=>[p.id,p]));
   const friendIds = state.friends.map(f => f.user_low === uid ? f.user_high : f.user_low);
-  const { data: friendProfiles } = friendIds.length ? await supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url').in('id',friendIds) : {data:[]};
-  const profileById = Object.fromEntries((friendProfiles || []).map(profile => [profile.id, profile]));
-  const friendStreaks = friendIds.length ? await supabase.from('streaks').select('user_low,user_high,current_days,best_days,last_activity_date').or(`and(user_low.eq.${uid},user_high.in.(${friendIds.join(',')})),and(user_high.eq.${uid},user_low.in.(${friendIds.join(',')}))`) : {data:[]};
-  const streakByFriend = Object.fromEntries((friendStreaks.data || []).map(streak => [streak.user_low === uid ? streak.user_high : streak.user_low, streak]));
+  const actorIds=[...new Set((activity.data||[]).map(a=>a.actor_id).filter(Boolean))];
+  const allProfileIds=[...new Set([...requestIds,...friendIds,...actorIds])];
+  const {data:profiles}=allProfileIds.length?await supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url').in('id',allProfileIds):{data:[]};
+  const profileById=Object.fromEntries((profiles||[]).map(p=>[p.id,p]));
+  const feedLabels={friend_added:'добавил(а) тебя в друзья',friend_request:'отправил(а) заявку в друзья',streak_milestone:'достиг(ла) нового рубежа огонька',achievement_earned:'получил(а) достижение'};
+  const feed=(activity.data||[]).map(item=>{
+    const actor=profileById[item.actor_id]||{};
+    const name=actor.display_name||actor.username||'Участник FLAMEXBOT';
+    return `<div class="activity-item">${avatar(actor.avatar_url||actor.telegram_photo_url,name,'small')}<div><b>${esc(name)}</b> ${esc(feedLabels[item.event_type]||'совершил(а) событие')}<small>${new Date(item.created_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</small></div>${item.read_at?'':'<i class="activity-new-dot" title="Новое событие"></i>'}</div>`;
+  }).join('');
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">YOUR CIRCLE</div><h1>Друзья</h1><p class="muted">Люди, с которыми горит твой огонёк.</p></div>
     <form class="search-form" id="friend-search"><input name="query" placeholder="Найти пользователя по никнейму" required/><button class="primary">Найти <b>→</b></button></form><div id="search-results"></div>
-    <div class="section-heading"><div><div class="eyebrow">INCOMING</div><h3>Заявки <span class="count-pill">${state.requests.length}</span></h3></div></div><div class="people-list">${state.requests.length ? state.requests.map(r => {const person=requestProfileById[r.sender_id]||{};return `<div class="person-row">${avatar(person.avatar_url||person.telegram_photo_url,person.display_name||person.username)}<div class="person-info"><b>${esc(person.display_name||person.username||'Пользователь')}</b><small>${person.username?'@'+esc(person.username):'Заявка в друзья'}</small></div><button class="primary small" data-accept="${r.id}">Принять</button></div>`;}).join('') : '<div class="empty-state">Новых заявок пока нет.</div>'}</div>
-    <div class="section-heading"><div><div class="eyebrow">YOUR PEOPLE</div><h3>Мои друзья</h3></div></div><div class="people-list">${state.friends.length ? state.friends.map(f => { const friendId = f.user_low === uid ? f.user_high : f.user_low; const person = profileById[friendId] || {}; const streak = streakByFriend[friendId]; const days = streak?.current_days || 0; const since = f.created_at ? new Date(f.created_at).toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric'}) : ''; return `<div class="person-row friend-detail-row">${avatar(person.avatar_url||person.telegram_photo_url,person.display_name||person.username)}<div class="person-info"><b>${esc(person.display_name||person.username || 'Друг')}</b><small>${person.username?'@'+esc(person.username)+' · ':''}${since?'в друзьях с '+since:'Ваш друг'}</small><span class="friend-streak ${days?'active':''}">${days?'🔥 Огонёк · '+days+' дн.':'◇ Огонёк ещё не начался'}</span></div><span class="business-only-tag">Business</span></div>`; }).join('') : '<div class="empty-state">Здесь появятся ваши друзья после принятия заявки.</div>'}</div>`;
+    <div class="section-heading"><div><div class="eyebrow">INCOMING</div><h3>Заявки <span class="count-pill">${state.requests.length}</span></h3></div></div><div class="people-list">${state.requests.length ? state.requests.map(r => {const person=profileById[r.sender_id]||{};return `<div class="person-row">${avatar(person.avatar_url||person.telegram_photo_url,person.display_name||person.username)}<div class="person-info"><b>${esc(person.display_name||person.username||'Пользователь')}</b><small>${person.username?'@'+esc(person.username):'Заявка в друзья'}</small></div><button class="primary small" data-accept="${r.id}">Принять</button></div>`;}).join('') : '<div class="empty-state">Новых заявок пока нет.</div>'}</div>
+    <div class="section-heading"><div><div class="eyebrow">YOUR PEOPLE</div><h3>Мои друзья <span class="count-pill">${friendIds.length}</span></h3></div><span class="online-count">${friendIds.filter(id=>state.onlineUserIds.includes(id)).length} онлайн</span></div><div class="people-list">${state.friends.length ? state.friends.map(f => { const friendId = f.user_low === uid ? f.user_high : f.user_low; const person = profileById[friendId] || {}; const online=state.onlineUserIds.includes(friendId); return `<div class="person-row friend-person-row">${avatar(person.avatar_url||person.telegram_photo_url,person.display_name||person.username)}<div class="person-info"><b>${esc(person.display_name||person.username || 'Друг')}</b><small>${online?'<span class="online-label">● В сети</span>':'<span class="offline-label">Не в сети</span>'}</small></div><span class="business-only-tag">Переписка через Business</span></div>`; }).join('') : '<div class="empty-state">Здесь появятся ваши друзья после принятия заявки.</div>'}</div>
+    <div class="section-heading"><div><div class="eyebrow">FLAME FEED</div><h3>Хроника событий</h3></div></div><div class="activity-feed">${feed||'<div class="empty-state">Пока тихо. Новые события появятся, когда вы добавите друзей.</div>'}</div>`;
+  const unreadIds=(activity.data||[]).filter(a=>!a.read_at).map(a=>a.id);
+  if(unreadIds.length) await supabase.from('flamexbot_activity').update({read_at:new Date().toISOString()}).in('id',unreadIds);
   document.querySelector('#friend-search').addEventListener('submit', async e => {
     e.preventDefault(); const q = new FormData(e.currentTarget).get('query').trim();
     const { data, error } = await supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url').ilike('username',`%${q}%`).neq('id',uid).limit(8);
@@ -531,9 +539,36 @@ async function renderStats(host) {
   host.querySelector('#copy-flame-id')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(uid);toast('FLAMEX ID скопирован');}catch{toast('Не удалось скопировать ID');}});
 }
 
+async function startPresence(session) {
+  if (state.presenceChannel) { await supabase.removeChannel(state.presenceChannel); state.presenceChannel=null; }
+  state.onlineUserIds=[];
+  if (!session?.user?.id) return;
+  const uid=session.user.id;
+  const channel=supabase.channel('flamexbot-presence',{config:{presence:{key:uid}}});
+  const refresh=()=>{
+    const presence=channel.presenceState();
+    state.onlineUserIds=[...new Set(Object.values(presence).flat().filter(meta=>meta.online!==false).map(meta=>meta.user_id).filter(id=>id&&id!==uid))];
+    const host=document.querySelector('#page-content');
+    if(state.page==='friends'&&host) renderFriends(host);
+  };
+  channel.on('presence',{event:'sync'},refresh);
+  channel.on('presence',{event:'join'},refresh);
+  channel.on('presence',{event:'leave'},refresh);
+  state.presenceChannel=channel;
+  channel.subscribe(async status=>{
+    if(status==='SUBSCRIBED') {
+      await channel.track({user_id:uid,online:!document.hidden,seen_at:new Date().toISOString()});
+    }
+  });
+}
+document.addEventListener('visibilitychange',()=>{
+  const channel=state.presenceChannel;
+  if(channel&&state.session?.user?.id) channel.track({user_id:state.session.user.id,online:!document.hidden,seen_at:new Date().toISOString()});
+});
+
 async function boot(session) {
   state.session = session;
-  if (!session) { renderAuth(); return; }
+  if (!session) { if(state.presenceChannel){supabase.removeChannel(state.presenceChannel);state.presenceChannel=null;} state.onlineUserIds=[]; renderAuth(); return; }
   const { error: achievementSyncError } = await supabase.rpc('sync_flamexbot_achievements');
   if (achievementSyncError) console.warn('Achievement sync:', achievementSyncError.message);
   const { data, error } = await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
@@ -542,6 +577,7 @@ async function boot(session) {
   if (error) console.warn('Profile load:', error.message);
   const { data: adminAccess, error: adminError } = await supabase.rpc('is_flamexbot_admin');
   state.isAdmin = !adminError && adminAccess === true;
+  await startPresence(session);
   renderApp();
 }
 
