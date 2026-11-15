@@ -68,16 +68,16 @@ async function loadPage() {
   const p = state.profile || {};
   if (state.page === 'home') {
     const [friends, streaks, unread] = await Promise.all([
-      supabase.from('friendships').select('id,user_a,user_b,created_at').or(`user_a.eq.${state.session.user.id},user_b.eq.${state.session.user.id}`).limit(6),
-      supabase.from('streaks').select('*').or(`user_a.eq.${state.session.user.id},user_b.eq.${state.session.user.id}`).order('current_streak',{ascending:false}).limit(5),
-      supabase.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',state.session.user.id).eq('is_read',false)
+      supabase.from('friendships').select('user_low,user_high,created_at').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).limit(6),
+      supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false}).limit(5),
+      supabase.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',state.session.user.id).is('read_at',null)
     ]);
     state.streaks = streaks.data || [];
     host.innerHTML = `<div class="welcome-row"><div><div class="eyebrow">ТВОЁ ПРОСТРАНСТВО</div><h1>Привет, ${esc(p.username || 'друг')} <span>✦</span></h1><p class="muted">Каждый день — ещё один повод оставаться на связи.</p></div><div class="date-chip">${new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'long'})}</div></div>
       <div class="hero-card"><div class="hero-copy"><div class="eyebrow">KEEP THE FLAME ALIVE</div><h2>Один день.<br/><em>Одно сообщение.</em></h2><p>Обменивайтесь сообщениями каждый день, чтобы ваш общий огонёк продолжал гореть.</p><button class="primary" data-go="friends">Найти друзей <b>→</b></button></div><div class="hero-fire">🔥<span class="fire-glow"></span></div><div class="hero-watermark">FLAME</div></div>
       <div class="stats-grid"><div class="stat-card"><span class="stat-icon">♧</span><small>ДРУЗЬЯ</small><strong>${friends.data?.length || 0}</strong><span class="stat-foot">Твои связи</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">✉</span><small>УВЕДОМЛЕНИЯ</small><strong>${unread.count || 0}</strong><span class="stat-foot">Непрочитанные</span></div></div>
       <div class="section-heading"><div><div class="eyebrow">YOUR CONNECTIONS</div><h3>Твои огоньки</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
-      <div class="streak-list">${state.streaks.length ? state.streaks.map(s => `<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${s.current_streak || 0} <small>дн.</small></strong></div>`).join('') : '<div class="empty-state">Пока нет огоньков. Добавь друга и отправьте друг другу сообщения сегодня.</div>'}</div>`;
+      <div class="streak-list">${state.streaks.length ? state.streaks.map(s => `<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${s.current_days || 0} <small>дн.</small></strong></div>`).join('') : '<div class="empty-state">Пока нет огоньков. Добавь друга и отправьте друг другу сообщения сегодня.</div>'}</div>`;
   } else if (state.page === 'friends') await renderFriends(host);
   else if (state.page === 'messages') await renderMessages(host);
   else if (state.page === 'streaks') await renderStreaks(host);
@@ -89,7 +89,7 @@ async function renderFriends(host) {
   const uid = state.session.user.id;
   const [requests, friends] = await Promise.all([
     supabase.from('friend_requests').select('*').eq('receiver_id',uid).eq('status','pending'),
-    supabase.from('friendships').select('*').or(`user_a.eq.${uid},user_b.eq.${uid}`)
+    supabase.from('friendships').select('*').or(`user_low.eq.${uid},user_high.eq.${uid}`)
   ]);
   state.requests = requests.data || []; state.friends = friends.data || [];
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">YOUR CIRCLE</div><h1>Друзья</h1><p class="muted">Люди, с которыми горит твой огонёк.</p></div>
@@ -136,9 +136,9 @@ async function openChat(id) {
 }
 
 async function renderStreaks(host) {
-  const { data, error } = await supabase.from('streaks').select('*').or(`user_a.eq.${state.session.user.id},user_b.eq.${state.session.user.id}`).order('current_streak',{ascending:false});
+  const { data, error } = await supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false});
   state.streaks = data || [];
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Серия сохраняется, когда оба человека отправили сообщение за день.</p></div><div class="streak-list large">${error ? esc(error.message) : state.streaks.length ? state.streaks.map(s => `<div class="streak-card"><div class="streak-symbol">🔥</div><div><div class="eyebrow">ОБЩАЯ СЕРИЯ</div><h3>${s.current_streak || 0} дней</h3><p class="muted">Лучшая серия: ${s.longest_streak || 0} дней</p></div></div>`).join('') : '<div class="empty-state">У тебя пока нет активных серий. Найди друга и начните переписываться каждый день!</div>'}</div>`;
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Серия сохраняется, когда оба человека отправили сообщение за день.</p></div><div class="streak-list large">${error ? esc(error.message) : state.streaks.length ? state.streaks.map(s => `<div class="streak-card"><div class="streak-symbol">🔥</div><div><div class="eyebrow">ОБЩАЯ СЕРИЯ</div><h3>${s.current_streak || 0} дней</h3><p class="muted">Лучшая серия: ${s.best_days || 0} дней</p></div></div>`).join('') : '<div class="empty-state">У тебя пока нет активных серий. Найди друга и начните переписываться каждый день!</div>'}</div>`;
 }
 
 function renderProfile(host) {
