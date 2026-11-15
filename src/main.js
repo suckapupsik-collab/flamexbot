@@ -7,7 +7,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, page: 'home', busy: false, friends: [], requests: [], streaks: [], conversations: [], activeConversation: null, messages: [] };
+const state = { session: null, profile: null, businessConnection: null, page: 'home', busy: false, friends: [], requests: [], streaks: [], conversations: [], activeConversation: null, messages: [] };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -107,7 +107,7 @@ async function loadPage() {
   } else if (state.page === 'friends') await renderFriends(host);
   else if (state.page === 'messages') await renderMessages(host);
   else if (state.page === 'streaks') await renderStreaks(host);
-  else if (state.page === 'profile') renderProfile(host);
+  else if (state.page === 'profile') await renderProfile(host);
   host.querySelectorAll('[data-go]').forEach(btn => btn.addEventListener('click', () => { state.page = btn.dataset.go; renderApp(); }));
 }
 
@@ -234,10 +234,47 @@ async function renderStreaks(host) {
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Серия сохраняется, когда оба человека отправили сообщение за день.</p></div><div class="streak-list large">${error ? esc(error.message) : state.streaks.length ? state.streaks.map(s => `<div class="streak-card"><div class="streak-symbol">🔥</div><div><div class="eyebrow">ОБЩАЯ СЕРИЯ</div><h3>${s.current_days || 0} дней</h3><p class="muted">Лучшая серия: ${s.best_days || 0} дней</p></div></div>`).join('') : '<div class="empty-state">У тебя пока нет активных серий. Найди друга и начните переписываться каждый день!</div>'}</div>`;
 }
 
-function renderProfile(host) {
+async function renderProfile(host) {
   const p = state.profile || {};
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">YOUR IDENTITY</div><h1>Профиль</h1><p class="muted">Настрой свой профиль FLAMEXBOT.</p></div><form class="profile-card" id="profile-form">${avatar(p.avatar_url,p.username,'avatar-xl')}<label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label><label>Ссылка на аватар<input name="avatar_url" type="url" value="${esc(p.avatar_url || '')}" placeholder="https://…"/></label><div class="profile-id">ID аккаунта <code>${esc(state.session.user.id)}</code></div><div class="telegram-profile"><div><b>Telegram</b><small>${p.telegram_id ? (p.telegram_username ? '@' + esc(p.telegram_username) : 'Аккаунт привязан') : 'Не привязан'}</small></div><button class="outline small" type="button" data-telegram-link>${p.telegram_id ? 'Обновить связь' : 'Привязать Telegram'}</button></div><button class="primary">Сохранить изменения <b>→</b></button></form>`;
+  const { data: businessConnection, error: businessError } = await supabase
+    .from('flamexbot_business_connections').select('is_enabled,rights,connected_at,updated_at')
+    .eq('profile_id', state.session.user.id).maybeSingle();
+  state.businessConnection = businessConnection || null;
+  const businessConnected = Boolean(businessConnection?.is_enabled);
+  const rights = businessConnection?.rights || {};
+  const grantedRights = Object.entries(rights).filter(([, value]) => value === true).map(([key]) => key);
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">YOUR IDENTITY</div><h1>Профиль</h1><p class="muted">Настрой свой профиль FLAMEXBOT.</p></div>
+    <form class="profile-card" id="profile-form">${avatar(p.avatar_url,p.username,'avatar-xl')}
+      <label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label>
+      <label>Ссылка на аватар<input name="avatar_url" type="url" value="${esc(p.avatar_url || '')}" placeholder="https://…"/></label>
+      <div class="profile-id">ID аккаунта <code>${esc(state.session.user.id)}</code></div>
+      <div class="telegram-profile"><div><b>Telegram</b><small>${p.telegram_id ? (p.telegram_username ? '@' + esc(p.telegram_username) : 'Аккаунт привязан') : 'Не привязан'}</small></div><button class="outline small" type="button" data-telegram-link>${p.telegram_id ? 'Обновить связь' : 'Привязать Telegram'}</button></div>
+      <button class="primary">Сохранить изменения <b>→</b></button>
+    </form>
+    <section class="business-card">
+      <div class="business-card-head"><div><div class="eyebrow">TELEGRAM INTEGRATION</div><h2>Telegram Business</h2><p class="muted">Подключи бизнес-аккаунт, чтобы FLAMEXBOT мог работать с разрешёнными тобой чатами.</p></div><span class="business-status ${businessConnected ? 'is-connected' : ''}">${businessConnected ? 'Подключено' : 'Не подключено'}</span></div>
+      <div class="business-steps">
+        <div><b>1.</b><span>Открой <strong>@BotFather</strong> и включи Business Mode для бота FLAMEXBOT.</span></div>
+        <div><b>2.</b><span>В Telegram открой <strong>Настройки → Telegram Business → Чат-боты</strong>.</span></div>
+        <div><b>3.</b><span>Добавь бота FLAMEXBOT и самостоятельно выбери, к каким чатам и сообщениям разрешить доступ.</span></div>
+      </div>
+      <div class="business-connection-info">
+        ${businessConnected ? `<b>Бизнес-аккаунт связан</b><small>Подключено: ${businessConnection.connected_at ? new Date(businessConnection.connected_at).toLocaleString('ru-RU') : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small>` : '<b>Ожидаем подключения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
+      </div>
+      ${businessError ? '<p class="business-warning">Не удалось получить статус. Проверь подключение и обнови страницу.</p>' : ''}
+      <button class="outline small" type="button" id="refresh-business">↻ Проверить подключение</button>
+      <p class="business-note">FLAMEXBOT не может включить Business Mode или выдать себе права вместо тебя. Управляй разрешениями и отключением в настройках Telegram.</p>
+    </section>`;
   document.querySelector('[data-telegram-link]').addEventListener('click', () => telegramAuthFlow({ linkCurrent: true }));
+  document.querySelector('#refresh-business').addEventListener('click', async e => {
+    e.currentTarget.disabled = true;
+    const { data, error } = await supabase.from('flamexbot_business_connections')
+      .select('is_enabled,rights,connected_at,updated_at').eq('profile_id', state.session.user.id).maybeSingle();
+    state.businessConnection = data || null;
+    if (error) toast('Не удалось обновить статус');
+    else { toast(data?.is_enabled ? 'Telegram Business подключён' : 'Подключение пока не найдено'); renderProfile(host); }
+    e.currentTarget.disabled = false;
+  });
   document.querySelector('#profile-form').addEventListener('submit', async e => {
     e.preventDefault(); const fd = new FormData(e.currentTarget);
     const { error } = await supabase.from('profiles').update({username:fd.get('username'),avatar_url:fd.get('avatar_url') || null}).eq('id',state.session.user.id);
