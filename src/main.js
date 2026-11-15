@@ -178,7 +178,7 @@ function renderBusinessChatChoices(chats) {
   return filtered.length ? filtered.map(c => {
     const name = [c.first_name,c.last_name].filter(Boolean).join(' ') || (c.username ? '@'+c.username : 'Telegram-пользователь');
     const active = state.activeBusinessChat === c.id;
-    return `<div class="business-chat-item"><button class="chat-choice ${active ? 'active' : ''}" data-business-chat="${c.id}">${avatar(c.photo_url,name)}<span><b>${c.is_pinned?'📌 ':''}${c.is_favorite?'★ ':''}${esc(name)}</b><small>${c.username ? '@'+esc(c.username)+' · ' : ''}${c.unread_count?'Непрочитано: '+c.unread_count+' · ':''}${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Новый чат'}</small></span></button><button class="chat-pref" data-favorite="${c.id}" title="Избранное">${c.is_favorite?'★':'☆'}</button><button class="chat-pref" data-pin="${c.id}" title="Закрепить">${c.is_pinned?'📌':'⌖'}</button></div>`;
+    return `<div class="business-chat-item"><button class="chat-choice ${active ? 'active' : ''}" data-business-chat="${c.id}">${avatar(c.photo_url,name)}<span class="chat-choice-copy"><b>${c.is_pinned?'📌 ':''}${c.is_favorite?'★ ':''}${esc(name)}</b><small>${c.username ? '@'+esc(c.username)+' · ' : ''}${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Новый чат'}</small></span>${c.unread_count?'<i class="chat-unread-badge">'+(c.unread_count>99?'99+':c.unread_count)+'</i>':''}</button><button class="chat-pref" data-favorite="${c.id}" title="Избранное">${c.is_favorite?'★':'☆'}</button><button class="chat-pref" data-pin="${c.id}" title="Закрепить">${c.is_pinned?'📌':'⌖'}</button></div>`;
   }).join('') : '<div class="empty-state">Чаты не найдены.</div>';
 }
 
@@ -291,7 +291,7 @@ async function refreshBusinessMessages(chatId) {
   state.businessMessages = data || [];
   const latestInbound=state.businessMessages.filter(m=>m.direction==='inbound').reduce((latest,m)=>!latest||new Date(m.created_at)>new Date(latest)?m.created_at:latest,null);
   const openChat=state.businessChats.find(chat=>chat.id===chatId);
-  if(latestInbound&&(!openChat?.last_read_at||new Date(latestInbound)>new Date(openChat.last_read_at))){
+  if(!document.hidden&&latestInbound&&(!openChat?.last_read_at||new Date(latestInbound)>new Date(openChat.last_read_at))){
     const readAt=new Date().toISOString();
     const {error:readError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:chatId,last_read_at:readAt},{onConflict:'profile_id,business_chat_id'});
     if(!readError){if(openChat){openChat.last_read_at=readAt;openChat.unread_count=0;}const inbox=document.querySelector('#page-content');if(inbox?.querySelector('.business-inbox'))await refreshBusinessChatList(inbox);}
