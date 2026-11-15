@@ -92,10 +92,13 @@ async function renderFriends(host) {
     supabase.from('friendships').select('*').or(`user_low.eq.${uid},user_high.eq.${uid}`)
   ]);
   state.requests = requests.data || []; state.friends = friends.data || [];
+  const friendIds = state.friends.map(f => f.user_low === uid ? f.user_high : f.user_low);
+  const { data: friendProfiles } = friendIds.length ? await supabase.from('profiles').select('id,username,avatar_url').in('id',friendIds) : {data:[]};
+  const profileById = Object.fromEntries((friendProfiles || []).map(profile => [profile.id, profile]));
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">YOUR CIRCLE</div><h1>Друзья</h1><p class="muted">Люди, с которыми горит твой огонёк.</p></div>
-    <form class="search-form" id="friend-search"><input name="query" placeholder="Найти пользователя по нику или ID" required/><button class="primary">Найти <b>→</b></button></form><div id="search-results"></div>
+    <form class="search-form" id="friend-search"><input name="query" placeholder="Найти пользователя по никнейму" required/><button class="primary">Найти <b>→</b></button></form><div id="search-results"></div>
     <div class="section-heading"><div><div class="eyebrow">INCOMING</div><h3>Заявки <span class="count-pill">${state.requests.length}</span></h3></div></div><div class="people-list">${state.requests.length ? state.requests.map(r => `<div class="person-row"><div class="person-avatar">${avatar('', 'U')}</div><div class="person-info"><b>Запрос в друзья</b><small>${esc(r.id)}</small></div><button class="primary small" data-accept="${r.id}">Принять</button></div>`).join('') : '<div class="empty-state">Новых заявок пока нет.</div>'}</div>
-    <div class="section-heading"><div><div class="eyebrow">YOUR PEOPLE</div><h3>Мои друзья</h3></div></div><div class="people-list">${state.friends.length ? state.friends.map(f => `<div class="person-row"><span class="avatar avatar-fallback">F</span><div class="person-info"><b>Друг</b><small>Ваш общий огонёк может начаться сегодня</small></div></div>`).join('') : '<div class="empty-state">Здесь появятся ваши друзья после принятия заявки.</div>'}</div>`;
+    <div class="section-heading"><div><div class="eyebrow">YOUR PEOPLE</div><h3>Мои друзья</h3></div></div><div class="people-list">${state.friends.length ? state.friends.map(f => { const friendId = f.user_low === uid ? f.user_high : f.user_low; const person = profileById[friendId] || {}; return `<div class="person-row">${avatar(person.avatar_url,person.username)}<div class="person-info"><b>${esc(person.username || 'Друг')}</b><small>Ваш общий огонёк может начаться сегодня</small></div><button class="outline small" data-chat-user="${friendId}">Написать</button></div>`; }).join('') : '<div class="empty-state">Здесь появятся ваши друзья после принятия заявки.</div>'}</div>`;
   document.querySelector('#friend-search').addEventListener('submit', async e => {
     e.preventDefault(); const q = new FormData(e.currentTarget).get('query').trim();
     const { data, error } = await supabase.from('profiles').select('id,username,avatar_url').ilike('username',`%${q}%`).neq('id',uid).limit(8);
@@ -107,8 +110,14 @@ async function renderFriends(host) {
     }));
   });
   host.querySelectorAll('[data-accept]').forEach(btn => btn.addEventListener('click', async () => {
-    const { error } = await supabase.from('friend_requests').update({status:'accepted'}).eq('id',btn.dataset.accept);
+    const { error } = await supabase.from('friend_requests').update({status:'accepted',responded_at:new Date().toISOString()}).eq('id',btn.dataset.accept);
     toast(error ? error.message : 'Заявка принята'); renderFriends(host);
+  }));
+  host.querySelectorAll('[data-chat-user]').forEach(btn => btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const { data, error } = await supabase.rpc('create_direct_conversation',{target_user_id:btn.dataset.chatUser});
+    if (error) { toast(error.message); btn.disabled = false; return; }
+    state.page = 'messages'; renderApp();
   }));
 }
 
@@ -138,7 +147,7 @@ async function openChat(id) {
 async function renderStreaks(host) {
   const { data, error } = await supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false});
   state.streaks = data || [];
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Серия сохраняется, когда оба человека отправили сообщение за день.</p></div><div class="streak-list large">${error ? esc(error.message) : state.streaks.length ? state.streaks.map(s => `<div class="streak-card"><div class="streak-symbol">🔥</div><div><div class="eyebrow">ОБЩАЯ СЕРИЯ</div><h3>${s.current_streak || 0} дней</h3><p class="muted">Лучшая серия: ${s.best_days || 0} дней</p></div></div>`).join('') : '<div class="empty-state">У тебя пока нет активных серий. Найди друга и начните переписываться каждый день!</div>'}</div>`;
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Серия сохраняется, когда оба человека отправили сообщение за день.</p></div><div class="streak-list large">${error ? esc(error.message) : state.streaks.length ? state.streaks.map(s => `<div class="streak-card"><div class="streak-symbol">🔥</div><div><div class="eyebrow">ОБЩАЯ СЕРИЯ</div><h3>${s.current_days || 0} дней</h3><p class="muted">Лучшая серия: ${s.best_days || 0} дней</p></div></div>`).join('') : '<div class="empty-state">У тебя пока нет активных серий. Найди друга и начните переписываться каждый день!</div>'}</div>`;
 }
 
 function renderProfile(host) {
