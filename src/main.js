@@ -7,7 +7,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, businessConnection: null, page: 'home', busy: false, friends: [], requests: [], streaks: [], conversations: [], activeConversation: null, messages: [] };
+const state = { session: null, profile: null, businessConnection: null, isAdmin: false, page: 'home', busy: false, friends: [], requests: [], streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -81,8 +81,8 @@ function navItem(page, icon, label) { return `<button class="nav-item ${state.pa
 function renderApp() {
   const p = state.profile || {};
   app.innerHTML = `
-    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Сообщения')}${navItem('friends','♧','Друзья')}${navItem('streaks','🔥','Огоньки')}${navItem('profile','◉','Профиль')}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(p.avatar_url, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
-    <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Главная',messages:'Сообщения',friends:'Друзья',streaks:'Огоньки',profile:'Профиль'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(p.avatar_url,p.username)}</span></div></header>
+    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Business-чаты')}${navItem('friends','♧','Друзья')}${navItem('streaks','🔥','Огоньки')}${navItem('profile','◉','Профиль')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(p.avatar_url, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
+    <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Главная',messages:'Business-чаты',friends:'Друзья',streaks:'Огоньки',profile:'Профиль',admin:'Админ-панель'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(p.avatar_url,p.username)}</span></div></header>
     <section class="page-content" id="page-content"></section></main></div><div class="toast"></div>`;
   document.querySelectorAll('[data-page]').forEach(btn => btn.addEventListener('click', () => { state.page = btn.dataset.page; renderApp(); loadPage(); }));
   document.querySelector('#logout').addEventListener('click', async () => { if (confirm('Выйти из аккаунта?')) await supabase.auth.signOut(); });
@@ -105,9 +105,10 @@ async function loadPage() {
       <div class="section-heading"><div><div class="eyebrow">YOUR CONNECTIONS</div><h3>Твои огоньки</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
       <div class="streak-list">${state.streaks.length ? state.streaks.map(s => `<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${s.current_days || 0} <small>дн.</small></strong></div>`).join('') : '<div class="empty-state">Пока нет огоньков. Добавь друга и отправьте друг другу сообщения сегодня.</div>'}</div>`;
   } else if (state.page === 'friends') await renderFriends(host);
-  else if (state.page === 'messages') await renderMessages(host);
+  else if (state.page === 'messages') await renderBusinessMessages(host);
   else if (state.page === 'streaks') await renderStreaks(host);
   else if (state.page === 'profile') await renderProfile(host);
+  else if (state.page === 'admin') await renderAdmin(host);
   host.querySelectorAll('[data-go]').forEach(btn => btn.addEventListener('click', () => { state.page = btn.dataset.go; renderApp(); }));
 }
 
@@ -124,7 +125,7 @@ async function renderFriends(host) {
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">YOUR CIRCLE</div><h1>Друзья</h1><p class="muted">Люди, с которыми горит твой огонёк.</p></div>
     <form class="search-form" id="friend-search"><input name="query" placeholder="Найти пользователя по никнейму" required/><button class="primary">Найти <b>→</b></button></form><div id="search-results"></div>
     <div class="section-heading"><div><div class="eyebrow">INCOMING</div><h3>Заявки <span class="count-pill">${state.requests.length}</span></h3></div></div><div class="people-list">${state.requests.length ? state.requests.map(r => `<div class="person-row"><div class="person-avatar">${avatar('', 'U')}</div><div class="person-info"><b>Запрос в друзья</b><small>${esc(r.id)}</small></div><button class="primary small" data-accept="${r.id}">Принять</button></div>`).join('') : '<div class="empty-state">Новых заявок пока нет.</div>'}</div>
-    <div class="section-heading"><div><div class="eyebrow">YOUR PEOPLE</div><h3>Мои друзья</h3></div></div><div class="people-list">${state.friends.length ? state.friends.map(f => { const friendId = f.user_low === uid ? f.user_high : f.user_low; const person = profileById[friendId] || {}; return `<div class="person-row">${avatar(person.avatar_url,person.username)}<div class="person-info"><b>${esc(person.username || 'Друг')}</b><small>Ваш общий огонёк может начаться сегодня</small></div><button class="outline small" data-chat-user="${friendId}">Написать</button></div>`; }).join('') : '<div class="empty-state">Здесь появятся ваши друзья после принятия заявки.</div>'}</div>`;
+    <div class="section-heading"><div><div class="eyebrow">YOUR PEOPLE</div><h3>Мои друзья</h3></div></div><div class="people-list">${state.friends.length ? state.friends.map(f => { const friendId = f.user_low === uid ? f.user_high : f.user_low; const person = profileById[friendId] || {}; return `<div class="person-row">${avatar(person.avatar_url,person.username)}<div class="person-info"><b>${esc(person.username || 'Друг')}</b><small>Ваш общий огонёк может начаться сегодня</small></div><span class="business-only-tag">Переписка через Business</span></div>`; }).join('') : '<div class="empty-state">Здесь появятся ваши друзья после принятия заявки.</div>'}</div>`;
   document.querySelector('#friend-search').addEventListener('submit', async e => {
     e.preventDefault(); const q = new FormData(e.currentTarget).get('query').trim();
     const { data, error } = await supabase.from('profiles').select('id,username,avatar_url').ilike('username',`%${q}%`).neq('id',uid).limit(8);
@@ -139,95 +140,99 @@ async function renderFriends(host) {
     const { error } = await supabase.from('friend_requests').update({status:'accepted',responded_at:new Date().toISOString()}).eq('id',btn.dataset.accept);
     toast(error ? error.message : 'Заявка принята'); renderFriends(host);
   }));
-  host.querySelectorAll('[data-chat-user]').forEach(btn => btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    const { data, error } = await supabase.rpc('create_direct_conversation',{target_user_id:btn.dataset.chatUser});
-    if (error) { toast(error.message); btn.disabled = false; return; }
-    state.page = 'messages'; renderApp();
-  }));
 }
 
-async function renderMessages(host) {
+async function renderBusinessMessages(host) {
   const uid = state.session.user.id;
-  const { data: memberships, error: memberError } = await supabase.from('conversation_members').select('conversation_id').eq('user_id',uid);
-  if (memberError) { host.innerHTML = `<div class="empty-state">${esc(memberError.message)}</div>`; return; }
-  const ids = (memberships || []).map(x => x.conversation_id);
-  const { data: conversations, error } = ids.length ? await supabase.from('conversations').select('*').in('id',ids).order('last_message_at',{ascending:false}) : {data:[],error:null};
-  if (error) { host.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; return; }
-  state.conversations = conversations || [];
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">STAY IN TOUCH</div><h1>Сообщения</h1><p class="muted">Личные разговоры и обмен фотографиями и видео.</p></div><div class="chat-layout"><aside class="chat-list">${state.conversations.length ? state.conversations.map(c => `<button class="chat-choice" data-chat="${c.id}"><span class="avatar avatar-fallback">🔥</span><span><b>Личный чат</b><small>${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Начать разговор'}</small></span></button>`).join('') : '<div class="empty-state">Пока нет чатов. Добавь друга и нажми «Написать» в его профиле.</div>'}</aside><section class="chat-window" id="chat-window"><div class="chat-placeholder"><span>✉</span><b>Твои разговоры начинаются здесь</b><small>Выбери чат слева.</small></div></section></div>`;
-  host.querySelectorAll('[data-chat]').forEach(btn => btn.addEventListener('click', () => openChat(btn.dataset.chat)));
-}
-
-async function renderMessageBubble(m) {
-  let media = '';
-  if (m.media_url) {
-    const { data } = await supabase.storage.from('chat-media').createSignedUrl(m.media_url, 3600);
-    if (data?.signedUrl) {
-      media = m.message_type === 'video'
-        ? `<video class="chat-media" controls preload="metadata" src="${esc(data.signedUrl)}"></video>`
-        : `<a class="media-link" href="${esc(data.signedUrl)}" target="_blank" rel="noopener"><img class="chat-media" loading="lazy" src="${esc(data.signedUrl)}" alt="Вложение"/></a>`;
-    } else media = '<small class="media-unavailable">Вложение недоступно</small>';
+  const { data: chats, error } = await supabase.from('flamexbot_business_chats')
+    .select('id,telegram_chat_id,telegram_user_id,username,first_name,last_name,last_message_at,business_connection_id')
+    .eq('profile_id', uid).order('last_message_at', { ascending: false }).limit(100);
+  if (error) {
+    host.innerHTML = `<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS</div><h1>Business-чаты</h1></div><div class="empty-state">${esc(error.message)}</div>`;
+    return;
   }
-  return `<div class="bubble ${m.sender_id === state.session.user.id ? 'mine' : ''}">${m.content ? `<div>${esc(m.content)}</div>` : ''}${media}<small>${new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small></div>`;
+  state.businessChats = chats || [];
+  const { data: connection } = await supabase.from('flamexbot_business_connections')
+    .select('is_enabled,rights').eq('profile_id', uid).maybeSingle();
+  const connected = Boolean(connection?.is_enabled);
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS INBOX</div><h1>Business-чаты</h1><p class="muted">Все переписки приходят из Telegram Business. Ответы отправляются от имени твоего Telegram-аккаунта.</p></div>
+    <div class="business-inbox-status ${connected ? 'online' : ''}"><span></span><div><b>${connected ? 'Бизнес-бот подключён' : 'Бизнес-бот не подключён'}</b><small>${connected ? 'Входящие чаты синхронизируются через Telegram.' : 'Подключи FLAMEXBOT в Telegram → Настройки → Telegram Business → Чат-боты.'}</small></div></div>
+    <div class="chat-layout business-inbox"><aside class="chat-list">${state.businessChats.length ? state.businessChats.map(c => {
+      const name = [c.first_name,c.last_name].filter(Boolean).join(' ') || (c.username ? '@'+c.username : 'Telegram-пользователь');
+      return `<button class="chat-choice" data-business-chat="${c.id}"><span class="avatar avatar-fallback">✈</span><span><b>${esc(name)}</b><small>${c.username ? '@'+esc(c.username)+' · ' : ''}${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Новый чат'}</small></span></button>`;
+    }).join('') : '<div class="empty-state">Пока нет входящих переписок. Когда кто-нибудь напишет на подключённый Telegram Business-аккаунт, чат появится здесь.</div>'}</aside>
+    <section class="chat-window" id="business-chat-window"><div class="chat-placeholder"><span>✈</span><b>Твои Business-переписки</b><small>Выбери чат слева.</small></div></section></div>`;
+  host.querySelectorAll('[data-business-chat]').forEach(btn => btn.addEventListener('click', () => openBusinessChat(btn.dataset.businessChat)));
 }
 
-async function refreshChatMessages(id) {
-  if (state.activeConversation !== id) return;
-  const list = document.querySelector('#message-list');
+function renderBusinessBubble(message) {
+  const mine = message.direction === 'outbound';
+  const content = message.deleted_at ? 'Сообщение удалено в Telegram' : (message.content || '');
+  const media = message.message_type && message.message_type !== 'text'
+    ? `<div class="business-media-note">Вложение: ${esc(message.message_type)}${message.media_file_id ? ' · файл получен от Telegram' : ''}</div>` : '';
+  return `<div class="bubble ${mine ? 'mine' : ''}">${content ? `<div>${esc(content)}</div>` : ''}${media}<small>${new Date(message.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small></div>`;
+}
+
+async function refreshBusinessMessages(chatId) {
+  if (state.activeBusinessChat !== chatId) return;
+  const list = document.querySelector('#business-message-list');
   if (!list) return;
-  const { data: messages, error } = await supabase.from('messages').select('*').eq('conversation_id',id).order('created_at',{ascending:true}).limit(100);
-  if (state.activeConversation !== id) return;
+  const { data, error } = await supabase.from('flamexbot_business_messages')
+    .select('id,telegram_message_id,direction,content,message_type,media_file_id,created_at,deleted_at')
+    .eq('business_chat_id', chatId).order('created_at', { ascending: true }).limit(100);
+  if (state.activeBusinessChat !== chatId) return;
   if (error) { list.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; return; }
-  state.messages = messages || [];
-  list.innerHTML = (await Promise.all(state.messages.map(renderMessageBubble))).join('') || '<div class="chat-placeholder"><b>Пока нет сообщений</b><small>Отправь первое сообщение!</small></div>';
+  state.businessMessages = data || [];
+  list.innerHTML = state.businessMessages.map(renderBusinessBubble).join('') || '<div class="chat-placeholder"><b>Пока нет сообщений</b><small>Входящие сообщения появятся здесь автоматически.</small></div>';
   list.scrollTop = list.scrollHeight;
 }
 
-async function openChat(id) {
-  state.activeConversation = id;
-  if (state.chatChannel) { await supabase.removeChannel(state.chatChannel); state.chatChannel = null; }
-  const box = document.querySelector('#chat-window'); if (!box) return;
-  box.innerHTML = `<div class="chat-head"><b>Личный разговор</b><small>Сообщения и вложения доступны только участникам</small></div><div class="message-list" id="message-list"><div class="empty-state">Загружаю сообщения…</div></div><form class="send-form" id="send-message"><label class="attach-button" title="Прикрепить фото или видео">＋<input name="media" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" hidden/></label><input name="content" placeholder="Напиши сообщение…" maxlength="4000"/><button class="primary" type="submit">➤</button></form><div class="upload-hint" id="upload-hint">Фото и видео до 20 МБ</div>`;
-  await refreshChatMessages(id);
-  state.chatChannel = supabase.channel(`chat-${id}`)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`conversation_id=eq.${id}`},() => refreshChatMessages(id))
+async function openBusinessChat(id) {
+  state.activeBusinessChat = id;
+  if (state.businessChatChannel) { await supabase.removeChannel(state.businessChatChannel); state.businessChatChannel = null; }
+  const chat = state.businessChats.find(item => item.id === id);
+  const box = document.querySelector('#business-chat-window');
+  if (!box || !chat) return;
+  const name = [chat.first_name,chat.last_name].filter(Boolean).join(' ') || (chat.username ? '@'+chat.username : 'Telegram-пользователь');
+  box.innerHTML = `<div class="chat-head"><b>${esc(name)}</b><small>${chat.username ? '@'+esc(chat.username)+' · ' : ''}Переписка через Telegram Business</small></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><form class="send-form" id="business-send-form"><input name="content" placeholder="Ответить от имени бизнес-аккаунта…" maxlength="4096" required/><button class="primary" type="submit">➤</button></form><div class="upload-hint">Ответ будет отправлен через подключённый Telegram Business-бот.</div>`;
+  await refreshBusinessMessages(id);
+  state.businessChatChannel = supabase.channel(`business-chat-${id}`)
+    .on('postgres_changes',{event:'*',schema:'public',table:'flamexbot_business_messages',filter:`business_chat_id=eq.${id}`},() => refreshBusinessMessages(id))
     .subscribe();
-  const form = document.querySelector('#send-message');
-  const fileInput = form.querySelector('input[type=file]');
-  fileInput.addEventListener('change', () => {
-    const file = fileInput.files?.[0];
-    document.querySelector('#upload-hint').textContent = file ? `Выбрано: ${file.name}` : 'Фото и видео до 20 МБ';
-  });
-  form.addEventListener('submit', async e => {
-    e.preventDefault();
-    const submit = form.querySelector('button[type=submit]');
-    const content = new FormData(form).get('content').trim();
-    const file = fileInput.files?.[0];
-    if (!content && !file) return;
-    if (file && file.size > 20 * 1024 * 1024) { toast('Файл больше 20 МБ'); return; }
-    submit.disabled = true;
-    let mediaPath = null;
-    let messageType = 'text';
-    if (file) {
-      const extension = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g,'') || 'bin';
-      mediaPath = `${id}/${state.session.user.id}/${crypto.randomUUID()}.${extension}`;
-      const { error: uploadError } = await supabase.storage.from('chat-media').upload(mediaPath,file,{contentType:file.type,upsert:false});
-      if (uploadError) { toast(uploadError.message); submit.disabled = false; return; }
-      messageType = file.type.startsWith('video/') ? 'video' : 'image';
-    }
-    const { error: sendError } = await supabase.from('messages').insert({conversation_id:id,sender_id:state.session.user.id,content,message_type:messageType,media_url:mediaPath});
-    submit.disabled = false;
-    if (sendError) {
-      if (mediaPath) await supabase.storage.from('chat-media').remove([mediaPath]);
-      toast(sendError.message);
-    } else {
-      form.reset();
-      document.querySelector('#upload-hint').textContent = 'Фото и видео до 20 МБ';
-      await refreshChatMessages(id);
-    }
+  document.querySelector('#business-send-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button');
+    const input = form.querySelector('input[name=content]');
+    const text = input.value.trim();
+    if (!text) return;
+    button.disabled = true;
+    const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id: id, text } });
+    button.disabled = false;
+    if (error || data?.error) { toast(data?.error || error.message || 'Не удалось отправить сообщение'); return; }
+    form.reset();
+    await refreshBusinessMessages(id);
   });
 }
+
+async function renderAdmin(host) {
+  const { data: allowed, error: accessError } = await supabase.rpc('is_flamexbot_admin');
+  if (accessError || allowed !== true || !state.isAdmin) {
+    host.innerHTML = '<div class="page-heading"><div class="eyebrow">ACCESS DENIED</div><h1>Нет доступа</h1><p class="muted">Админ-панель доступна только владельцу @Racer_Video.</p></div>';
+    return;
+  }
+  const [connections, chats, messages] = await Promise.all([
+    supabase.from('flamexbot_business_connections').select('is_enabled,connected_at,rights').eq('profile_id',state.session.user.id).maybeSingle(),
+    supabase.from('flamexbot_business_chats').select('id',{count:'exact',head:true}).eq('profile_id',state.session.user.id),
+    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}).in('business_chat_id', (state.businessChats || []).map(c => c.id).length ? (state.businessChats || []).map(c => c.id) : ['00000000-0000-0000-0000-000000000000'])
+  ]);
+  const connection = connections.data;
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">FOUNDER CONTROL</div><h1>Админ-панель</h1><p class="muted">Закрытая панель владельца FLAMEXBOT.</p></div>
+    <div class="admin-owner-card"><span class="admin-crown">✦</span><div><b>@Racer_Video</b><small>Единственный администратор · Founder</small></div><span class="business-status is-connected">Доступ подтверждён</span></div>
+    <div class="stats-grid"><div class="stat-card"><small>BUSINESS BOT</small><strong>${connection?.is_enabled ? 'ON' : 'OFF'}</strong><span class="stat-foot">Подключение Telegram</span></div><div class="stat-card"><small>BUSINESS-ЧАТЫ</small><strong>${chats.count || 0}</strong><span class="stat-foot">Полученные переписки</span></div><div class="stat-card"><small>СООБЩЕНИЯ</small><strong>${messages.count || 0}</strong><span class="stat-foot">Сохранённые сообщения</span></div></div>
+    <section class="business-card"><div class="business-card-head"><div><div class="eyebrow">SECURITY</div><h2>Права доступа</h2><p class="muted">Обычные личные чаты отключены. В приложении используются только переписки Telegram Business.</p></div><span class="business-status is-connected">Founder only</span></div></section>`;
+}
+
 async function renderStreaks(host) {
   const { data, error } = await supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false});
   state.streaks = data || [];
@@ -288,6 +293,8 @@ async function boot(session) {
   const { data, error } = await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
   state.profile = data || {username:session.user.email?.split('@')[0] || 'Flame user'};
   if (error) console.warn('Profile load:', error.message);
+  const { data: adminAccess, error: adminError } = await supabase.rpc('is_flamexbot_admin');
+  state.isAdmin = !adminError && adminAccess === true;
   renderApp();
 }
 
