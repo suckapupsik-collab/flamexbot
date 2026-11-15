@@ -170,3 +170,17 @@ input,button{max-width:100%}
 .xp-track{height:9px;background:#302722;border-radius:20px;overflow:hidden;margin:0 0 8px}
 .xp-track span{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#a84f2a,#ffad72);transition:width .35s ease}
 .level-card>small{font-size:10px;color:#999}
+
+
+.daily-task-list{display:grid;gap:11px;max-width:850px}
+.daily-task{display:flex;align-items:center;gap:13px;padding:15px;background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
+.daily-task.ready{border-color:#65442f;background:#211a16}
+.daily-task.claimed{border-color:#31583b;background:#172219}
+.daily-task-icon{width:43px;height:43px;display:grid;place-items:center;flex:none;background:#2d211a;border-radius:12px;font-size:21px}
+.daily-task-copy{flex:1;min-width:0}
+.daily-task-copy b{font-size:13px}.daily-task-copy p{font-size:11px;color:#999;margin:5px 0;line-height:1.5}.daily-task-copy small{font-size:10px;color:#d59a72}
+.daily-task.claimed .daily-task-copy small{color:#8bd39d}
+.daily-task button{flex:none;min-width:92px}
+.flame-id-line{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.flame-id-line h2{margin:7px 0;font:800 25px Manrope;letter-spacing:1px;color:#ff9a65}
+@media(max-width:600px){.daily-task{align-items:flex-start;flex-wrap:wrap}.daily-task-copy{flex-basis:calc(100% - 60px)}.daily-task button{margin-left:56px}}
