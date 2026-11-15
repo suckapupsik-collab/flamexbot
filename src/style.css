@@ -160,3 +160,13 @@ input,button{max-width:100%}
 .profile-card textarea{display:block;width:100%;min-height:82px;resize:vertical;margin-top:7px;padding:11px 12px;border-radius:9px;border:1px solid #303030;background:#1b1b1b;color:#fff;font:inherit;font-size:12px;outline:none}
 .profile-card textarea:focus{border-color:#d86d3e}
 .profile-card label{display:block;margin:13px 0;color:#aaa;font-size:11px}
+
+
+.level-card{max-width:700px;margin:0 0 20px}
+.level-line{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.level-line small{font-size:9px;letter-spacing:1.5px;color:#999}
+.level-line h2{font:800 24px Manrope;margin:5px 0 14px}
+.level-line strong{font:800 20px Manrope;color:#ff9a65}
+.xp-track{height:9px;background:#302722;border-radius:20px;overflow:hidden;margin:0 0 8px}
+.xp-track span{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#a84f2a,#ffad72);transition:width .35s ease}
+.level-card>small{font-size:10px;color:#999}
