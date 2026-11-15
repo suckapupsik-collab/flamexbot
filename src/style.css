@@ -155,3 +155,8 @@ input,button{max-width:100%}
 .business-inbox .chat-choice.active{background:#2b211b;box-shadow:inset 2px 0 0 #e78650}
 .business-inbox .chat-choice.active b{color:#ffb17c}
 @media(max-width:600px){.achievement-grid{grid-template-columns:1fr}.business-inbox-tools{display:grid}.quick-replies{overflow:auto;flex-wrap:nowrap;padding-bottom:3px}.quick-replies button{white-space:nowrap}}
+
+
+.profile-card textarea{display:block;width:100%;min-height:82px;resize:vertical;margin-top:7px;padding:11px 12px;border-radius:9px;border:1px solid #303030;background:#1b1b1b;color:#fff;font:inherit;font-size:12px;outline:none}
+.profile-card textarea:focus{border-color:#d86d3e}
+.profile-card label{display:block;margin:13px 0;color:#aaa;font-size:11px}
