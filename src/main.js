@@ -318,16 +318,29 @@ async function openBusinessChat(id) {
   const sendForm=document.querySelector('#business-send-form');
   const mediaInput=document.querySelector('#business-media-input');
   const selectedMedia=document.querySelector('#selected-business-media');
+  let selectedPreviewUrl=null;
+  const clearSelectedMedia=()=>{
+    if(selectedPreviewUrl){URL.revokeObjectURL(selectedPreviewUrl);selectedPreviewUrl=null;}
+    mediaInput.value='';
+    selectedMedia.hidden=true;selectedMedia.innerHTML='';
+  };
   const cancelReply=document.querySelector('#cancel-business-reply');
   cancelReply?.addEventListener('click',()=>{
     sendForm.querySelector('[name=reply_to_message_id]').value='';
     document.querySelector('#business-reply-preview').hidden=true;
   });
   mediaInput?.addEventListener('change',()=>{
+    if(selectedPreviewUrl){URL.revokeObjectURL(selectedPreviewUrl);selectedPreviewUrl=null;}
     const file=mediaInput.files?.[0];
-    if(!file){selectedMedia.hidden=true;selectedMedia.textContent='';return;}
-    selectedMedia.textContent=file.name+' · '+(file.size/1024/1024).toFixed(1)+' МБ';
+    if(!file){selectedMedia.hidden=true;selectedMedia.innerHTML='';return;}
+    const size=(file.size/1024/1024).toFixed(1)+' МБ';
+    let preview='';
+    if(file.type.startsWith('image/')){selectedPreviewUrl=URL.createObjectURL(file);preview='<img class="selected-media-thumb" src="'+selectedPreviewUrl+'" alt="Предпросмотр"/>';}
+    else if(file.type.startsWith('video/')){selectedPreviewUrl=URL.createObjectURL(file);preview='<video class="selected-media-thumb" muted playsinline src="'+selectedPreviewUrl+'"></video>';}
+    else preview='<span class="selected-media-icon">📎</span>';
+    selectedMedia.innerHTML=preview+'<span class="selected-media-name"><b>'+esc(file.name)+'</b><small>'+size+'</small></span><button type="button" data-clear-media aria-label="Убрать вложение">×</button>';
     selectedMedia.hidden=false;
+    selectedMedia.querySelector('[data-clear-media]')?.addEventListener('click',clearSelectedMedia);
   });
   sendForm.addEventListener('submit', async event => {
     event.preventDefault();
@@ -355,7 +368,7 @@ async function openBusinessChat(id) {
       toast(data?.error || error.message || 'Не удалось отправить сообщение'); return;
     }
     form.reset();
-    selectedMedia.hidden=true;selectedMedia.textContent='';
+    clearSelectedMedia();
     document.querySelector('#business-reply-preview').hidden=true;
     await refreshBusinessMessages(id);
     await supabase.rpc('sync_flamexbot_achievements');
