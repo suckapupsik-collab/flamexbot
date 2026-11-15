@@ -12,6 +12,7 @@ const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
 const toast = message => { const el = document.querySelector('.toast'); if (!el) return; el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3000); };
+const applyTheme = theme => { document.documentElement.dataset.theme = ['orange','blue','green','red','violet'].includes(theme) ? theme : 'orange'; };
 const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" />` : `<span class="avatar avatar-fallback ${size}">${esc(initials(name))}</span>`;
 
 async function telegramAuthFlow({ linkCurrent = false } = {}) {
@@ -348,6 +349,7 @@ async function renderProfile(host) {
       <label>Отображаемое имя<input name="display_name" value="${esc(p.display_name || '')}" placeholder="Как тебя называть" maxlength="48"/></label>
       <label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label>
       <label>О себе<textarea name="bio" maxlength="180" placeholder="Расскажи немного о себе">${esc(p.bio || '')}</textarea></label>
+      <label>Цветовая тема<select name="theme"><option value="orange" ${(p.theme||'orange')==='orange'?'selected':''}>Огненная</option><option value="blue" ${p.theme==='blue'?'selected':''}>Синяя</option><option value="green" ${p.theme==='green'?'selected':''}>Зелёная</option><option value="red" ${p.theme==='red'?'selected':''}>Красная</option><option value="violet" ${p.theme==='violet'?'selected':''}>Фиолетовая</option></select></label>
       <label>Ссылка на аватар<input name="avatar_url" type="url" value="${esc(p.avatar_url || '')}" placeholder="https://…"/></label>
       <div class="profile-id">ID аккаунта <code>${esc(state.session.user.id)}</code></div>
       <div class="telegram-profile"><div><b>Telegram</b><small>${p.telegram_id ? (p.telegram_username ? '@' + esc(p.telegram_username) : 'Аккаунт привязан') : 'Не привязан'}</small></div><button class="outline small" type="button" data-telegram-link>${p.telegram_id ? 'Обновить связь' : 'Привязать Telegram'}</button></div>
@@ -379,8 +381,8 @@ async function renderProfile(host) {
   });
   document.querySelector('#profile-form').addEventListener('submit', async e => {
     e.preventDefault(); const fd = new FormData(e.currentTarget);
-    const { error } = await supabase.from('profiles').update({display_name:fd.get('display_name')||'Пользователь',username:fd.get('username'),bio:fd.get('bio')||'',avatar_url:fd.get('avatar_url') || null}).eq('id',state.session.user.id);
-    if (error) toast(error.message); else { state.profile = {...p,display_name:fd.get('display_name')||'Пользователь',username:fd.get('username'),bio:fd.get('bio')||'',avatar_url:fd.get('avatar_url')}; toast('Профиль сохранён'); renderApp(); }
+    const { error } = await supabase.from('profiles').update({display_name:fd.get('display_name')||'Пользователь',username:fd.get('username'),bio:fd.get('bio')||'',avatar_url:fd.get('avatar_url') || null,theme:fd.get('theme')||'orange'}).eq('id',state.session.user.id);
+    if (error) toast(error.message); else { state.profile = {...p,display_name:fd.get('display_name')||'Пользователь',username:fd.get('username'),bio:fd.get('bio')||'',avatar_url:fd.get('avatar_url'),theme:fd.get('theme')||'orange'}; applyTheme(state.profile.theme); toast('Профиль сохранён'); renderApp(); }
   });
 }
 
@@ -463,6 +465,7 @@ async function boot(session) {
   if (achievementSyncError) console.warn('Achievement sync:', achievementSyncError.message);
   const { data, error } = await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
   state.profile = data || {username:session.user.email?.split('@')[0] || 'Flame user'};
+  applyTheme(state.profile.theme);
   if (error) console.warn('Profile load:', error.message);
   const { data: adminAccess, error: adminError } = await supabase.rpc('is_flamexbot_admin');
   state.isAdmin = !adminError && adminAccess === true;
