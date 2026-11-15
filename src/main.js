@@ -84,7 +84,14 @@ function renderApp() {
     <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Business-чаты')}${navItem('friends','♧','Друзья')}${navItem('streaks','🔥','Огоньки')}${navItem('profile','◉','Профиль')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(p.avatar_url, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
     <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Главная',messages:'Business-чаты',friends:'Друзья',streaks:'Огоньки',profile:'Профиль',admin:'Админ-панель'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(p.avatar_url,p.username)}</span></div></header>
     <section class="page-content" id="page-content"></section></main></div><div class="toast"></div>`;
-  document.querySelectorAll('[data-page]').forEach(btn => btn.addEventListener('click', () => { state.page = btn.dataset.page; renderApp(); loadPage(); }));
+  document.querySelectorAll('[data-page]').forEach(btn => btn.addEventListener('click', () => {
+    if (state.page === 'messages' && btn.dataset.page !== 'messages') {
+      if (state.businessChatChannel) { supabase.removeChannel(state.businessChatChannel); state.businessChatChannel = null; }
+      if (state.businessListChannel) { supabase.removeChannel(state.businessListChannel); state.businessListChannel = null; }
+      state.activeBusinessChat = null;
+    }
+    state.page = btn.dataset.page; renderApp(); loadPage();
+  }));
   document.querySelector('#logout').addEventListener('click', async () => { if (confirm('Выйти из аккаунта?')) await supabase.auth.signOut(); });
   loadPage();
 }
@@ -220,6 +227,7 @@ async function refreshBusinessMessages(chatId) {
 
 async function openBusinessChat(id) {
   state.activeBusinessChat = id;
+  document.querySelectorAll('[data-business-chat]').forEach(btn => btn.classList.toggle('active', btn.dataset.businessChat === id));
   if (state.businessChatChannel) { await supabase.removeChannel(state.businessChatChannel); state.businessChatChannel = null; }
   const chat = state.businessChats.find(item => item.id === id);
   const box = document.querySelector('#business-chat-window');
