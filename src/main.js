@@ -3,11 +3,12 @@ import './style.css';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const FOUNDER_TELEGRAM_ID = '7781170049';
 const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_')
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, subscription: null, businessConnection: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0 };
+const state = { session: null, profile: null, subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0 };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -132,7 +133,7 @@ function renderBusinessChatChoices(chats) {
   return filtered.length ? filtered.map(c => {
     const name = [c.first_name,c.last_name].filter(Boolean).join(' ') || (c.username ? '@'+c.username : 'Telegram-пользователь');
     const active = state.activeBusinessChat === c.id;
-    return `<div class="business-chat-item"><button class="chat-choice ${active ? 'active' : ''}" data-business-chat="${c.id}">${avatar(c.photo_url,name)}<span class="chat-choice-copy"><b>${c.is_pinned?'📌 ':''}${c.is_favorite?'★ ':''}${c.is_muted?'🔕 ':''}${esc(name)}</b><small>${c.username ? '@'+esc(c.username)+' · ' : ''}${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Новый чат'}</small></span>${c.unread_count?'<i class="chat-unread-badge">'+(c.unread_count>99?'99+':c.unread_count)+'</i>':''}</button><button class="chat-pref" data-favorite="${c.id}" title="Избранное">${c.is_favorite?'★':'☆'}</button><button class="chat-pref" data-pin="${c.id}" title="Закрепить">${c.is_pinned?'📌':'⌖'}</button></div>`;
+    return `<div class="business-chat-item"><button class="chat-choice ${active ? 'active' : ''}" data-business-chat="${c.id}">${avatar(c.photo_url,name)}<span class="chat-choice-copy"><b>${c.is_pinned?'📌 ':''}${c.is_favorite?'★ ':''}${c.is_muted?'🔕 ':''}${c.antimut_enabled?'🛡 ':''}${String(c.telegram_chat_id)===FOUNDER_TELEGRAM_ID?'👑 ':''}${esc(name)}</b><small>${c.username ? '@'+esc(c.username)+' · ' : ''}${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Новый чат'}</small></span>${c.unread_count?'<i class="chat-unread-badge">'+(c.unread_count>99?'99+':c.unread_count)+'</i>':''}</button><button class="chat-pref" data-favorite="${c.id}" title="Избранное">${c.is_favorite?'★':'☆'}</button><button class="chat-pref" data-pin="${c.id}" title="Закрепить">${c.is_pinned?'📌':'⌖'}</button></div>`;
   }).join('') : '<div class="empty-state">Чаты не найдены.</div>';
 }
 
@@ -163,7 +164,7 @@ async function refreshBusinessChatList(host) {
   if (error) { toast('Не удалось обновить список Business-чатов'); return; }
   const chats=data||[];const ids=chats.map(x=>x.id);
   const [prefs,unreadResult]=ids.length?await Promise.all([
-    supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,is_muted,last_read_at').in('business_chat_id',ids),
+    supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,is_muted,antimut_enabled,last_read_at').in('business_chat_id',ids),
     supabase.rpc('flamexbot_business_unread_counts')
   ]):[{data:[]},{data:[]}];
   const prefMap=Object.fromEntries((prefs.data||[]).map(x=>[x.business_chat_id,x]));
@@ -190,13 +191,14 @@ async function renderBusinessMessages(host) {
   }
   state.businessChats = chats || [];
   if(state.businessChats.length){
-    const {data:prefs}=await supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,last_read_at').in('business_chat_id',state.businessChats.map(x=>x.id));
+    const {data:prefs}=await supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,is_muted,antimut_enabled,last_read_at').in('business_chat_id',state.businessChats.map(x=>x.id));
     const map=Object.fromEntries((prefs||[]).map(x=>[x.business_chat_id,x]));
     state.businessChats=state.businessChats.map(x=>({...x,...(map[x.id]||{}),unread_count:0}));
   }
   const { data: connection } = await supabase.from('flamexbot_business_connections')
     .select('is_enabled,rights').eq('profile_id', uid).maybeSingle();
   const connected = Boolean(connection?.is_enabled);
+  state.businessRights = connection?.rights || {};
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS INBOX</div><h1>Business-чаты</h1><p class="muted">Все переписки приходят из Telegram Business. Ответы отправляются от имени твоего Telegram-аккаунта.</p></div>
     <div class="business-inbox-status ${connected ? 'online' : ''}"><span></span><div><b>${connected ? 'Бизнес-бот подключён' : 'Бизнес-бот не подключён'}</b><small>${connected ? 'Входящие чаты синхронизируются через Telegram.' : 'Подключи FLAMEXBOT в Telegram → Настройки → Telegram Business → Чат-боты.'}</small></div></div>
     <div class="business-inbox-tools"><input id="business-chat-search" type="search" placeholder="Поиск по имени или @username"/><div class="quick-replies"><button type="button" data-quick-reply="Привет! Чем могу помочь?">Привет</button><button type="button" data-quick-reply="Спасибо за сообщение!">Спасибо</button><button type="button" data-quick-reply="Сейчас уточню и вернусь с ответом.">Уточню</button></div></div><div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
@@ -283,9 +285,81 @@ async function openBusinessChat(id) {
   const box = document.querySelector('#business-chat-window');
   if (!box || !chat) return;
   const name = [chat.first_name,chat.last_name].filter(Boolean).join(' ') || (chat.username ? '@'+chat.username : 'Telegram-пользователь');
+  const founderChat = String(chat.telegram_chat_id) === FOUNDER_TELEGRAM_ID || String(chat.telegram_user_id || '') === FOUNDER_TELEGRAM_ID;
+  let chatMuted = Boolean(chat.is_muted) && !founderChat;
+  let antimutEnabled = Boolean(chat.antimut_enabled);
+  const canDeleteMessages = state.businessRights?.can_delete_all_messages === true;
+  const canReplyMessages = state.businessRights?.can_reply === true;
+  const premiumAccess = isPremium();
   await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:new Date().toISOString()},{onConflict:'profile_id,business_chat_id'});
   await refreshBusinessChatList(document.querySelector('#page-content'));
-  box.innerHTML = `<div class="chat-head"><div><b>${esc(name)}</b><small>${chat.username ? '@'+esc(chat.username)+' · ' : ''}Переписка через Telegram Business</small></div><input class="message-search" id="business-message-search" type="search" placeholder="Найти сообщение…"/></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
+  box.closest('.business-inbox')?.classList.add('chat-open');
+  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Чаты</button><div><b>${esc(name)}</b><small>${chat.username ? '@'+esc(chat.username)+' · ' : ''}Переписка через Telegram Business</small></div><input class="message-search" id="business-message-search" type="search" placeholder="Найти сообщение…"/></div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
+  const controlsHost = box.querySelector('#business-chat-controls');
+  const renderBusinessControls = () => {
+    if (!controlsHost) return;
+    controlsHost.innerHTML = `<div class="business-control-grid">
+      <section class="business-control-card">
+        <div class="business-control-title"><b>🔇 Мут</b><span class="business-control-state ${chatMuted?'active':''}">${chatMuted?'Включён':'Выключен'}</span></div>
+        <p>Новые сообщения этого собеседника будут удаляться в Telegram. Старые сообщения не затрагиваются.</p>
+        ${founderChat ? '<small class="business-control-note">Владелец FLAMEXBOT защищён от мута.</small>' : !canDeleteMessages && !chatMuted ? '<small class="business-control-note">Нужно разрешение Telegram Business «Удалять все сообщения».</small>' : ''}
+        ${!premiumAccess && !chatMuted ? '<small class="business-control-note">Функция доступна в Premium.</small>' : ''}
+        <button type="button" class="outline small" id="toggle-business-mute" ${(!premiumAccess && !chatMuted)||(founderChat && !chatMuted)||(!canDeleteMessages && !chatMuted)?'disabled':''}>${chatMuted?'Размутить собеседника':'Включить мут'}</button>
+      </section>
+      <section class="business-control-card">
+        <div class="business-control-title"><b>🛡 Антимут</b><span class="business-control-state ${antimutEnabled?'active':''}">${antimutEnabled?'Включён':'Выключен'}</span></div>
+        <p>Разрешает отдельную ручную попытку отправки через твой Business-аккаунт. Это не снимает блокировку и не обходит ограничения Telegram.</p>
+        ${!canReplyMessages && !antimutEnabled ? '<small class="business-control-note">Нужно право Telegram Business «Отвечать» и подходящий активный чат.</small>' : ''}
+        ${!premiumAccess && !antimutEnabled ? '<small class="business-control-note">Функция доступна в Premium.</small>' : ''}
+        <button type="button" class="outline small" id="toggle-business-antimut" ${(!premiumAccess && !antimutEnabled)||(!canReplyMessages && !antimutEnabled)?'disabled':''}>${antimutEnabled?'Выключить антимут':'Включить антимут'}</button>
+        ${antimutEnabled ? '<form class="antimut-attempt-form" id="antimut-attempt-form"><input name="antimut_text" maxlength="4096" placeholder="Текст для одной попытки отправки" required/><button type="submit" class="primary small">Попробовать отправить</button></form><small class="business-control-note">Отправка выполняется один раз. Если Telegram запрещает её, повторных обходных попыток не будет.</small>' : ''}
+      </section>
+    </div>`;
+    controlsHost.querySelector('#toggle-business-mute')?.addEventListener('click', async e => {
+      const next = !chatMuted;
+      if (next && (!premiumAccess || founderChat || !canDeleteMessages)) return;
+      e.currentTarget.disabled = true;
+      const { error } = await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_muted:next},{onConflict:'profile_id,business_chat_id'});
+      if (error) { toast('Не удалось изменить мут: '+error.message); e.currentTarget.disabled = false; return; }
+      chatMuted = next; chat.is_muted = next;
+      toast(next ? 'Мут включён: новые сообщения будут удаляться' : 'Размут выполнен: сообщения больше не удаляются');
+      renderBusinessControls();
+      await refreshBusinessChatList(document.querySelector('#page-content'));
+    });
+    controlsHost.querySelector('#toggle-business-antimut')?.addEventListener('click', async e => {
+      const next = !antimutEnabled;
+      if (next && (!premiumAccess || !canReplyMessages)) return;
+      e.currentTarget.disabled = true;
+      const { error } = await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,antimut_enabled:next},{onConflict:'profile_id,business_chat_id'});
+      if (error) { toast('Не удалось изменить антимут: '+error.message); e.currentTarget.disabled = false; return; }
+      antimutEnabled = next; chat.antimut_enabled = next;
+      toast(next ? 'Антимут включён: доступна ручная попытка отправки' : 'Антимут выключен');
+      renderBusinessControls();
+      await refreshBusinessChatList(document.querySelector('#page-content'));
+    });
+    controlsHost.querySelector('#antimut-attempt-form')?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const input = form.querySelector('input[name="antimut_text"]');
+      const button = form.querySelector('button[type="submit"]');
+      const outgoingText = input.value.trim();
+      if (!outgoingText || !antimutEnabled) return;
+      button.disabled = true;
+      const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id:id, text:outgoingText, antimut_mode:true } });
+      button.disabled = false;
+      if (error || data?.error) { toast(data?.error || error?.message || 'Telegram отклонил отправку'); return; }
+      input.value = '';
+      toast('Telegram принял сообщение для отправки');
+      await refreshBusinessMessages(id);
+    });
+  };
+  renderBusinessControls();
+  box.querySelector('#business-chat-back')?.addEventListener('click', () => {
+    state.activeBusinessChat = null;
+    box.closest('.business-inbox')?.classList.remove('chat-open');
+    box.innerHTML = '<div class="chat-placeholder"><span>✈</span><b>Твои Business-переписки</b><small>Выбери чат слева.</small></div>';
+    document.querySelectorAll('[data-business-chat]').forEach(btn => btn.classList.remove('active'));
+  });
   await refreshBusinessMessages(id);
   document.querySelector('#business-message-search')?.addEventListener('input',()=>refreshBusinessMessages(id));
   state.businessChatChannel = supabase.channel(`business-chat-${id}`)
@@ -342,11 +416,30 @@ async function openBusinessChat(id) {
     const command=!file&&text.startsWith('.')?text.trim():'';
     if(command){
       const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
-      if(['help','inf'].includes(name)){toast('.spam 2-5 текст · .mute · .unmute · .time · .untime');button.disabled=false;return;}
+      if(['help','inf'].includes(name)){toast('.spam 2-5 текст · .mute · .unmute · .antimute on/off · .antimute текст');button.disabled=false;return;}
       if(!isPremium()){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
       if(name==='mute'||name==='unmute'){
-        const {error:settingError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_muted:name==='mute'},{onConflict:'profile_id,business_chat_id'});
-        button.disabled=false;if(settingError){toast('Не удалось изменить настройку чата');return;}toast(name==='mute'?'Чат заглушён в FLAMEXBOT':'Уведомления чата включены');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
+        const next=name==='mute';
+        if(next && String(chat.telegram_chat_id)===FOUNDER_TELEGRAM_ID){button.disabled=false;toast('Владелец FLAMEXBOT защищён от мута.');return;}
+        if(next && !state.businessRights?.can_delete_all_messages){button.disabled=false;toast('Для мута нужно разрешение Telegram Business «Удалять все сообщения».');return;}
+        const {error:settingError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_muted:next},{onConflict:'profile_id,business_chat_id'});
+        button.disabled=false;if(settingError){toast('Не удалось изменить настройку чата');return;}
+        chatMuted=next;chat.is_muted=next;renderBusinessControls();toast(next?'Мут включён':'Собеседник размучен');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
+      }
+      if(name==='antimute'){
+        if(!isPremium()){button.disabled=false;toast('Антимут доступен только в Premium.');return;}
+        if(args==='on'||args==='off'){
+          const next=args==='on';
+          if(next && state.businessRights?.can_reply!==true){button.disabled=false;toast('Telegram Business не выдал право «Отвечать» для этого чата.');return;}
+          const {error:antiError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,antimut_enabled:next},{onConflict:'profile_id,business_chat_id'});
+          button.disabled=false;if(antiError){toast('Не удалось изменить антимут');return;}
+          antimutEnabled=next;chat.antimut_enabled=next;renderBusinessControls();toast(next?'Антимут включён: доступна ручная попытка отправки':'Антимут выключен');form.reset();return;
+        }
+        if(!antimutEnabled){button.disabled=false;toast('Сначала включи антимут командой .antimute on или в настройках чата.');return;}
+        if(!args){button.disabled=false;toast('Формат: .antimute on/off или .antimute текст');return;}
+        const {data:antiData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text:args,antimut_mode:true}});
+        button.disabled=false;if(antiError||antiData?.error){toast(antiData?.error||antiError?.message||'Telegram отклонил отправку');return;}
+        form.reset();toast('Telegram принял сообщение для отправки');await refreshBusinessMessages(id);return;
       }
       if(name==='time'||name==='untime'){
         const enabled=name==='time';const {error:timeError}=await supabase.from('profiles').update({show_profile_time:enabled}).eq('id',state.session.user.id);
@@ -407,9 +500,30 @@ async function renderAdmin(host) {
 async function renderTariffs(host) {
  const premium=isPremium();
  const expires=state.subscription?.expires_at?new Date(state.subscription.expires_at).toLocaleDateString('ru-RU'):'Без срока';
- host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT PLANS</div><h1>Тарифы</h1><p class="muted">Выбери уровень возможностей FLAMEXBOT.</p></div><div class="tariff-grid">
- <section class="business-card tariff-card ${!premium?'tariff-current':''}"><div class="eyebrow">БАЗОВЫЙ ДОСТУП</div><h2>Free</h2><p class="muted">Основные функции FLAMEXBOT.</p><ul><li>Telegram Business-чаты</li><li>Сообщения и файлы</li><li>Профиль и настройки</li><li>Уведомления и статистика</li></ul><span class="business-status ${!premium?'is-connected':''}">${!premium?'Текущий тариф':'Доступен всем'}</span></section>
- <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}"><div class="eyebrow">РАСШИРЕННЫЕ ВОЗМОЖНОСТИ</div><h2>✦ Premium</h2><p class="muted">Расширенные команды Telegram Business.</p><ul><li><code>.spam 2-5 текст</code> — повторная отправка до 5 раз</li><li><code>.mute</code> / <code>.unmute</code> — уведомления Business-чата</li><li><code>.untime</code> / <code>.time</code> — время профиля</li><li><code>.afk</code> / <code>.unafk</code> — автоответ при отсутствии</li><li><code>.autoread</code> — автоматическое прочтение</li><li><code>.autotyping</code> / <code>.autovoice</code> — статусы активности</li><li><code>.timeprofile</code> — часовой пояс</li><li><code>.bold</code> / <code>.dumb</code> — оформление текста</li><li><code>.link</code> — ссылка на диалог с текстом</li><li><code>.help</code> / <code>.inf</code> — список команд</li></ul><span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+expires:'100 ⭐ · 30 дней'}</span>${premium?'': '<button class="primary" id="buy-premium" type="button">Купить за 100 ⭐</button>'}</section></div><p class="business-note">Оплата проходит внутри Telegram Stars. После успешной оплаты Premium включается автоматически на 30 дней. Сначала привяжи Telegram и запусти бота командой /start.</p>`;
+ host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT PLANS</div><h1>Тарифы</h1><p class="muted">Выбери комфортный уровень управления Telegram Business.</p></div>
+ <div class="tariff-grid">
+  <section class="business-card tariff-card ${!premium?'tariff-current':''}">
+   <div class="eyebrow">СТАРТ</div><h2>Free</h2><p class="muted">Для повседневного общения и знакомства с FLAMEXBOT.</p>
+   <ul><li>Telegram Business-чаты и Mini App</li><li>Отправка сообщений и файлов</li><li>Профиль, друзья и огоньки</li><li>Базовая статистика и уведомления</li></ul>
+   <span class="business-status ${!premium?'is-connected':''}">${!premium?'Текущий тариф':'Доступен всем'}</span>
+  </section>
+  <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}">
+   <div class="eyebrow">ПОЛНЫЙ КОНТРОЛЬ</div><h2>✦ Premium</h2><p class="muted">Инструменты автоматизации и расширенные настройки Business-чатов.</p>
+   <ul>
+    <li><code>.mute</code> / <code>.unmute</code> — удаление новых входящих сообщений и размут</li>
+    <li><code>.antimute on/off</code> — ручная попытка отправки через Business с ответом Telegram</li>
+    <li><code>.spam 2-5 текст</code> — повторная отправка</li>
+    <li>AFK, автоответы и авто-прочтение</li>
+    <li>Статусы «печатает» и «записывает голосовое»</li>
+    <li>Фильтр стикеров, часовой пояс и оформление текста</li>
+    <li>Premium Emoji в уведомлениях бота</li>
+    <li>Расширенные инструменты управления чатами</li>
+   </ul>
+   <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+expires:'100 ⭐ · 30 дней'}</span>
+   ${premium?'': '<button class="primary" id="buy-premium" type="button">Купить за 100 ⭐</button>'}
+  </section>
+ </div>
+ <p class="business-note">Оплата проходит через Telegram Stars. Premium включается автоматически на 30 дней после подтверждения оплаты. Антимут не снимает блокировки: он только делает одну ручную попытку отправки через разрешённое Business-подключение. Telegram может отклонить её.</p>`;
  const buyButton=host.querySelector('#buy-premium');
  buyButton?.addEventListener('click',async()=>{
    buyButton.disabled=true;buyButton.textContent='Создаю счёт…';
@@ -419,6 +533,7 @@ async function renderTariffs(host) {
    toast('Счёт отправлен в Telegram. Открой чат с FLAMEXBOT и оплати его.');
  });
 }
+
 async function renderStreaks(host) {
   const { data, error } = await supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false});
   state.streaks = data || [];
