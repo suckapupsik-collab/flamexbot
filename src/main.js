@@ -626,9 +626,24 @@ async function openBusinessChat(id) {
     let storagePath=null;
     let mediaType=null;
     if(file){
-      mediaType=file.type.startsWith('image/')?'photo':file.type.startsWith('video/')?'video':file.type==='audio/ogg'?'voice':file.type==='audio/mpeg'||file.type==='audio/mp4'?'audio':'document';
+      const extension=(file.name.split('.').pop()||'').toLowerCase();
+      const mimeByExtension={
+        jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',
+        mp4:'video/mp4',mp3:'audio/mpeg',m4a:'audio/mp4',ogg:'audio/ogg',opus:'audio/ogg',wav:'audio/wav',
+        pdf:'application/pdf',txt:'text/plain',csv:'text/csv',zip:'application/zip',
+        doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        xls:'application/vnd.ms-excel',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        rtf:'application/rtf'
+      };
+      const fileMimeType=file.type&&file.type!=='application/octet-stream'?file.type:(mimeByExtension[extension]||'application/octet-stream');
+      mediaType=fileMimeType==='image/gif'?'animation'
+        :(['image/jpeg','image/png'].includes(fileMimeType)&&file.size<=10*1024*1024)?'photo'
+        :fileMimeType==='video/mp4'?'video'
+        :fileMimeType==='audio/ogg'?'voice'
+        :['audio/mpeg','audio/mp4'].includes(fileMimeType)?'audio':'document';
       storagePath=state.session.user.id+'/'+id+'/'+crypto.randomUUID()+'-'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-      const {error:uploadError}=await supabase.storage.from('flamex-business-media').upload(storagePath,file,{contentType:file.type||'application/octet-stream',upsert:false});
+      const {error:uploadError}=await supabase.storage.from('flamex-business-media').upload(storagePath,file,{contentType:fileMimeType,upsert:false});
       if(uploadError){button.disabled=false;toast('Не удалось загрузить файл: '+uploadError.message);return;}
     }
     const command=!file&&text.startsWith('.')?text.trim():'';
