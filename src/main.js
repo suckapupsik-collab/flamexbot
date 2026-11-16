@@ -8,7 +8,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
+const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -93,7 +93,7 @@ function navItem(page, icon, label) { return `<button class="nav-item ${state.pa
 function isPremium() { return state.subscription?.plan === 'premium' && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
 function planLabel() { return isPremium() ? 'PREMIUM' : 'FREE'; }
 const PAGE_LABELS = {
-  home:'Обзор', messages:'Переписки', tariffs:'Premium', streaks:'Огоньки',
+  home:'Обзор', messages:'Переписки', friends:'Друзья', tariffs:'Premium', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
   stats:'Статистика', users:'Все пользователи', admin:'Админ-панель'
 };
@@ -165,6 +165,7 @@ function renderApp() {
   const items=[
     ['home','⌂','Обзор','Главная'],
     ['messages','✉','Переписки','Telegram Business'],
+    ['friends','👥','Друзья','Заявки и совместные огоньки'],
     ['streaks','🔥','Огоньки','Общие серии'],
     ['missions','⚡','Ежедневные задания','Новые задания каждый день'],
     ['achievements','🏆','Достижения','Коллекция наград'],
@@ -240,12 +241,13 @@ async function loadPage() {
       const p=state.profile||{};
       host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'long'})}</div></div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
-        <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
+        <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
-        <div class="streak-list">${state.streaks.length?state.streaks.map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${s.current_days||0} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Начни общаться — и здесь появятся ваши огоньки.</div>'}</div>
-        <div class="home-feature-grid"><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
+        <div class="streak-list">${state.streaks.filter(s=>effectiveStreakDays(s)>0).length?state.streaks.filter(s=>effectiveStreakDays(s)>0).map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${effectiveStreakDays(s)} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Найди друга и начните обмениваться сообщениями каждый день.</div>'}</div>
+        <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
     } else if(state.page==='tariffs') await renderTariffs(host);
     else if(state.page==='messages') await renderBusinessMessages(host);
+    else if(state.page==='friends') await renderFriends(host);
     else if(state.page==='streaks') await renderStreaks(host);
     else if(state.page==='missions') await renderDailyMissions(host);
     else if(state.page==='profile') await renderProfile(host);
@@ -768,10 +770,135 @@ async function renderTariffs(host) {
  });
 }
 
+function effectiveStreakDays(streak) {
+  if(!streak)return 0;
+  const days=Math.max(0,Number(streak.current_days)||0);
+  if(!days)return 0;
+  if(streak.expires_at)return new Date(streak.expires_at).getTime()>Date.now()?days:0;
+  if(!streak.last_activity_date)return 0;
+  const today=new Date().toISOString().slice(0,10);
+  const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  return streak.last_activity_date===today||streak.last_activity_date===yesterday?days:0;
+}
+
+async function renderFriends(host) {
+  const uid=state.session.user.id;
+  const [friendRows,incoming,outgoing,streakResult]=await Promise.all([
+    supabase.from('friendships').select('user_low,user_high').or(`user_low.eq.${uid},user_high.eq.${uid}`),
+    supabase.from('friend_requests').select('id,sender_id,created_at').eq('receiver_id',uid).eq('status','pending').order('created_at',{ascending:false}),
+    supabase.from('friend_requests').select('id,receiver_id,created_at').eq('sender_id',uid).eq('status','pending').order('created_at',{ascending:false}),
+    supabase.from('streaks').select('*').or(`user_low.eq.${uid},user_high.eq.${uid}`)
+  ]);
+  const friendIds=(friendRows.data||[]).map(x=>x.user_low===uid?x.user_high:x.user_low);
+  const incomingIds=(incoming.data||[]).map(x=>x.sender_id);
+  const outgoingIds=(outgoing.data||[]).map(x=>x.receiver_id);
+  const ids=[...new Set([...friendIds,...incomingIds,...outgoingIds])];
+  const [profileResult,badgeResult,searchResult]=await Promise.all([
+    ids.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_username,telegram_id').in('id',ids):Promise.resolve({data:[],error:null}),
+    ids.length?supabase.from('profile_badges').select('user_id,badge_code').in('user_id',ids):Promise.resolve({data:[],error:null}),
+    state.friendSearchQuery.length>=2
+      ?supabase.rpc('search_flamexbot_profiles',{p_query:state.friendSearchQuery,p_limit:15})
+      :Promise.resolve({data:[],error:null})
+  ]);
+  const profileMap=new Map((profileResult.data||[]).map(p=>[p.id,p]));
+  const badgeMap=new Map();
+  (badgeResult.data||[]).forEach(b=>{if(!badgeMap.has(b.user_id))badgeMap.set(b.user_id,[]);badgeMap.get(b.user_id).push(b.badge_code);});
+  const friendSet=new Set(friendIds);
+  const incomingByUser=new Map((incoming.data||[]).map(r=>[r.sender_id,r]));
+  const outgoingByUser=new Map((outgoing.data||[]).map(r=>[r.receiver_id,r]));
+  const streakByFriend=new Map((streakResult.data||[]).map(s=>[s.user_low===uid?s.user_high:s.user_low,s]));
+  const displayName=id=>{const p=profileMap.get(id);return p?.display_name||p?.username||'Пользователь';};
+  const profileCard=(p,subline,actions='',badges=[])=>`<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${badgeMarkup(badges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
+  const friendCards=friendIds.map(id=>{
+    const p=profileMap.get(id);if(!p)return '';
+    const streak=streakByFriend.get(id),days=effectiveStreakDays(streak);
+    const handle=String(p.telegram_username||'').replace(/^@/,'').replace(/[^A-Za-z0-9_]/g,'');
+    const link=handle?`<a class="friend-link" href="https://t.me/${handle}" target="_blank" rel="noopener noreferrer">Открыть Telegram ↗</a>`:'';
+    const status=days>0?`🔥 Огонёк горит · ${days} дн.`:streak?.best_days?`Огонёк погас · рекорд ${streak.best_days} дн.`:'Огонёк ещё не зажжён';
+    return profileCard(p,`@${p.telegram_username||p.username} · ${status}`,link,badgeMap.get(id)||[]);
+  }).join('');
+  const incomingCards=(incoming.data||[]).map(r=>{
+    const p=profileMap.get(r.sender_id);if(!p)return '';
+    return profileCard(p,`Заявка · ${new Date(r.created_at).toLocaleDateString('ru-RU')}`,
+      `<button class="primary small" data-friend-response="accepted" data-request-id="${r.id}">Принять</button><button class="outline small" data-friend-response="rejected" data-request-id="${r.id}">Отклонить</button>`,
+      badgeMap.get(r.sender_id)||[]);
+  }).join('');
+  const outgoingCards=(outgoing.data||[]).map(r=>{
+    const p=profileMap.get(r.receiver_id);if(!p)return '';
+    return profileCard(p,`Ожидает ответа · ${new Date(r.created_at).toLocaleDateString('ru-RU')}`,
+      `<button class="outline small" data-friend-cancel="${r.id}">Отменить заявку</button>`,
+      badgeMap.get(r.receiver_id)||[]);
+  }).join('');
+  const searchCards=(searchResult.data||[]).map(p=>{
+    const isFriend=friendSet.has(p.id),inRequest=incomingByUser.get(p.id),outRequest=outgoingByUser.get(p.id);
+    let action=isFriend?'<span class="friend-state-pill">✓ Вы друзья</span>'
+      :inRequest?'<span class="friend-state-pill">Заявка уже у тебя</span>'
+      :outRequest?`<button class="outline small" data-friend-cancel="${outRequest.id}">Отменить заявку</button>`
+      :`<button class="primary small" data-friend-send="${p.id}">＋ Добавить</button>`;
+    return profileCard(p,`@${p.telegram_username||p.username} · Telegram подключён`,action,p.badge_codes||[]);
+  }).join('');
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ТВОЙ КРУГ ОБЩЕНИЯ</div><h1>Друзья <span>👥</span></h1><p class="muted">Находи людей, отправляй заявки и поддерживай совместные огоньки. Для ежедневной серии оба участника должны обмениваться сообщениями в Telegram.</p></div>
+    <section class="friends-search-panel"><div class="section-heading"><div><div class="eyebrow">ПОИСК УЧАСТНИКОВ</div><h3>Найти друга</h3></div><span class="friend-counter">${friendIds.length} друзей</span></div>
+      <form id="friend-search-form" class="friend-search-form"><input name="query" value="${esc(state.friendSearchQuery)}" maxlength="48" placeholder="Имя, никнейм или @username" autocomplete="off"/><button class="primary" type="submit">Найти</button></form>
+      <small class="friend-search-hint">Минимум 2 символа. В поиске отображаются участники с привязанным Telegram.</small>
+      <div class="friend-list friend-search-results">${state.friendSearchQuery.length<2?'<div class="empty-state">Введи имя или никнейм, чтобы найти участника.</div>':searchResult.error?'<div class="business-warning">Не удалось выполнить поиск: '+esc(searchResult.error.message)+'</div>':searchCards||'<div class="empty-state">Ничего не найдено. Проверь написание и попробуй ещё раз.</div>'}</div>
+    </section>
+    <div class="friends-columns">
+      <section class="friends-section"><div class="section-heading"><div><div class="eyebrow">ТВОЁ СООБЩЕСТВО</div><h3>Мои друзья</h3></div><span class="friend-counter">${friendIds.length}</span></div><div class="friend-list">${friendCards||'<div class="empty-state">Пока нет друзей. Найди знакомых через поиск выше.</div>'}</div></section>
+      <section class="friends-section"><div class="section-heading"><div><div class="eyebrow">ВХОДЯЩИЕ</div><h3>Заявки в друзья</h3></div><span class="friend-counter">${(incoming.data||[]).length}</span></div><div class="friend-list">${incomingCards||'<div class="empty-state">Новых заявок нет.</div>'}</div>
+        <div class="outgoing-heading"><b>Отправленные</b><span>${(outgoing.data||[]).length}</span></div><div class="friend-list">${outgoingCards||'<div class="empty-state compact-empty">Ты пока никого не приглашал.</div>'}</div>
+      </section>
+    </div>
+    ${friendRows.error||incoming.error||outgoing.error||streakResult.error||profileResult.error||badgeResult.error?'<p class="business-warning">Не удалось загрузить часть данных друзей. Попробуй обновить раздел.</p>':''}`;
+  host.querySelector('#friend-search-form')?.addEventListener('submit',event=>{
+    event.preventDefault();
+    const fd=new FormData(event.currentTarget);
+    state.friendSearchQuery=String(fd.get('query')||'').trim();
+    renderFriends(host);
+  });
+  host.querySelectorAll('[data-friend-send]').forEach(btn=>btn.addEventListener('click',async()=>{
+    btn.disabled=true;
+    const {error}=await supabase.rpc('send_flamexbot_friend_request',{p_receiver_id:btn.dataset.friendSend});
+    if(error){toast(error.message.includes('already exists')?'Заявка уже существует':error.message.includes('уже друзья')?'Вы уже друзья':error.message.includes('привяжи Telegram')?'Сначала привяжи Telegram в профиле':error.message);}
+    else toast('Заявка отправлена');
+    await renderFriends(host);
+  }));
+  host.querySelectorAll('[data-friend-response]').forEach(btn=>btn.addEventListener('click',async()=>{
+    btn.disabled=true;
+    const {error}=await supabase.rpc('respond_flamexbot_friend_request',{p_request_id:btn.dataset.requestId,p_response:btn.dataset.friendResponse});
+    if(error)toast('Не удалось обработать заявку: '+error.message);
+    else toast(btn.dataset.friendResponse==='accepted'?'Теперь вы друзья!':'Заявка отклонена');
+    await renderFriends(host);
+  }));
+  host.querySelectorAll('[data-friend-cancel]').forEach(btn=>btn.addEventListener('click',async()=>{
+    if(!confirm('Отменить отправленную заявку?'))return;
+    btn.disabled=true;
+    const {error}=await supabase.rpc('cancel_flamexbot_friend_request',{p_request_id:btn.dataset.friendCancel});
+    if(error)toast('Не удалось отменить заявку: '+error.message);
+    else toast('Заявка отменена');
+    await renderFriends(host);
+  }));
+}
+
 async function renderStreaks(host) {
-  const { data, error } = await supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false});
-  state.streaks = data || [];
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Поддерживай ежедневное общение, чтобы продлевать общие серии.</p></div><div class="streak-list large">${error ? esc(error.message) : state.streaks.length ? state.streaks.map(s => `<div class="streak-card"><div class="streak-symbol">🔥</div><div><div class="eyebrow">ОБЩАЯ СЕРИЯ</div><h3>${s.current_days || 0} дней</h3><p class="muted">Лучшая серия: ${s.best_days || 0} дней</p></div></div>`).join('') : '<div class="empty-state">Активных серий пока нет. История серий останется доступна.</div>'}</div>`;
+  const uid=state.session.user.id;
+  const {data,error}=await supabase.from('streaks').select('*').or(`user_low.eq.${uid},user_high.eq.${uid}`).order('current_days',{ascending:false});
+  state.streaks=data||[];
+  const friendIds=state.streaks.map(s=>s.user_low===uid?s.user_high:s.user_low);
+  const [profiles,badges]=await Promise.all([
+    friendIds.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_username').in('id',friendIds):Promise.resolve({data:[],error:null}),
+    friendIds.length?supabase.from('profile_badges').select('user_id,badge_code').in('user_id',friendIds):Promise.resolve({data:[],error:null})
+  ]);
+  const profileMap=new Map((profiles.data||[]).map(p=>[p.id,p]));
+  const badgeMap=new Map();
+  (badges.data||[]).forEach(b=>{if(!badgeMap.has(b.user_id))badgeMap.set(b.user_id,[]);badgeMap.get(b.user_id).push(b.badge_code);});
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Огонёк продлевается, когда оба друга отправили хотя бы одно сообщение за день. Пропустите полный день — серия погаснет, но личный рекорд сохранится.</p></div>
+    <div class="streak-list large">${error?esc(error.message):state.streaks.length?state.streaks.map(s=>{
+      const id=s.user_low===uid?s.user_high:s.user_low,p=profileMap.get(id),days=effectiveStreakDays(s),name=p?.display_name||p?.username||'Друг';
+      return `<div class="streak-card ${days>0?'streak-active':'streak-expired'}"><div class="streak-symbol">${days>0?'🔥':'🕯️'}</div><div class="streak-card-main"><div class="eyebrow">${days>0?'СЕРИЯ ГОРИТ':'СЕРИЯ ПОГАСЛА'}</div><h3>${esc(name)} · ${days} ${days===1?'день':'дн.'}</h3><p class="muted">Личный рекорд: ${s.best_days||0} дн. · ${s.last_activity_date?'Последний общий день: '+new Date(s.last_activity_date+'T00:00:00Z').toLocaleDateString('ru-RU'):'Ожидаем первый обмен'}</p></div><div class="streak-days-badge">${days>0?'🔥 '+days:'—'}</div></div>`;
+    }).join(''):'<div class="empty-state">Огоньков пока нет. Добавь друга и начните переписываться каждый день.</div>'}</div>
+    <button class="outline" data-go="friends">Найти друзей <b>→</b></button>
+    ${profiles.error||badges.error?'<p class="business-warning">Не удалось загрузить имена или значки участников.</p>':''}`;
 }
 
 async function renderProfile(host) {
@@ -905,16 +1032,17 @@ async function renderAchievements(host) {
 
 async function renderStats(host) {
   const uid=state.session.user.id;
-  const [streaks,chats,messages,earned,profile]=await Promise.all([
-    supabase.from('streaks').select('current_days,best_days').or(`user_low.eq.${uid},user_high.eq.${uid}`),
+  const [streaks,chats,messages,earned,profile,friends]=await Promise.all([
+    supabase.from('streaks').select('current_days,best_days,expires_at,last_activity_date').or(`user_low.eq.${uid},user_high.eq.${uid}`),
     supabase.from('flamexbot_business_chats').select('id',{count:'exact',head:true}).eq('profile_id',uid),
     supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}),
     supabase.from('user_achievements').select('achievement_id',{count:'exact',head:true}).eq('user_id',uid),
-    supabase.from('profiles').select('created_at,telegram_id').eq('id',uid).maybeSingle()
+    supabase.from('profiles').select('created_at,telegram_id').eq('id',uid).maybeSingle(),
+    supabase.from('friendships').select('user_low,user_high',{count:'exact',head:true}).or(`user_low.eq.${uid},user_high.eq.${uid}`)
   ]);
   const best=Math.max(0,...(streaks.data||[]).map(s=>s.best_days||0));
-  const current=Math.max(0,...(streaks.data||[]).map(s=>s.current_days||0));
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ТВОЯ АКТИВНОСТЬ</div><h1>Статистика</h1><p class="muted">Краткая сводка твоих переписок, серий и достижений.</p></div><div class="stats-grid"><div class="stat-card"><small>ТАРИФ</small><strong>${planLabel()}</strong></div><div class="stat-card"><small>BUSINESS-ЧАТЫ</small><strong>${chats.count||0}</strong></div><div class="stat-card"><small>СООБЩЕНИЯ</small><strong>${messages.count||0}</strong></div><div class="stat-card"><small>ТЕКУЩАЯ СЕРИЯ</small><strong>${current} дн.</strong></div><div class="stat-card"><small>ЛУЧШАЯ СЕРИЯ</small><strong>${best} дн.</strong></div><div class="stat-card"><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong></div></div><section class="business-card"><div class="eyebrow">FLAMEX ID</div><div class="flame-id-line"><h2>${esc(uid.slice(0,8).toUpperCase())}</h2><button class="outline small" type="button" id="copy-flame-id">Скопировать ID</button></div><p class="muted">Уникальный идентификатор твоего пространства FLAMEXBOT.</p><small>В приложении с ${profile.data?.created_at?new Date(profile.data.created_at).toLocaleDateString('ru-RU'):'—'} · Telegram ${profile.data?.telegram_id?'привязан':'не привязан'}</small></section>`;
+  const current=Math.max(0,...(streaks.data||[]).map(effectiveStreakDays));
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ТВОЯ АКТИВНОСТЬ</div><h1>Статистика</h1><p class="muted">Краткая сводка твоих переписок, серий и достижений.</p></div><div class="stats-grid"><div class="stat-card"><small>ТАРИФ</small><strong>${planLabel()}</strong></div><div class="stat-card"><small>ДРУЗЬЯ</small><strong>${friends.count||0}</strong></div><div class="stat-card"><small>BUSINESS-ЧАТЫ</small><strong>${chats.count||0}</strong></div><div class="stat-card"><small>СООБЩЕНИЯ</small><strong>${messages.count||0}</strong></div><div class="stat-card"><small>ТЕКУЩАЯ СЕРИЯ</small><strong>${current} дн.</strong></div><div class="stat-card"><small>ЛУЧШАЯ СЕРИЯ</small><strong>${best} дн.</strong></div><div class="stat-card"><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong></div></div><section class="business-card"><div class="eyebrow">FLAMEX ID</div><div class="flame-id-line"><h2>${esc(uid.slice(0,8).toUpperCase())}</h2><button class="outline small" type="button" id="copy-flame-id">Скопировать ID</button></div><p class="muted">Уникальный идентификатор твоего пространства FLAMEXBOT.</p><small>В приложении с ${profile.data?.created_at?new Date(profile.data.created_at).toLocaleDateString('ru-RU'):'—'} · Telegram ${profile.data?.telegram_id?'привязан':'не привязан'}</small></section>`;
   host.querySelector('#copy-flame-id')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(uid);toast('FLAMEX ID скопирован');}catch{toast('Не удалось скопировать ID');}});
 }
 
