@@ -869,6 +869,7 @@ async function renderAdminUser(host) {
 }
 
 
+
 async function renderTariffs(host, initialTab='premium') {
  const premium=isPremium();
  const lifetime=premium&&!state.subscription?.expires_at;
@@ -954,7 +955,8 @@ async function renderTariffs(host, initialTab='premium') {
    }
    return new Promise(resolve=>{
      webApp.openInvoice(invoiceLink,async status=>{
-       try{await onStatus(status);}catch(error){console.error('Telegram invoice callback:',error);toast('Платёж получен, но статус пока не удалось обновить. Открой тарифы ещё раз.');}
+       try{await onStatus(status);}
+       catch(error){console.error('Telegram invoice callback:',error);toast('Платёж получен, но статус пока не удалось обновить. Открой тарифы ещё раз.');}
        finally{resolve(true);}
      });
    });
@@ -1027,73 +1029,6 @@ async function renderTariffs(host, initialTab='premium') {
  });
 }
 
-
- const premium=isPremium();
- const lifetime=premium&&!state.subscription?.expires_at;
- const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
- const buyLabel=premium?'↻ Продлить Premium за 100 ⭐':'⭐ Оплатить 100 Stars';
- host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT MEMBERSHIP</div><h1>Тарифы и возможности <span>✦</span></h1><p class="muted">Больше контроля над Telegram Business, удобные инструменты и расширенные возможности аккаунта.</p></div>
- <div class="tariff-grid">
-  <section class="business-card tariff-card ${!premium?'tariff-current':''}">
-   <div class="eyebrow">СТАРТ</div><h2>Free</h2><p class="muted">Всё необходимое, чтобы пользоваться FLAMEXBOT и оставаться на связи.</p>
-   <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и ежедневные задания</li><li>Достижения, уровни и базовая статистика</li></ul>
-   <span class="business-status ${!premium?'is-connected':''}">${!premium?'Твой текущий тариф':'Бесплатно'}</span>
-  </section>
-  <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}">
-   <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2><p class="muted">Дополнительные инструменты для управления Business-диалогами и оформления аккаунта.</p>
-   <ul>
-    <li><code>.mute</code> / <code>.unmute</code> — управление удалением новых входящих сообщений</li>
-    <li><code>.antimute on/off</code> — безопасное включение ручной попытки отправки</li>
-    <li><code>.antimute текст</code> — одна отправка через разрешённый Telegram Business</li>
-    <li>AFK-автоответ и автоматическое прочтение сообщений</li>
-    <li>Статусы «печатает…» и «записывает голосовое»</li>
-    <li>Фильтр входящих стикеров, время профиля по МСК и оформление текста</li>
-    <li>Премиум-эмодзи в сообщениях и уведомлениях, если их поддерживает Telegram</li>
-    <li>Расширенные настройки и управление Business-диалогами</li>
-   </ul>
-   <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
-   <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
-   ${lifetime?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
-   <small class="premium-payment-note">Оплата проходит внутри Telegram. Подписка действует 30 дней и не продлевается автоматически.</small>
-  </section>
- </div>
- <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
- <p class="business-note">Антимут не снимает блокировки и не обходит ограничения Telegram: он выполняет только одну ручную попытку отправки. Если Telegram отказывает, FLAMEXBOT показывает причину и не повторяет отправку автоматически.</p>`;
- const buyButton=host.querySelector('#buy-premium');
- buyButton?.addEventListener('click',async()=>{
-   buyButton.disabled=true;buyButton.classList.add('is-loading');buyButton.textContent='Подготавливаем оплату…';
-   try{
-     const {data,error}=await supabase.functions.invoke('create-premium-invoice');
-     if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать ссылку на оплату');
-     const webApp=window.Telegram?.WebApp;
-     if(typeof webApp?.openInvoice!=='function'){
-       if(typeof webApp?.openTelegramLink==='function')webApp.openTelegramLink(data.invoice_link);
-       else window.open(data.invoice_link,'_blank','noopener');
-       toast('Открываем счёт Telegram Stars');
-       return;
-     }
-     webApp.openInvoice(data.invoice_link,async status=>{
-       if(status==='paid'){
-         toast('Оплата принята. Активируем Premium…');
-         let activated=false;
-         for(let attempt=0;attempt<8;attempt++){
-           const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
-           if(subscription?.plan==='premium'&&(!subscription.expires_at||new Date(subscription.expires_at).getTime()>Date.now())){
-             state.subscription=subscription;activated=true;break;
-           }
-           await new Promise(resolve=>setTimeout(resolve,900));
-         }
-         updateHeaderProfile();
-         toast(activated?'⭐ Premium успешно активирован!':'Платёж получен. Статус Premium обновится в ближайшие секунды.');
-         await renderTariffs(host);
-       }else if(status==='cancelled')toast('Оплата отменена. Списания не произошло.');
-       else if(status==='failed')toast('Telegram не смог завершить оплату. Попробуй ещё раз.');
-       else if(status==='pending')toast('Платёж обрабатывается. Premium появится после подтверждения Telegram.');
-     });
-   }catch(error){toast('Оплата не запущена: '+(error?.message||'неизвестная ошибка'));}
-   finally{if(host.contains(buyButton)){buyButton.disabled=false;buyButton.classList.remove('is-loading');buyButton.textContent=buyLabel;}}
- });
-}
 
 function effectiveStreakDays(streak) {
   if(!streak)return 0;
