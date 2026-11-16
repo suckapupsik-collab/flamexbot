@@ -57,7 +57,7 @@ as $$
 begin
   if not public.is_flamexbot_admin() then raise exception 'Administrator access required'; end if;
   return query
-  select p.id,p.username,p.display_name,p.telegram_username,p.telegram_id,p.avatar_url,p.created_at,
+  select p.id,p.username,p.display_name,p.telegram_username,p.telegram_id,coalesce(p.avatar_url,p.telegram_photo_url),p.created_at,
     p.is_banned,p.ban_reason,
     exists(select 1 from public.profile_badges b where b.user_id=p.id and b.badge_code='verified'),
     exists(select 1 from public.user_subscriptions s where s.user_id=p.id and s.plan='premium' and (s.expires_at is null or s.expires_at>now())),
