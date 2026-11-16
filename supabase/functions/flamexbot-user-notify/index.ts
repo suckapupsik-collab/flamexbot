@@ -29,21 +29,54 @@ function formatExpiry(value: string | null) {
   });
 }
 async function sendBotMessage(chatId: string, messageText: string) {
-  const telegramResponse = await fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: Number(chatId),
-      text: messageText,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      reply_markup: { inline_keyboard: [[{ text: "✦ Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
-    }),
-    signal: AbortSignal.timeout(12000),
-  });
-  const data = await telegramResponse.json();
-  if (!telegramResponse.ok || !data.ok) throw new Error(data.description ?? "Telegram sendMessage failed");
-  return data.result;
+  const baseButton: Record<string, unknown> = {
+    text: "✦ Открыть FLAMEXBOT",
+    web_app: { url: APP_URL },
+  };
+  let customEmojiId: string | null = null;
+  try {
+    const emojiId = "5877318502947229960";
+    const checkResponse = await fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/getCustomEmojiStickers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ custom_emoji_ids: [emojiId] }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const checkData = await checkResponse.json();
+    if (checkResponse.ok && checkData.ok && Array.isArray(checkData.result)
+        && checkData.result.some((item: any) => String(item?.custom_emoji_id) === emojiId)) {
+      customEmojiId = emojiId;
+    }
+  } catch (error) {
+    console.warn("Notification button emoji check skipped:", (error as any)?.message ?? error);
+  }
+  if (customEmojiId) baseButton.icon_custom_emoji_id = customEmojiId;
+
+  const send = async (button: Record<string, unknown>) => {
+    const telegramResponse = await fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chat_id: Number(chatId),
+        text: messageText,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: { inline_keyboard: [[button]] },
+      }),
+      signal: AbortSignal.timeout(12000),
+    });
+    const data = await telegramResponse.json();
+    if (!telegramResponse.ok || !data.ok) throw new Error(data.description ?? "Telegram sendMessage failed");
+    return data.result;
+  };
+
+  try {
+    return await send(baseButton);
+  } catch (error) {
+    if (!customEmojiId) throw error;
+    delete baseButton.icon_custom_emoji_id;
+    return await send(baseButton);
+  }
 }
 
 Deno.serve(async (req: Request) => {
