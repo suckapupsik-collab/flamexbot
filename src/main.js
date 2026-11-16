@@ -9,7 +9,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', selectedAdminUserId: null, avatarRefreshAttempted: new Set(), userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
+const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', selectedAdminUserId: null, avatarRefreshAttempted: new Set(), businessMediaUrlCache: new Map(), messageRefreshInFlight: new Set(), messageRefreshPending: new Set(), messageRefreshTimers: new Map(), businessListRefreshTimer: null, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -101,7 +101,7 @@ function planLabel() { return isPremium() ? 'PREMIUM' : 'FREE'; }
 const PAGE_LABELS = {
   home:'Обзор', messages:'Переписки', friends:'Друзья', tariffs:'Premium', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
-  stats:'Статистика', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
+  stats:'Статистика', commands:'Все команды', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
 const BADGE_META = {
   verified:{label:'Подтверждён',icon:'✓',className:'verified'},
@@ -117,6 +117,12 @@ const BADGE_META = {
   partner:{label:'Партнёр',icon:'🤝',className:'partner'},
   premium:{label:'Premium',icon:'✧',className:'premium'}
 };
+function isFounderProfile(profile=state.profile) {
+  return String(profile?.telegram_id||'')===FOUNDER_TELEGRAM_ID || String(profile?.id||'')===FOUNDER_PROFILE_ID;
+}
+function verifiedMarkMarkup(verified=false) {
+  return verified ? '<span class="verified-mark" title="Подтверждённый аккаунт" aria-label="Подтверждённый аккаунт">✓</span>' : '';
+}
 function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
   const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&isPremium()?['premium']:[])])];
   return unique.filter(code=>BADGE_META[code]).map(code=>{
@@ -132,11 +138,11 @@ function updateHeaderProfile() {
   if(top)top.innerHTML=avatar(url,p.display_name||p.username);
   if(menu)menu.innerHTML=avatar(url,p.display_name||p.username,'avatar-lg');
   const name=document.querySelector('#menu-display-name');
-  if(name)name.textContent=p.display_name||p.username||'Пользователь';
+  if(name)name.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p));
   const badges=document.querySelector('#menu-profile-badges');
   if(badges)badges.innerHTML=badgeMarkup(state.profileBadges);
   const triggerBadges=document.querySelector('#top-profile-badges');
-  if(triggerBadges)triggerBadges.innerHTML=badgeMarkup(state.profileBadges,true);
+  if(triggerBadges)triggerBadges.innerHTML=verifiedMarkMarkup(isFounderProfile(p))+badgeMarkup(state.profileBadges,true);
 }
 function closeProfileMenu() {
   const menu=document.querySelector('#profile-menu');
@@ -176,6 +182,7 @@ function renderApp() {
     ['missions','⚡','Ежедневные задания','Новые задания каждый день'],
     ['achievements','🏆','Достижения','Коллекция наград'],
     ['stats','▥','Статистика','Твоя активность'],
+    ['commands','⌘','Все команды','Полный список команд'],
     ['tariffs','✧','Premium','Подписка и возможности'],
     ['profile','◉','Профиль','Настройки аккаунта'],
     ...(state.isAdmin?[['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
@@ -189,14 +196,14 @@ function renderApp() {
             <div class="profile-menu-wrap">
               <button type="button" class="profile-menu-trigger" id="profile-menu-trigger" aria-expanded="false" aria-label="Открыть меню профиля">
                 <span id="top-avatar">${avatar(profileAvatar,p.display_name||p.username)}</span>
-                <span class="profile-trigger-name">${esc(p.display_name||p.username||'Пользователь')}</span>
+                <span class="profile-trigger-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p))}</span>
                 <span id="top-profile-badges">${badgeMarkup(state.profileBadges,true)}</span>
                 <span class="profile-chevron">⌄</span>
               </button>
               <div class="profile-menu" id="profile-menu">
                 <div class="profile-menu-head">
                   <span id="menu-avatar">${avatar(profileAvatar,p.display_name||p.username,'avatar-lg')}</span>
-                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${isPremium()?'✦ PREMIUM MEMBER':'FREE MEMBER'}</small></div>
+                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p))}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${isPremium()?'✦ PREMIUM MEMBER':'FREE MEMBER'}</small></div>
                 </div>
                 <div class="profile-menu-label">РАЗДЕЛЫ</div>
                 <nav class="profile-menu-nav">${items.map(([key,icon,label,sub])=>`<button type="button" class="profile-menu-item ${state.page===key?'selected':''}" data-page="${key}"><span class="menu-item-icon">${icon}</span><span><b>${label}</b><small>${sub}</small></span><i>›</i></button>`).join('')}</nav>
@@ -245,7 +252,7 @@ async function loadPage() {
       ]);
       state.streaks=(streaks.data||[]).sort((a,b)=>effectiveStreakDays(b)-effectiveStreakDays(a)).slice(0,5);
       const p=state.profile||{};
-      host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
+      host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup(isFounderProfile(p))} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
@@ -259,6 +266,7 @@ async function loadPage() {
     else if(state.page==='profile') await renderProfile(host);
     else if(state.page==='achievements') await renderAchievements(host);
     else if(state.page==='stats') await renderStats(host);
+    else if(state.page==='commands') await renderCommands(host);
     else if(state.page==='users') await renderUsers(host);
     else if(state.page==='admin_user') await renderAdminUser(host);
     else if(state.page==='admin') await renderAdmin(host);
@@ -276,7 +284,7 @@ async function loadPage() {
 }
 
 function refreshMissingBusinessAvatars(host) {
-  const missing=state.businessChats.filter(chat=>!chat.photo_url&&!state.avatarRefreshAttempted.has(chat.id)).slice(0,10);
+  const missing=state.businessChats.filter(chat=>!chat.photo_url&&!state.avatarRefreshAttempted.has(chat.id)).slice(0,4);
   if(!missing.length)return;
   missing.forEach(chat=>state.avatarRefreshAttempted.add(chat.id));
   Promise.all(missing.map(async chat=>{
@@ -296,7 +304,7 @@ function refreshMissingBusinessAvatars(host) {
       const active=state.businessChats.find(item=>item.id===state.activeBusinessChat);
       const head=host.querySelector('.chat-head-person');
       if(active&&head)head.innerHTML=avatar(active.photo_url,[active.first_name,active.last_name].filter(Boolean).join(' ')||active.username,'chat-avatar')+head.querySelector('div')?.outerHTML;
-      if(state.activeBusinessChat)refreshBusinessMessages(state.activeBusinessChat);
+      if(state.activeBusinessChat)scheduleBusinessMessagesRefresh(state.activeBusinessChat,120);
     }
   }).catch(error=>console.warn('Business avatar refresh skipped:',error?.message||error));
 }
@@ -329,6 +337,15 @@ function bindBusinessSearch(host) {
 
 function bindBusinessChatChoices(root) {
   root.querySelectorAll('[data-business-chat]').forEach(btn => btn.addEventListener('click', () => openBusinessChat(btn.dataset.businessChat)));
+}
+
+
+function scheduleBusinessChatListRefresh(host,delay=240) {
+  if(state.businessListRefreshTimer)clearTimeout(state.businessListRefreshTimer);
+  state.businessListRefreshTimer=setTimeout(()=>{
+    state.businessListRefreshTimer=null;
+    if(host?.isConnected)refreshBusinessChatList(host);
+  },delay);
 }
 
 async function refreshBusinessChatList(host) {
@@ -365,13 +382,16 @@ async function renderBusinessMessages(host) {
     return;
   }
   state.businessChats = chats || [];
-  if(state.businessChats.length){
-    const {data:prefs}=await supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,is_muted,antimut_enabled,last_read_at').in('business_chat_id',state.businessChats.map(x=>x.id));
-    const map=Object.fromEntries((prefs||[]).map(x=>[x.business_chat_id,x]));
-    state.businessChats=state.businessChats.map(x=>({...x,...(map[x.id]||{}),unread_count:0}));
-  }
-  const { data: connection } = await supabase.from('flamexbot_business_connections')
-    .select('is_enabled,rights').eq('profile_id', uid).maybeSingle();
+  const chatIds=state.businessChats.map(x=>x.id);
+  const [prefsResult,unreadResult,connectionResult]=await Promise.all([
+    chatIds.length?supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,is_muted,antimut_enabled,last_read_at').in('business_chat_id',chatIds):Promise.resolve({data:[]}),
+    chatIds.length?supabase.rpc('flamexbot_business_unread_counts'):Promise.resolve({data:[]}),
+    supabase.from('flamexbot_business_connections').select('is_enabled,rights').eq('profile_id',uid).maybeSingle()
+  ]);
+  const prefMap=Object.fromEntries((prefsResult.data||[]).map(x=>[x.business_chat_id,x]));
+  const unreadMap=Object.fromEntries((unreadResult.data||[]).map(x=>[x.business_chat_id,Number(x.unread_count)||0]));
+  state.businessChats=state.businessChats.map(x=>({...x,...(prefMap[x.id]||{}),unread_count:unreadMap[x.id]||0}));
+  const connection=connectionResult.data;
   const connected = Boolean(connection?.is_enabled);
   state.businessRights = connection?.rights || {};
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">ПЕРЕПИСКИ TELEGRAM BUSINESS</div><h1>Переписки</h1><p class="muted">Все диалоги синхронизируются через Telegram Business. Сообщения отправляются от имени подключённого аккаунта — только в пределах выданных Telegram разрешений.</p></div>
@@ -382,11 +402,11 @@ async function renderBusinessMessages(host) {
   refreshMissingBusinessAvatars(host);
   host.querySelectorAll('[data-quick-reply]').forEach(btn=>btn.addEventListener('click',()=>{const input=document.querySelector('#business-send-form input[name=content]');if(input){input.value=btn.dataset.quickReply;input.focus();}}));
   state.businessListChannel = supabase.channel(`business-chat-list-${uid}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'flamexbot_business_chats', filter: `profile_id=eq.${uid}` }, () => refreshBusinessChatList(host))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'flamexbot_business_chats', filter: `profile_id=eq.${uid}` }, () => scheduleBusinessChatListRefresh(host))
     .subscribe(status => {
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') toast('Не удалось подключить обновление переписок');
     });
-  await refreshBusinessChatList(host);
+  // The initial chat list is already populated above; realtime keeps it current.
 }
 
 function renderBusinessBubble(message, mediaUrl = '') {
@@ -415,22 +435,45 @@ function renderBusinessBubble(message, mediaUrl = '') {
   return `<div class="bubble-row ${mine?'mine':''}">${contactAvatar}${bubble}</div>`;
 }
 
+
+function scheduleBusinessMessagesRefresh(chatId,delay=180) {
+  const old=state.messageRefreshTimers.get(chatId);
+  if(old)clearTimeout(old);
+  const timer=setTimeout(()=>{
+    state.messageRefreshTimers.delete(chatId);
+    refreshBusinessMessages(chatId);
+  },delay);
+  state.messageRefreshTimers.set(chatId,timer);
+}
 async function refreshBusinessMessages(chatId) {
+  if(state.messageRefreshInFlight.has(chatId)){
+    state.messageRefreshPending.add(chatId);
+    return;
+  }
+  state.messageRefreshInFlight.add(chatId);
+  try{await refreshBusinessMessagesNow(chatId);}
+  finally{
+    state.messageRefreshInFlight.delete(chatId);
+    if(state.messageRefreshPending.delete(chatId))scheduleBusinessMessagesRefresh(chatId,120);
+  }
+}
+
+async function refreshBusinessMessagesNow(chatId) {
   if (state.activeBusinessChat !== chatId) return;
   const list = document.querySelector('#business-message-list');
   if (!list) return;
   const { data, error } = await supabase.from('flamexbot_business_messages')
     .select('id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at,raw')
-    .eq('business_chat_id', chatId).order('created_at', { ascending: true }).limit(300);
+    .eq('business_chat_id', chatId).order('created_at', { ascending: false }).limit(100);
   if (state.activeBusinessChat !== chatId) return;
   if (error) { list.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; return; }
-  state.businessMessages = data || [];
+  state.businessMessages = (data || []).reverse();
   const latestInbound=state.businessMessages.filter(m=>m.direction==='inbound').reduce((latest,m)=>!latest||new Date(m.created_at)>new Date(latest)?m.created_at:latest,null);
   const openChat=state.businessChats.find(chat=>chat.id===chatId);
   if(!document.hidden&&latestInbound&&(!openChat?.last_read_at||new Date(latestInbound)>new Date(openChat.last_read_at))){
     const readAt=new Date().toISOString();
     const {error:readError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:chatId,last_read_at:readAt},{onConflict:'profile_id,business_chat_id'});
-    if(!readError){if(openChat){openChat.last_read_at=readAt;openChat.unread_count=0;}const inbox=document.querySelector('#page-content');if(inbox?.querySelector('.business-inbox'))await refreshBusinessChatList(inbox);}
+    if(!readError){if(openChat){openChat.last_read_at=readAt;openChat.unread_count=0;}document.querySelector(`[data-business-chat="${chatId}"] .chat-unread-badge`)?.remove();}
   }
   const query=(document.querySelector('#business-message-search')?.value||'').trim().toLowerCase();
   const visible=state.businessMessages.filter(m=>{
@@ -440,10 +483,15 @@ async function refreshBusinessMessages(chatId) {
     return [m.content,fileName,m.message_type].filter(Boolean).join(' ').toLowerCase().includes(query);
   });
   const mediaUrls = {};
-  await Promise.all(visible.filter(m=>m.media_url).map(async m=>{
-    const {data}=await supabase.storage.from('flamex-business-media').createSignedUrl(m.media_url,3600);
-    if(data?.signedUrl) mediaUrls[m.id]=data.signedUrl;
-  }));
+  const mediaPaths=[...new Set(visible.filter(m=>m.media_url).map(m=>m.media_url))];
+  const missingPaths=mediaPaths.filter(path=>!state.businessMediaUrlCache.has(path));
+  if(missingPaths.length){
+    try{
+      const {data,error}=await supabase.storage.from('flamex-business-media').createSignedUrls(missingPaths,3600);
+      if(!error)for(const item of data||[])if(item.path&&item.signedUrl)state.businessMediaUrlCache.set(item.path,item.signedUrl);
+    }catch(error){console.warn('Business media preview:',error?.message||error);}
+  }
+  visible.forEach(message=>{if(message.media_url){const url=state.businessMediaUrlCache.get(message.media_url);if(url)mediaUrls[message.id]=url;}});
   list.innerHTML = visible.map(m=>renderBusinessBubble(m,mediaUrls[m.id]||'')).join('') || '<div class="chat-placeholder"><b>Сообщений не найдено</b><small>Измени поисковый запрос.</small></div>';
   list.querySelectorAll('[data-reply-to]').forEach(btn=>btn.addEventListener('click',()=>{
     const form=document.querySelector('#business-send-form');
@@ -471,8 +519,9 @@ async function openBusinessChat(id) {
   const canDeleteMessages = state.businessRights?.can_delete_all_messages === true;
   const canReplyMessages = state.businessRights?.can_reply === true;
   const premiumAccess = isPremium();
-  await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:new Date().toISOString()},{onConflict:'profile_id,business_chat_id'});
-  await refreshBusinessChatList(document.querySelector('#page-content'));
+  const readAt=new Date().toISOString();
+  const {error:readError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:readAt},{onConflict:'profile_id,business_chat_id'});
+  if(!readError){chat.last_read_at=readAt;chat.unread_count=0;document.querySelector(`[data-business-chat="${id}"] .chat-unread-badge`)?.remove();}
   box.closest('.business-inbox')?.classList.add('chat-open');
   box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div class="chat-head-person">${avatar(chat.photo_url,name,'chat-avatar')}<div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div></div><input class="message-search" id="business-message-search" type="search" placeholder="Поиск по переписке…"/></div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
   const controlsHost = box.querySelector('#business-chat-controls');
@@ -529,11 +578,10 @@ async function openBusinessChat(id) {
     document.querySelectorAll('[data-business-chat]').forEach(btn => btn.classList.remove('active'));
   });
   await refreshBusinessMessages(id);
-  document.querySelector('#business-message-search')?.addEventListener('input',()=>refreshBusinessMessages(id));
+  document.querySelector('#business-message-search')?.addEventListener('input',()=>scheduleBusinessMessagesRefresh(id,160));
   state.businessChatChannel = supabase.channel(`business-chat-${id}`)
-    .on('postgres_changes',{event:'*',schema:'public',table:'flamexbot_business_messages',filter:`business_chat_id=eq.${id}`},() => refreshBusinessMessages(id))
+    .on('postgres_changes',{event:'*',schema:'public',table:'flamexbot_business_messages',filter:`business_chat_id=eq.${id}`},() => scheduleBusinessMessagesRefresh(id,180))
     .subscribe(status => {
-      if (status === 'SUBSCRIBED') refreshBusinessMessages(id);
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') toast('Связь с обновлением переписки прервалась');
     });
   const sendForm=document.querySelector('#business-send-form');
@@ -734,7 +782,7 @@ async function renderUsers(host) {
       const currentRole=badges.find(code=>code!=='premium')||'';
       const display=u.display_name||u.username||'Пользователь';
       return `<article class="admin-user-card" data-user-card="${u.id}">
-        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
+        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
         <div class="admin-user-actions">
           <button class="admin-action" data-admin-open="${u.id}">Открыть управление →</button>
           <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
@@ -789,7 +837,7 @@ async function renderAdminUser(host) {
   const roleOptions=[['verified','Подтверждён'],...(actorOwner?[['developer','Разработчик'],['administrator','Администратор']]:[]),['moderator','Модератор'],['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']];
   const premiumUntil=u.is_premium?(u.premium_expires_at?formatMskDate(u.premium_expires_at):'Бессрочно'):'Не активен';
   host.innerHTML=`<div class="page-heading"><button class="text-button" data-go="users">← Все пользователи</button><div class="eyebrow">ADMIN USER CONTROL</div><h1>Управление аккаунтом</h1><p class="muted">Все изменения проходят серверную проверку и попадают в журнал администрации.</p></div>
-    <section class="admin-user-detail-card"><div class="admin-user-detail-top">${avatar(u.avatar_url||u.telegram_photo_url,u.display_name||u.username,'avatar-xl')}<div><h2>${esc(u.display_name||u.username||'Пользователь')}</h2><p>@${esc(u.telegram_username||u.username||'не задан')} · ${u.telegram_id?'Telegram ID '+esc(u.telegram_id):'Telegram не привязан'}</p><div class="profile-badge-row">${badgeMarkup(badges,false,false)} ${u.is_premium?badgeMarkup(['premium'],false,false):''}</div></div></div>
+    <section class="admin-user-detail-card"><div class="admin-user-detail-top">${avatar(u.avatar_url||u.telegram_photo_url,u.display_name||u.username,'avatar-xl')}<div><h2>${esc(u.display_name||u.username||'Пользователь')}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</h2><p>@${esc(u.telegram_username||u.username||'не задан')} · ${u.telegram_id?'Telegram ID '+esc(u.telegram_id):'Telegram не привязан'}</p><div class="profile-badge-row">${badgeMarkup(badges,false,false)} ${u.is_premium?badgeMarkup(['premium'],false,false):''}</div></div></div>
       <div class="admin-detail-status"><span class="user-flag ${u.is_banned?'banned':'active'}">${u.is_banned?'⛔ Заблокирован':'● Активен'}</span><span class="user-flag ${u.is_premium?'premium':'free'}">${u.is_premium?'✦ Premium':'Free'}</span><span class="user-flag">${u.is_verified?'🔵 Подтверждён':'Без галочки'}</span></div>
       <div class="admin-detail-metrics"><div><small>СООБЩЕНИЯ</small><b>${u.total_messages||0}</b></div><div><small>ДРУЗЬЯ</small><b>${u.friends_count||0}</b></div><div><small>ЛУЧШАЯ СЕРИЯ</small><b>${u.best_streak||0} дн.</b></div><div><small>ДОСТИЖЕНИЯ</small><b>${u.achievements_count||0}</b></div><div><small>ОПЫТ</small><b>${u.xp||0} XP</b></div><div><small>PREMIUM ДО</small><b>${premiumUntil}</b></div></div>
       <div class="admin-detail-actions"><h3>Действия с аккаунтом</h3><div class="admin-detail-action-grid">
@@ -1028,7 +1076,7 @@ async function renderProfile(host) {
   const businessConnected = Boolean(businessConnection?.is_enabled);
   const rights = businessConnection?.rights || {};
   const grantedRights = Object.entries(rights).filter(([, value]) => value === true).map(([key]) => key);
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль</h1><div class="profile-badge-row">${badgeMarkup(state.profileBadges)}</div><p class="muted">Управляй именем, оформлением, значками и подключением Telegram Business.</p></div>
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль ${verifiedMarkMarkup(isFounderProfile(p))}</h1><div class="profile-badge-row">${badgeMarkup(state.profileBadges)}</div><p class="muted">Управляй именем, оформлением, значками и подключением Telegram Business.</p></div>
     <form class="profile-card" id="profile-form">${avatar(profileAvatar,p.display_name||p.username,'avatar-xl')}
       <label>Отображаемое имя<input name="display_name" value="${esc(p.display_name || '')}" placeholder="Как тебя называть" maxlength="48"/></label>
       <label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label>
@@ -1149,6 +1197,65 @@ async function renderAchievements(host) {
     const filter=btn.dataset.achievementFilter;
     host.querySelectorAll('[data-achievement-state]').forEach(card=>card.hidden=filter!=='all'&&card.dataset.achievementState!==filter);
   }));
+}
+
+
+async function renderCommands(host) {
+  const entries=[
+    {syntax:'.ping',title:'Проверка связи',description:'Проверяет, что FLAMEXBOT отвечает в текущем Business-диалоге.',access:'free',group:'Основные'},
+    {syntax:'.help',title:'Справка',description:'Показывает список команд прямо в переписке.',access:'free',group:'Основные'},
+    {syntax:'.inf',title:'Справка (короткий алиас)',description:'То же самое, что .help.',access:'free',group:'Основные'},
+    {syntax:'.mute',title:'Включить мут',description:'Удаляет новые входящие сообщения в выбранном диалоге. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
+    {syntax:'.unmute',title:'Выключить мут',description:'Останавливает автоматическое удаление новых сообщений. Доступно бесплатно.',access:'free',group:'Управление чатом'},
+    {syntax:'.antimute on',title:'Включить антимут',description:'Разрешает одну ручную попытку отправки через Telegram Business. Нужны Premium и право «Отвечать».',access:'premium',group:'Управление чатом'},
+    {syntax:'.antimute off',title:'Выключить антимут',description:'Отключает ручную отправку через антимут. Доступно бесплатно.',access:'free',group:'Управление чатом'},
+    {syntax:'.antimute текст',title:'Ручная отправка',description:'Одна попытка отправить указанный текст через подключённый Telegram Business. Ограничения Telegram не обходятся.',access:'premium',group:'Управление чатом'},
+    {syntax:'.antimut on/off',title:'Короткий алиас антимута',description:'Альтернативная команда для включения и выключения антимута.',access:'premium',group:'Управление чатом'},
+    {syntax:'.antimut текст',title:'Ручная отправка (алиас)',description:'Одна ручная попытка отправки через Telegram Business.',access:'premium',group:'Управление чатом'},
+    {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Отправляет от двух до пяти копий текста с паузой. Используй только когда получатель согласен.',access:'premium',group:'Управление чатом'},
+    {syntax:'.afk причина',title:'Включить автоответ',description:'Включает AFK-режим и задаёт текст автоматического ответа.',access:'premium',group:'Автоматизация'},
+    {syntax:'.unafk',title:'Выключить автоответ',description:'Отключает AFK-режим. Доступно бесплатно.',access:'free',group:'Автоматизация'},
+    {syntax:'.autoread on',title:'Автопрочтение',description:'Автоматически отмечает входящие Business-сообщения прочитанными.',access:'premium',group:'Автоматизация'},
+    {syntax:'.autoread off',title:'Отключить автопрочтение',description:'Выключает автоматическое прочтение. Доступно бесплатно.',access:'free',group:'Автоматизация'},
+    {syntax:'.autotyping on/off',title:'Статус «печатает…»',description:'Включает или выключает статус набора текста. Для включения нужен Premium.',access:'premium',group:'Автоматизация'},
+    {syntax:'.autovoice on/off',title:'Статус записи голосового',description:'Включает или выключает статус записи голосового. Для включения нужен Premium.',access:'premium',group:'Автоматизация'},
+    {syntax:'.mutestick on/off',title:'Фильтр стикеров',description:'Фильтрует входящие стикеры. Для включения нужен Premium.',access:'premium',group:'Автоматизация'},
+    {syntax:'.timeprofile',title:'Московское время',description:'Закрепляет часовой пояс FLAMEXBOT: Москва, UTC+3.',access:'premium',group:'Профиль'},
+    {syntax:'.time',title:'Показывать время',description:'Включает отображение времени в профиле.',access:'premium',group:'Профиль'},
+    {syntax:'.untime',title:'Скрыть время',description:'Выключает отображение времени в профиле. Доступно бесплатно.',access:'free',group:'Профиль'},
+    {syntax:'.bold текст',title:'Жирный текст',description:'Отправляет указанный текст жирным начертанием.',access:'premium',group:'Оформление'},
+    {syntax:'.dumb текст',title:'Игровое оформление',description:'Преобразует текст в шуточный стиль.',access:'premium',group:'Оформление'},
+    {syntax:'.link текст',title:'Ссылка на диалог',description:'Создаёт ссылку на текущий Telegram-диалог.',access:'premium',group:'Оформление'},
+    {syntax:'.streak 7',title:'Установить огонёк',description:'Мгновенно создаёт или устанавливает серию на указанное число дней (1–3650). Только владелец и администраторы.',access:'admin',group:'Администрация'}
+  ];
+  const filters=[['all','Все'],['free','Бесплатные'],['premium','Premium'],['admin','Администрация']];
+  host.innerHTML='<div class="page-heading"><div class="eyebrow">FLAMEXBOT COMMAND CENTER</div><h1>Все команды <span>⌘</span></h1><p class="muted">Полный справочник команд. Отправляй их прямо в нужной Telegram Business-переписке — без @username и ID. Команды управления не применяются к диалогам владельца FLAMEXBOT.</p></div>'+
+    '<section class="commands-toolbar"><label class="commands-search"><span>⌕</span><input id="commands-search" type="search" placeholder="Найти команду или функцию…"/></label><div class="commands-filters">'+filters.map(([key,label])=>'<button type="button" class="command-filter '+key+'" data-command-filter="'+key+'">'+label+'</button>').join('')+'</div></section>'+
+    '<div class="commands-result-meta"><span id="commands-count">'+entries.length+' команд и вариантов</span><span>Префикс: <code>.</code> или <code>/</code></span></div>'+
+    '<div id="commands-list" class="commands-list"></div>'+
+    '<div class="business-note">Уровень доступа проверяется сервером. Отключение функций доступно бесплатно там, где это указано. Команды работают в личной переписке Telegram Business с конкретным собеседником.</div>';
+  let activeFilter='all';
+  const list=host.querySelector('#commands-list');
+  const search=host.querySelector('#commands-search');
+  const draw=()=>{
+    const query=(search.value||'').trim().toLowerCase();
+    const visible=entries.filter(item=>(activeFilter==='all'||item.access===activeFilter)&&(!query||[item.syntax,item.title,item.description,item.group].join(' ').toLowerCase().includes(query)));
+    host.querySelector('#commands-count').textContent='Показано '+visible.length+' из '+entries.length;
+    const groups=[...new Set(visible.map(item=>item.group))];
+    list.innerHTML=groups.map(group=>'<section class="commands-group"><div class="commands-group-title">'+esc(group)+'<span>'+visible.filter(item=>item.group===group).length+'</span></div><div class="commands-group-grid">'+visible.filter(item=>item.group===group).map(item=>'<article class="command-card command-'+item.access+'"><div class="command-card-top"><code>'+esc(item.syntax)+'</code><span class="command-access '+item.access+'">'+(item.access==='premium'?'✦ PREMIUM':item.access==='admin'?'♛ АДМИН':'FREE')+'</span></div><b>'+esc(item.title)+'</b><p>'+esc(item.description)+'</p><button type="button" class="command-copy" data-copy-command="'+esc(item.syntax)+'">Скопировать команду</button></article>').join('')+'</div></section>').join('')||'<div class="empty-state">По запросу ничего не найдено. Попробуй другое название.</div>';
+    list.querySelectorAll('[data-copy-command]').forEach(button=>button.addEventListener('click',async()=>{
+      const value=button.dataset.copyCommand;
+      try{await navigator.clipboard.writeText(value);toast('Команда скопирована: '+value);}
+      catch{const input=document.createElement('textarea');input.value=value;input.style.position='fixed';input.style.opacity='0';document.body.append(input);input.select();try{document.execCommand('copy');toast('Команда скопирована: '+value);}catch{toast('Не удалось скопировать команду');}input.remove();}
+    }));
+  };
+  host.querySelectorAll('[data-command-filter]').forEach(button=>button.addEventListener('click',()=>{
+    activeFilter=button.dataset.commandFilter;
+    host.querySelectorAll('[data-command-filter]').forEach(item=>item.classList.toggle('active',item===button));
+    draw();
+  }));
+  search.addEventListener('input',draw);
+  draw();
 }
 
 async function renderStats(host) {
@@ -1291,10 +1398,11 @@ async function boot(session) {
   state.subscription=subscription&&(!subscription.expires_at||new Date(subscription.expires_at).getTime()>Date.now())?subscription:{plan:'free',expires_at:null};
   applyTheme(state.profile.theme);
   state.isAdmin=!adminResult.error&&adminResult.data===true;
-  const {error:achievementSyncError}=await supabase.rpc('sync_flamexbot_achievements');
-  if(achievementSyncError)console.warn('Achievement sync:',achievementSyncError.message);
-  await Promise.all([startPresence(session),startNotificationRealtime(session),startModerationRealtime(session)]);
   renderApp();
+  Promise.all([
+    supabase.rpc('sync_flamexbot_achievements').then(({error})=>{if(error)console.warn('Achievement sync:',error.message);}),
+    startPresence(session),startNotificationRealtime(session),startModerationRealtime(session)
+  ]).catch(error=>console.warn('FLAMEXBOT background initialization:',error?.message||error));
 }
 
 if (!supabase) {
