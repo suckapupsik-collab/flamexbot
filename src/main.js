@@ -896,7 +896,12 @@ async function openBusinessChat(id) {
         const {data:utilityData,error:utilityError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text,command_mode:true,command_name:name}});
         button.disabled=false;
         if(utilityError||utilityData?.error){toast(utilityData?.error||utilityError?.message||'Не удалось выполнить команду');return;}
-        form.reset();toast(name==='copyp'?'Запрос профиля отправлен FLAMEXBOT':'Создаём QR-код…');await refreshBusinessMessages(id);return;
+        form.reset();
+        if(name==='copyp')toast('Запрос профиля обработан FLAMEXBOT');
+        else if(name==='qr')toast('Создаём QR-код…');
+        else if(name==='afk')toast(utilityData?.message||'AFK включён только в этом диалоге');
+        else if(name==='unafk')toast(utilityData?.message||'AFK выключен в этом диалоге');
+        await refreshBusinessMessages(id);return;
       }
       button.disabled=false;toast('Неизвестная команда. Напиши .help');return;
     }
