@@ -22,6 +22,8 @@ FLAMEXBOT — Telegram Mini App для общения, общих огонько
 - `20261116000000_add_antimut_enabled_to_business_chat_settings.sql` — per-chat antimut state.
 - `20261116010000_flamexbot_admin_badges_daily_tasks_achievements.sql` — moderation fields, role badges, admin RPCs, rotating daily tasks and achievement catalogue.
 - `20261116011000_fix_admin_premium_upsert.sql` — safe Premium extension upsert.
+- `20261116012000_guarantee_daily_task_rotation.sql` — guarantees a different daily challenge set.
+- `20261116013000_publish_profiles_for_moderation.sql` — enables immediate ban updates in active sessions.
 
 These migrations have been applied to the connected Supabase project. The owner account has the protected Founder, Verified, Developer and Administrator badges.
 
