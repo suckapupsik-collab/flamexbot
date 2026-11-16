@@ -209,7 +209,7 @@ function renderApp() {
               <div class="profile-menu" id="profile-menu">
                 <div class="profile-menu-head">
                   <span id="menu-avatar">${avatar(profileAvatar,p.display_name||p.username,'avatar-lg')}</span>
-                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p))}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${isPremium()?'✦ PREMIUM MEMBER':'FREE MEMBER'}</small></div>
+                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p))}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${isPremium()?'✦ '+planLabel()+' MEMBER':'FREE MEMBER'}</small></div>
                 </div>
                 <div class="profile-menu-label">РАЗДЕЛЫ</div>
                 <nav class="profile-menu-nav">${items.map(([key,icon,label,sub])=>`<button type="button" class="profile-menu-item ${state.page===key?'selected':''}" data-page="${key}"><span class="menu-item-icon">${icon}</span><span><b>${label}</b><small>${sub}</small></span><i>›</i></button>`).join('')}</nav>
@@ -1219,7 +1219,7 @@ async function renderTariffs(host, initialTab='premium') {
   </div>
   <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
   <p class="business-note">Антимут отправляет новые сообщения от имени FLAMEXBOT, если собеседник заранее запустил бота. Он не снимает мут в Telegram и не обходит блокировки.</p>
-  <section class="business-card trial-card">
+  <section class="business-card trial-card" ${premium?'hidden':''}>
    <div class="eyebrow">ПОПРОБУЙ FLAMEXBOT</div><h2>🎁 Пробный Premium на 3 дня</h2>
    <p class="muted">Один раз на аккаунт. Без оплаты и автоматического продления.</p>
    ${trialUsed?'<span class="business-status">Пробный период уже использован</span>':'<button class="primary" id="claim-trial" type="button">Активировать 3 дня Premium</button>'}
@@ -1385,8 +1385,8 @@ async function renderTariffs(host, initialTab='premium') {
          }
          if(result)await animateFortuneWheel(result.prize_type);
          toast(result?'🎉 Выпало: '+result.prize_label:'Платёж принят. Награда появится после подтверждения Telegram.');
-         const {data:profile}=await supabase.from('profiles').select('wheel_free_spins').eq('id',state.session.user.id).maybeSingle();
-         state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0};
+         const {data:profile}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
+         state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0,command_protection_expires_at:profile?.command_protection_expires_at};
          if(result&&(/^(premium|pro)_/.test(result.prize_type||''))){
            const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
            state.subscription=subscription;
