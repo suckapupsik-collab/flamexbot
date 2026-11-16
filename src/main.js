@@ -794,7 +794,7 @@ async function renderFriends(host) {
   const outgoingIds=(outgoing.data||[]).map(x=>x.receiver_id);
   const ids=[...new Set([...friendIds,...incomingIds,...outgoingIds])];
   const [profileResult,badgeResult,searchResult]=await Promise.all([
-    ids.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_username,telegram_id').in('id',ids):Promise.resolve({data:[],error:null}),
+    ids.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url,telegram_username,telegram_id').in('id',ids):Promise.resolve({data:[],error:null}),
     ids.length?supabase.from('profile_badges').select('user_id,badge_code').in('user_id',ids):Promise.resolve({data:[],error:null}),
     state.friendSearchQuery.length>=2
       ?supabase.rpc('search_flamexbot_profiles',{p_query:state.friendSearchQuery,p_limit:15})
@@ -808,7 +808,7 @@ async function renderFriends(host) {
   const outgoingByUser=new Map((outgoing.data||[]).map(r=>[r.receiver_id,r]));
   const streakByFriend=new Map((streakResult.data||[]).map(s=>[s.user_low===uid?s.user_high:s.user_low,s]));
   const displayName=id=>{const p=profileMap.get(id);return p?.display_name||p?.username||'Пользователь';};
-  const profileCard=(p,subline,actions='',badges=[])=>`<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${badgeMarkup(badges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
+  const profileCard=(p,subline,actions='',badges=[])=>`<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url||p.telegram_photo_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${badgeMarkup(badges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
   const friendCards=friendIds.map(id=>{
     const p=profileMap.get(id);if(!p)return '';
     const streak=streakByFriend.get(id),days=effectiveStreakDays(streak);
@@ -886,7 +886,7 @@ async function renderStreaks(host) {
   state.streaks=data||[];
   const friendIds=state.streaks.map(s=>s.user_low===uid?s.user_high:s.user_low);
   const [profiles,badges]=await Promise.all([
-    friendIds.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_username').in('id',friendIds):Promise.resolve({data:[],error:null}),
+    friendIds.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url,telegram_username').in('id',friendIds):Promise.resolve({data:[],error:null}),
     friendIds.length?supabase.from('profile_badges').select('user_id,badge_code').in('user_id',friendIds):Promise.resolve({data:[],error:null})
   ]);
   const profileMap=new Map((profiles.data||[]).map(p=>[p.id,p]));
