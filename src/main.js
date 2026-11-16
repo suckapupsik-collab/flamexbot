@@ -1145,7 +1145,8 @@ async function renderTariffs(host, initialTab='premium') {
    <div class="eyebrow">LUCKY SPIN</div><h2>🎡 Колесо фортуны</h2>
    <p class="muted">Прокрутка стоит 5 ⭐. Возможные награды: 1 день Premium, защита от команд на 5 дней или бесплатная прокрутка.</p>
    <div class="wheel-odds"><span>15% · Premium 1 день</span><span>25% · Дополнение 5 дней</span><span>60% · Бесплатная прокрутка</span></div>
-   <button class="primary" id="spin-wheel" type="button">Крутить за 5 ⭐</button>
+   <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐'}</button>
+   <small class="premium-payment-note">Бесплатных прокруток: ${state.profile?.wheel_free_spins||0}. Шансы: 15% Premium · 25% дополнение · 60% ещё одна прокрутка.</small>
   </section>
  </section>
  <section class="tariff-tab-panel" data-tariff-panel="addons" hidden>
@@ -1246,9 +1247,20 @@ async function renderTariffs(host, initialTab='premium') {
  });
  const wheelButton=host.querySelector('#spin-wheel');
  wheelButton?.addEventListener('click',async()=>{
-   wheelButton.disabled=true;wheelButton.textContent='Создаём счёт…';
+   const freeSpin=(state.profile?.wheel_free_spins||0)>0;
+   wheelButton.disabled=true;wheelButton.textContent=freeSpin?'Используем прокрутку…':'Создаём счёт…';
    try{
-     const {data,error}=await supabase.functions.invoke('create-wheel-invoice');
+     const {data,error}=await supabase.functions.invoke('create-wheel-invoice',{body:freeSpin?{action:'free_spin'}:{}});
+     if(freeSpin&&data?.prize?.prize_label){
+       const {data:profile}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
+       state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0,command_protection_expires_at:profile?.command_protection_expires_at};
+       if(data.prize.prize_type==='premium_day'){
+         const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+         state.subscription=subscription;
+       }
+       toast('🎉 Выпало: '+data.prize.prize_label);
+       updateHeaderProfile();await renderTariffs(host,'premium');return;
+     }
      if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать счёт');
      const webApp=window.Telegram?.WebApp;
      const opened=await waitForInvoiceClose(webApp,data.invoice_link,async status=>{
@@ -1270,7 +1282,7 @@ async function renderTariffs(host, initialTab='premium') {
      });
      if(!opened)toast('Счёт открыт в Telegram.');
    }catch(error){toast('Колесо: '+(error.message||'ошибка'));}
-   finally{if(host.contains(wheelButton)){wheelButton.disabled=false;wheelButton.textContent='Крутить за 5 ⭐';}}
+   finally{if(host.contains(wheelButton)){wheelButton.disabled=false;wheelButton.textContent=(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐';}}
  });
  const addonButton=host.querySelector('#buy-command-protection');
  addonButton?.addEventListener('click',async()=>{
