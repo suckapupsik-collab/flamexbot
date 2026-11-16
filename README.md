@@ -25,6 +25,8 @@ FLAMEXBOT — Telegram Mini App для общения, общих огонько
 - `20261116012000_guarantee_daily_task_rotation.sql` — guarantees a different daily challenge set.
 - `20261116013000_publish_profiles_for_moderation.sql` — enables immediate ban updates in active sessions.
 - `20261116014000_admin_directory_telegram_avatar.sql` — shows Telegram avatars in the admin directory.
+- `20261116015000_daily_progress_and_auto_read_notifications.sql` — calculates daily task progress only from the signed-in user's Business chats and marks notifications read at insertion.
+- `20261116016000_enforced_bans_and_admin_audit.sql` — enforces bans in Supabase Auth and user-scoped RLS policies, and adds an owner-only moderation audit log.
 
 These migrations have been applied to the connected Supabase project. The owner account has the protected Founder, Verified, Developer and Administrator badges.
 
@@ -39,14 +41,15 @@ FLAMEXBOT работает только с диалогами и разреше�
 
 ## Команды
 
-Команды вводятся **не в личном чате с ботом**, а прямо в переписке с нужным человеком. Отправитель команды — владелец подключённого Business-аккаунта. FLAMEXBOT автоматически определяет текущий диалог: указывать `@username` или ID собеседника не нужно.
+Команды управления вводятся **прямо в нужной переписке Telegram Business**, а не в личном чате с ботом. Поддерживаются оба префикса: `.` и `/`. Отправитель команды — владелец подключённого Business-аккаунта. FLAMEXBOT автоматически определяет текущий диалог: указывать `@username` или ID собеседника не нужно.
 
 | Команда | Действие |
 |---|---|
 | `/start` | Открыть бота и Mini App |
 | `/help` | Получить подсказку в личном чате с ботом |
-| `/ping` | Проверить, что бот отвечает в личном чате |
-| `.ping` | Проверить обработчик Business-команд в текущем диалоге |
+| `/ping` | Проверить, что бот отвечает в личном чате или Business-диалоге |
+| `/status` | Проверить состояние Telegram Business и выданные разрешения |
+| `.ping` / `/ping` | Проверить обработчик Business-команд в текущем диалоге |
 | `.help` | Показать список Business-команд в текущем диалоге |
 | `.mute` | Включить удаление новых входящих сообщений в текущем диалоге |
 | `.unmute` | Отключить удаление новых сообщений |
@@ -96,11 +99,12 @@ Telegram ID владельца FLAMEXBOT защищён на серверной 
 - поиск по имени, никнейму и Telegram ID;
 - фильтры Verified / без галочки, Premium / Free и активные / заблокированные;
 - выдача и снятие синей галочки;
-- блокировка с причиной и разблокировка;
+- блокировка с причиной и разблокировка; бан также блокирует вход через Supabase Auth и закрывает доступ к пользовательским данным через RLS;
+- журнал последних административных действий: выдача галочек, Premium, значков ролей и блокировки;
 - выдача Premium на срок от 1 до 3650 дней или бессрочно, продление и снятие;
 - выдача и снятие ролевых значков.
 
-Защита на сервере не позволяет заблокировать владельца или снять его синюю галочку и значок Founder. Бан проверяется при Telegram-входе и при загрузке профиля. Ролевые значки не меняют реальные права доступа.
+Защита на сервере не позволяет заблокировать владельца или снять его синюю галочку и значок Founder. Бан блокирует Supabase Auth, проверяется при Telegram-входе и при загрузке профиля; пользовательские RLS-политики дополнительно закрывают доступ к данным. Ролевые значки не меняют реальные права доступа.
 
 ## Ограничения Telegram
 
