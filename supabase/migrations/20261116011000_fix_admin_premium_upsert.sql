@@ -25,11 +25,16 @@ begin
       if v_owner then raise exception 'The owner verification badge is protected'; end if;
       delete from public.profile_badges where user_id=p_user_id and badge_code='verified';
     when 'premium_grant' then
+      if v_owner then raise exception 'The owner Premium is protected'; end if;
       if v_days<0 or v_days>3650 then raise exception 'Premium duration must be between 0 and 3650 days'; end if;
       insert into public.user_subscriptions as current_subscription(user_id,plan,starts_at,expires_at,granted_by,updated_at)
       values(p_user_id,'premium',now(),case when v_days=0 then null else now()+make_interval(days=>v_days) end,auth.uid(),now())
       on conflict(user_id) do update set plan='premium',starts_at=now(),
-        expires_at=case when v_days=0 then null else greatest(coalesce(current_subscription.expires_at,now()),now())+make_interval(days=>v_days) end,
+        expires_at=case
+          when v_days=0 then null
+          when current_subscription.plan='premium' and current_subscription.expires_at is null then null
+          else greatest(coalesce(current_subscription.expires_at,now()),now())+make_interval(days=>v_days)
+        end,
         granted_by=auth.uid(),updated_at=now();
     when 'premium_revoke' then
       if v_owner then raise exception 'The owner Premium cannot be revoked'; end if;
