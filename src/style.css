@@ -1091,7 +1091,6 @@ body{
 .daily-task-footer{min-width:0;overflow:hidden}
 .daily-task-footer>div{min-width:0}
 .daily-task-footer small{overflow-wrap:anywhere}
-.topbar,.profile-menu,.task-v2,.command-card{transform:translateZ(0)}
 .commands-toolbar{
   display:grid;gap:13px;margin:20px 0 12px;padding:15px;
   border:1px solid var(--line);border-radius:18px;
@@ -1147,7 +1146,9 @@ body{
   .profile-menu-trigger{width:48px;height:48px;min-width:48px;min-height:48px;padding:4px;border-radius:15px}
   .profile-menu-trigger #top-avatar .avatar{width:38px;height:38px;border-radius:12px}
   .profile-trigger-name,#top-profile-badges,.profile-chevron{display:none}
-  .profile-menu{width:min(360px,calc(100vw - 24px));right:-4px;max-height:min(78dvh,640px)}
+  .profile-menu{width:min(360px,calc(100vw - 24px));right:-4px;max-height:min(78dvh,640px);backdrop-filter:none;-webkit-backdrop-filter:none}
+  .send-form{backdrop-filter:none;-webkit-backdrop-filter:none}
+  .hero-fire-core{filter:none}
   .task-v2{grid-template-columns:46px minmax(0,1fr);gap:11px;padding:14px;min-height:0}
   .task-v2 .daily-task-icon{width:46px;height:46px}
   .task-v2>button{grid-column:1/-1;justify-self:stretch;width:100%;min-width:0;margin:0!important}
