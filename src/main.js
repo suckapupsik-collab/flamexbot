@@ -779,7 +779,7 @@ async function renderProfile(host) {
   document.querySelector('#profile-form').addEventListener('submit', async e => {
     e.preventDefault(); const fd = new FormData(e.currentTarget);
     const { error } = await supabase.from('profiles').update({display_name:fd.get('display_name')||'Пользователь',username:fd.get('username'),bio:fd.get('bio')||'',avatar_url:fd.get('avatar_url') || null,theme:fd.get('theme')||'orange'}).eq('id',state.session.user.id);
-    if (error) toast(error.message); else { state.profile = {...p,display_name:fd.get('display_name')||'Пользователь',username:fd.get('username'),bio:fd.get('bio')||'',avatar_url:fd.get('avatar_url'),theme:fd.get('theme')||'orange'}; applyTheme(state.profile.theme); toast('Изменения профиля сохранены'); renderApp(); }
+    if (error) toast(error.message); else { state.profile = {...p,display_name:fd.get('display_name')||'Пользователь',username:fd.get('username'),bio:fd.get('bio')||'',avatar_url:fd.get('avatar_url'),theme:fd.get('theme')||'orange'}; applyTheme(state.profile.theme); updateHeaderProfile(); toast('Изменения профиля сохранены'); }
   });
 }
 
@@ -881,21 +881,6 @@ async function renderAchievements(host) {
   }));
 }
 
-async function renderNotifications(host) {
-  const uid=state.session.user.id;
-  const {data,error}=await supabase.from('notifications').select('id,type,title,body,data,created_at,read_at').eq('user_id',uid).order('created_at',{ascending:false}).limit(50);
-  state.notificationCount=(data||[]).filter(n=>!n.read_at).length;
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ЦЕНТР УВЕДОМЛЕНИЙ</div><h1>Уведомления</h1><p class="muted">Здесь собраны новые сообщения, события и изменения в твоём аккаунте.</p><div class="notification-toolbar"><span class="muted">${state.notificationCount} непрочитанных</span><button class="outline small" type="button" id="read-all-notifications" ${state.notificationCount?'':'disabled'}>Отметить всё прочитанным</button></div></div><div class="notification-list">${(data||[]).map(n=>`<button class="notification-item ${n.read_at?'read':'unread'}" data-notification="${n.id}"><span class="notification-mark">${n.read_at?'✓':'•'}</span><span><b>${esc(n.title)}</b><small>${esc(n.body||'')}</small><time>${new Date(n.created_at).toLocaleString('ru-RU')}</time></span></button>`).join('')||'<div class="empty-state">Пока тихо. Новые сообщения и события появятся здесь автоматически.</div>'}</div>${error?'<p class="business-warning">Не удалось загрузить уведомления.</p>':''}`;
-  host.querySelector('#read-all-notifications')?.addEventListener('click',async()=>{
-    const {error:markError}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('user_id',uid).is('read_at',null);
-    if(markError)toast('Не удалось обновить уведомления');else{state.notificationCount=0;renderNotifications(host);renderApp();}
-  });
-  host.querySelectorAll('[data-notification]').forEach(btn=>btn.addEventListener('click',async()=>{
-    if(btn.classList.contains('read'))return;
-    const {error:updateError}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('id',btn.dataset.notification).eq('user_id',uid);
-    if(updateError)toast('Не удалось отметить уведомление');else{state.notificationCount=Math.max(0,state.notificationCount-1);btn.classList.remove('unread');btn.classList.add('read');btn.querySelector('.notification-mark').textContent='✓';const count=host.querySelector('.notification-toolbar .muted');if(count)count.textContent=state.notificationCount+' непрочитанных';renderApp();}
-  }));
-}
 async function renderStats(host) {
   const uid=state.session.user.id;
   const [streaks,chats,messages,earned,profile]=await Promise.all([
@@ -940,48 +925,63 @@ document.addEventListener('visibilitychange',()=>{
 
 async function startNotificationRealtime(session) {
   if(state.notificationChannel){await supabase.removeChannel(state.notificationChannel);state.notificationChannel=null;}
-  state.notificationCount=0;
   if(!session?.user?.id)return;
   const uid=session.user.id;
-  const refreshCount=async()=>{
-    const {count,error}=await supabase.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',uid).is('read_at',null);
-    if(error)return;
-    state.notificationCount=count||0;
-    const nav=document.querySelector('[data-page="notifications"]');
-    if(nav){const badge=nav.querySelector('.nav-unread-count');if(state.notificationCount){if(badge)badge.textContent=state.notificationCount>99?'99+':String(state.notificationCount);else nav.insertAdjacentHTML('beforeend',`<i class="nav-unread-count">${state.notificationCount>99?'99+':state.notificationCount}</i>`);}else badge?.remove();}
-  };
+  const readAt=new Date().toISOString();
+  const {error:existingError}=await supabase.from('notifications').update({read_at:readAt}).eq('user_id',uid).is('read_at',null);
+  if(existingError)console.warn('Auto-read existing notifications:',existingError.message);
   const channel=supabase.channel(`flamexbot-notifications-${uid}`)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:`user_id=eq.${uid}`},payload=>{
-      state.notificationCount+=1;
-      const nav=document.querySelector('[data-page="notifications"]');
-      if(nav){const badge=nav.querySelector('.nav-unread-count');if(badge)badge.textContent=state.notificationCount>99?'99+':String(state.notificationCount);else nav.insertAdjacentHTML('beforeend',`<i class="nav-unread-count">${state.notificationCount>99?'99+':state.notificationCount}</i>`);}
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:`user_id=eq.${uid}`},async payload=>{
       const n=payload.new||{};
-      if(n.title)toast(`Новое уведомление: ${n.title}`);
-      if(state.page==='notifications'){const host=document.querySelector('#page-content');if(host)renderNotifications(host);}
+      if(!n.id||n.read_at)return;
+      const {error}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('id',n.id).eq('user_id',uid);
+      if(error)console.warn('Auto-read notification:',error.message);
     })
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'notifications',filter:`user_id=eq.${uid}`},()=>refreshCount())
-    .subscribe(status=>{if(status==='SUBSCRIBED')refreshCount();});
+    .subscribe(status=>{if(status==='SUBSCRIBED')console.info('FLAMEXBOT notifications auto-read enabled');});
   state.notificationChannel=channel;
 }
+
 async function boot(session) {
-  state.session = session;
-  if (!session) { if(state.presenceChannel){supabase.removeChannel(state.presenceChannel);state.presenceChannel=null;} if(state.notificationChannel){supabase.removeChannel(state.notificationChannel);state.notificationChannel=null;} state.onlineUserIds=[]; state.notificationCount=0; renderAuth(); return; }
-  const { error: achievementSyncError } = await supabase.rpc('sync_flamexbot_achievements');
-  if (achievementSyncError) console.warn('Achievement sync:', achievementSyncError.message);
-  const { data, error } = await supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
-  const { data: preferences } = await supabase.from('flamexbot_user_preferences').select('timezone_offset').eq('profile_id',session.user.id).maybeSingle();
-  state.profile = {...(data || {username:session.user.email?.split('@')[0] || 'Flame user'}), timezone_offset: preferences?.timezone_offset ?? 0};
-  if (state.profile.telegram_id) {
-    supabase.functions.invoke('setup-flamexbot-webhook').then(({error}) => {
-      if (error) console.warn('Telegram webhook setup:', error.message);
+  const nextUserId=session?.user?.id||null;
+  const currentUserId=state.session?.user?.id||null;
+  state.session=session;
+  if(!session){
+    if(state.presenceChannel){await supabase.removeChannel(state.presenceChannel);state.presenceChannel=null;}
+    if(state.notificationChannel){await supabase.removeChannel(state.notificationChannel);state.notificationChannel=null;}
+    state.onlineUserIds=[];state.notificationCount=0;state.profileBadges=[];
+    renderAuth();
+    return;
+  }
+  if(nextUserId===currentUserId&&document.querySelector('.app-layout'))return;
+  app.innerHTML=`<main class="app-boot-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><h2>FLAMEXBOT</h2><p>Подготавливаем твоё пространство…</p></main>`;
+  const [profileResult,preferencesResult,badgesResult,subscriptionResult,adminResult]=await Promise.all([
+    supabase.from('profiles').select('*').eq('id',session.user.id).maybeSingle(),
+    supabase.from('flamexbot_user_preferences').select('timezone_offset').eq('profile_id',session.user.id).maybeSingle(),
+    supabase.from('profile_badges').select('badge_code').eq('user_id',session.user.id),
+    supabase.from('user_subscriptions').select('plan,starts_at,expires_at').eq('user_id',session.user.id).maybeSingle(),
+    supabase.rpc('is_flamexbot_admin')
+  ]);
+  if(profileResult.error)console.warn('Profile load:',profileResult.error.message);
+  if(profileResult.data?.is_banned){
+    app.innerHTML=`<main class="blocked-screen"><div class="blocked-icon">⛔</div><div class="eyebrow">ACCOUNT RESTRICTED</div><h1>Доступ ограничен</h1><p>${esc(profileResult.data.ban_reason||'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.')}</p><button class="outline" id="blocked-logout">Выйти из аккаунта</button></main>`;
+    await supabase.auth.signOut();
+    document.querySelector('#blocked-logout')?.addEventListener('click',()=>supabase.auth.signOut());
+    return;
+  }
+  const data=profileResult.data;
+  state.profile={...(data||{username:session.user.email?.split('@')[0]||'Flame user'}),timezone_offset:preferencesResult.data?.timezone_offset??0};
+  state.profileBadges=(badgesResult.data||[]).map(x=>x.badge_code);
+  if(state.profile.telegram_id){
+    supabase.functions.invoke('setup-flamexbot-webhook').then(({error})=>{
+      if(error)console.warn('Telegram webhook setup:',error.message);
     });
   }
-  const { data: subscription } = await supabase.from('user_subscriptions').select('plan,starts_at,expires_at').eq('user_id',session.user.id).maybeSingle();
-  state.subscription = subscription && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now()) ? subscription : { plan: 'free', expires_at: null };
+  const subscription=subscriptionResult.data;
+  state.subscription=subscription&&(!subscription.expires_at||new Date(subscription.expires_at).getTime()>Date.now())?subscription:{plan:'free',expires_at:null};
   applyTheme(state.profile.theme);
-  if (error) console.warn('Profile load:', error.message);
-  const { data: adminAccess, error: adminError } = await supabase.rpc('is_flamexbot_admin');
-  state.isAdmin = !adminError && adminAccess === true;
+  state.isAdmin=!adminResult.error&&adminResult.data===true;
+  const {error:achievementSyncError}=await supabase.rpc('sync_flamexbot_achievements');
+  if(achievementSyncError)console.warn('Achievement sync:',achievementSyncError.message);
   await Promise.all([startPresence(session),startNotificationRealtime(session)]);
   renderApp();
 }
@@ -989,6 +989,13 @@ async function boot(session) {
 if (!supabase) {
   app.innerHTML = `<main class="config-screen"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><h1>Почти готово.</h1><p>Добавь переменные окружения Supabase в настройках Cloudflare Pages:</p><code>VITE_SUPABASE_URL</code><code>VITE_SUPABASE_PUBLISHABLE_KEY</code><p class="muted">Используй publishable key проекта FLAMEXBOT. Никогда не добавляй service_role key во фронтенд.</p></main>`;
 } else {
-  supabase.auth.getSession().then(({data}) => boot(data.session));
-  supabase.auth.onAuthStateChange((_event, session) => { if (session !== state.session) boot(session); });
+  supabase.auth.onAuthStateChange((event,session)=>{
+    const nextId=session?.user?.id||null;
+    const currentId=state.session?.user?.id||null;
+    if(event==='INITIAL_SESSION'||event==='SIGNED_OUT'||nextId!==currentId){
+      queueMicrotask(()=>boot(session));
+    }else{
+      state.session=session;
+    }
+  });
 }
