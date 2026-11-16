@@ -664,7 +664,6 @@ async function openBusinessChat(id) {
   let chatMuted = Boolean(chat.is_muted) && !founderChat;
   let antimutEnabled = Boolean(chat.antimut_enabled) && !founderChat;
   const canDeleteMessages = state.businessRights?.can_delete_all_messages === true;
-  const canReplyMessages = state.businessRights?.can_reply === true;
   const premiumAccess = isPremium();
   const readAt=new Date().toISOString();
   const {error:readError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:readAt},{onConflict:'profile_id,business_chat_id'});
@@ -687,9 +686,8 @@ async function openBusinessChat(id) {
       <section class="business-control-card">
         <div class="business-control-title"><b>🛡 Антимут</b><span class="business-control-state ${antimutEnabled?'active':''}">${antimutEnabled?'Включён':'Выключен'}</span></div>
         <p>Сохраняет видимость сообщений владельца в истории FLAMEXBOT. Не снимает мут собеседника и не гарантирует уведомления в Telegram.</p>
-        ${!founderChat && !canReplyMessages && !antimutEnabled ? '<small class="business-control-note">Нужно разрешение Telegram Business «Отвечать».</small>' : ''}
         ${!founderChat && !premiumAccess && !antimutEnabled ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
-        <button type="button" class="outline small" id="toggle-business-antimut" ${founderChat||(!premiumAccess && !antimutEnabled)||(!canReplyMessages && !antimutEnabled)?'disabled':''}>${antimutEnabled?'Выключить антимут':'Включить антимут'}</button>
+        <button type="button" class="outline small" id="toggle-business-antimut" ${founderChat||(!premiumAccess && !antimutEnabled)?'disabled':''}>${antimutEnabled?'Выключить антимут':'Включить антимут'}</button>
         ${antimutEnabled && !founderChat ? '<small class="business-control-note">Режим можно выключить командой <code>.unantimute</code> или кнопкой выше.</small>' : ''}
       </section>
     </div>`;
@@ -1078,7 +1076,7 @@ async function renderTariffs(host, initialTab='premium') {
    </section>
   </div>
   <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
-  <p class="business-note">Антимут не снимает блокировки и не обходит ограничения Telegram: он выполняет только одну ручную попытку отправки. Если Telegram отказывает, FLAMEXBOT показывает причину и не повторяет отправку автоматически.</p>
+  <p class="business-note">Антимут сохраняет сообщения владельца в истории FLAMEXBOT. Он не снимает мут собеседника и не может гарантировать уведомления Telegram.</p>
  </section>
  <section class="tariff-tab-panel" data-tariff-panel="addons" hidden>
   <section class="business-card addon-card">
@@ -1484,14 +1482,6 @@ async function renderCommands(host) {
     {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Отправляет от двух до пяти копий текста с паузой. Используй только когда получатель согласен.',access:'premium',group:'Управление чатом'},
     {syntax:'.afk причина',title:'Включить автоответ',description:'Включает AFK-режим и задаёт текст автоматического ответа.',access:'premium',group:'Автоматизация'},
     {syntax:'.unafk',title:'Выключить автоответ',description:'Отключает AFK-режим. Доступно бесплатно.',access:'free',group:'Автоматизация'},
-    {syntax:'.autoread on',title:'Автопрочтение',description:'Автоматически отмечает входящие Business-сообщения прочитанными.',access:'premium',group:'Автоматизация'},
-    {syntax:'.autoread off',title:'Отключить автопрочтение',description:'Выключает автоматическое прочтение. Доступно бесплатно.',access:'free',group:'Автоматизация'},
-    {syntax:'.autotyping on',title:'Статус «печатает…»',description:'Включает статус набора текста. Нужен Premium.',access:'premium',group:'Автоматизация'},
-    {syntax:'.autotyping off',title:'Отключить статус набора',description:'Выключает статус набора бесплатно.',access:'free',group:'Автоматизация'},
-    {syntax:'.autovoice on',title:'Статус записи голосового',description:'Включает статус записи голосового. Нужен Premium.',access:'premium',group:'Автоматизация'},
-    {syntax:'.autovoice off',title:'Отключить статус записи',description:'Выключает статус записи бесплатно.',access:'free',group:'Автоматизация'},
-    {syntax:'.mutestick on',title:'Фильтр стикеров',description:'Включает фильтрацию входящих стикеров. Нужен Premium.',access:'premium',group:'Автоматизация'},
-    {syntax:'.mutestick off',title:'Отключить фильтр стикеров',description:'Выключает фильтрацию бесплатно.',access:'free',group:'Автоматизация'},
     {syntax:'.autoread',title:'Автопрочтение',description:'Автоматически отмечает входящие Business-сообщения прочитанными.',access:'premium',group:'Автоматизация'},
     {syntax:'.unautoread',title:'Выключить автопрочтение',description:'Отключает автоматическое прочтение сообщений.',access:'free',group:'Автоматизация'},
     {syntax:'.autotyping',title:'Статус набора',description:'Включает статус «печатает…» в чате.',access:'premium',group:'Автоматизация'},
