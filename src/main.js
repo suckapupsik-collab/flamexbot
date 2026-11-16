@@ -245,7 +245,12 @@ async function loadPage() {
     else if(state.page==='stats') await renderStats(host);
     else if(state.page==='users') await renderUsers(host);
     else if(state.page==='admin') await renderAdmin(host);
-    host.querySelectorAll('[data-go]').forEach(btn=>btn.addEventListener('click',()=>navigateTo(btn.dataset.go)));
+    host.querySelectorAll('[data-go]').forEach(btn=>btn.addEventListener('click',()=>{
+      if(btn.dataset.filter==='verified')state.userFilters.verified='verified';
+      else if(btn.dataset.filter==='premium')state.userFilters.premium='premium';
+      else if(btn.dataset.filter==='banned')state.userFilters.banned='banned';
+      navigateTo(btn.dataset.go);
+    }));
   } catch(error) {
     console.error('FLAMEXBOT page load failed:',error);
     host.innerHTML=`<section class="load-error"><span>⚠</span><h2>Не удалось загрузить раздел</h2><p>${esc(error?.message||'Проверь соединение и попробуй ещё раз.')}</p><button class="primary" id="retry-page">Повторить загрузку</button></section>`;
