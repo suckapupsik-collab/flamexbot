@@ -295,7 +295,7 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
     }
     const shouldHardMute = !isFounderChat && Boolean(chatPrefs?.is_muted);
     const shouldDeleteSticker = media.type === "sticker" && Boolean(prefs?.mutestick_enabled);
-    const shouldDeleteProfanity = media.type === "text" && Boolean(prefs?.antimat_enabled) && containsBusinessProfanity(content);
+    const shouldDeleteProfanity = Boolean(prefs?.antimat_enabled) && containsBusinessProfanity(content);
     const shouldFilter = shouldDeleteSticker || shouldDeleteProfanity;
     if (shouldHardMute || shouldFilter) {
       if (connection.rights?.can_delete_all_messages) {
@@ -455,8 +455,7 @@ ${tgEmoji("settings")} <b>Настройки аккаунта</b>
 ${tgEmoji("lock")} <b>Текущий диалог</b>
 <code>.ping</code> / <code>/ping</code> — проверить ответы Business-команд\n<code>.help</code> / <code>/help</code> / <code>.commands</code> — полный список команд\n<code>.streak 1-3650</code> — мгновенно установить серию (только администрация)\n<code>.mute</code> / <code>/mute</code> — удалять новые входящие сообщения
 <code>.unmute</code> — остановить удаление сообщений
-<code>.antimute on/off</code> / <code>.antimut on/off</code> — включить или выключить ручную попытку отправки
-<code>.antimute текст</code> / <code>.antimut текст</code> — одна попытка отправить текст через Business
+<code>.antimute</code> / <code>.unantimute</code> — включить или выключить режим видимости сообщений владельца в истории FLAMEXBOT
 <code>.spam 2-5 текст</code> — отправить от 2 до 5 копий сообщения
 
 ${tgEmoji("edit")} <b>Дополнительно</b>
@@ -962,7 +961,7 @@ async function processTelegramUpdate(update: any) {
     }
 
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
-        /^[./](mute|unmute|spam|afk|unafk|antimute|antimut|autoread|autotyping|autovoice|mutestick|timeprofile|bold|dumb|link|time|untime|streak)(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
+        /^[./](mute|unmute|spam|afk|unafk|antimute|antimut|unantimute|unantimut|autoread|unautoread|autotyping|unautotyping|autovoice|unautovoice|mutestick|unmutestick|antimat|unantimat|timeprofile|bold|dumb|link|time|untime|streak)(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
       await sendRichTelegramMessage(
         update.message.chat.id,
         "Эта команда выполняется не в чате с ботом, а прямо в нужной личной переписке Telegram Business.\n\nОткрой диалог с человеком и отправь команду там. Для проверки бота используй /ping, для статуса подключения — /status.",
