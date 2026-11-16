@@ -99,7 +99,7 @@ function navItem(page, icon, label) { return `<button class="nav-item ${state.pa
 function isPremium() { return state.subscription?.plan === 'premium' && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
 function planLabel() { return isPremium() ? 'PREMIUM' : 'FREE'; }
 const PAGE_LABELS = {
-  home:'Обзор', messages:'Переписки', friends:'Друзья', tariffs:'Premium', streaks:'Огоньки',
+  home:'Обзор', messages:'Переписки', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
   stats:'Статистика', commands:'Все команды', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
@@ -185,7 +185,7 @@ function renderApp() {
     ['achievements','🏆','Достижения','Коллекция наград'],
     ['stats','▥','Статистика','Твоя активность'],
     ['commands','⌘','Все команды','Полный список команд'],
-    ['tariffs','✧','Premium','Подписка и возможности'],
+    ['tariffs','✧','Тарифы','Подписка и дополнения'],
     ['profile','◉','Профиль','Настройки аккаунта'],
     ...(state.isAdmin?[['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
   ];
@@ -937,6 +937,7 @@ async function renderTariffs(host, initialTab='premium') {
     <li>Защита проверяется сервером и действует для всех команд, включая команды управления.</li>
     <li>Основатель FLAMEXBOT может использовать команды на любых аккаунтах, даже если защита включена.</li>
     <li>Покупка добавляет 5 дней к текущему сроку, если защита уже активна.</li>
+    <li>Обычная переписка остаётся доступной — блокируются команды и их автоматические действия.</li>
    </ul>
    <div class="addon-price-line"><b>15 ⭐</b><span>5 дней · разовая оплата</span></div>
    ${protectionFounder
