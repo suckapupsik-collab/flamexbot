@@ -1153,12 +1153,12 @@ async function renderTariffs(host, initialTab='premium') {
     <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2><p class="muted">Дополнительные инструменты для управления Business-диалогами и оформления аккаунта.</p>
     <ul>
      <li><code>.mute</code> / <code>.unmute</code> — управление удалением новых входящих сообщений</li>
-     <li><code>.antimute</code> / <code>.unantimute</code> — включение и отключение режима антимута</li>
+     <li><code>.antimute</code> / <code>.unantimute</code> — отправка новых сообщений от имени FLAMEXBOT</li>
      <li><code>.antimat</code> / <code>.unantimat</code> — фильтр ненормативной лексики</li>
      <li>AFK-автоответ и автоматическое прочтение сообщений</li>
      <li>Статусы «печатает…» и «записывает голосовое»</li>
      <li>Фильтр входящих стикеров, время профиля по МСК и оформление текста</li>
-     <li>Премиум-эмодзи в сообщениях и уведомлениях, если их поддерживает Telegram</li>
+     <li>Эмодзи-оформление Premium-разделов, команд и уведомлений</li>
      <li>Расширенные настройки и управление Business-диалогами</li>
     </ul>
     <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
@@ -1168,7 +1168,7 @@ async function renderTariffs(host, initialTab='premium') {
    </section>
   </div>
   <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
-  <p class="business-note">Антимут сохраняет сообщения владельца в истории FLAMEXBOT. Он не снимает мут собеседника и не может гарантировать уведомления Telegram.</p>
+  <p class="business-note">Антимут отправляет новые сообщения от имени FLAMEXBOT, если собеседник заранее запустил бота. Он не снимает мут в Telegram и не обходит блокировки.</p>
   <section class="business-card trial-card">
    <div class="eyebrow">ПОПРОБУЙ FLAMEXBOT</div><h2>🎁 Пробный Premium на 3 дня</h2>
    <p class="muted">Один раз на аккаунт. Без оплаты и автоматического продления.</p>
@@ -1218,7 +1218,7 @@ async function renderTariffs(host, initialTab='premium') {
    <article class="addon-feature"><span>🌙</span><b>AFK-автоответ</b><small>Автоматический ответ включается только в выбранном диалоге.</small><em>В Premium</em></article>
    <article class="addon-feature"><span>⌨️</span><b>Автостатусы</b><small>«Печатает…» и «Записывает голосовое» только в выбранном диалоге.</small><em>В Premium</em></article>
    <article class="addon-feature"><span>🛡️</span><b>Антимут</b><small>Отправка через аккаунт бота, если собеседник открыл FLAMEXBOT.</small><em>В Premium</em></article>
-   <article class="addon-feature"><span>🗂️</span><b>Архив изменений</b><small>История удалённых и отредактированных сообщений с момента подключения.</small><em>В Premium</em></article>
+   <article class="addon-feature"><span>🗂️</span><b>Архив изменений</b><small>Архив событий, полученных после подключения и начала сохранения сообщений.</small><em>В Premium</em></article>
    <article class="addon-feature"><span>💎</span><b>Премиум-эмодзи</b><small>Украшенные ответы, уведомления и новые команды.</small><em>В Premium</em></article>
   </div>
  </section>
