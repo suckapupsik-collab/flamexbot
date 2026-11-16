@@ -17,6 +17,10 @@ FLAMEXBOT — Telegram Mini App для общения, общих огонько
 4. Выполни `npm install`, затем `npm run dev`.
 5. Для проверки production-сборки выполни `npm run build`.
 
+## Database migration
+
+The antimut feature uses the per-chat `antimut_enabled` flag. The migration is stored in `supabase/migrations/20261116000000_add_antimut_enabled_to_business_chat_settings.sql` and has already been applied to the connected Supabase project.
+
 ## Telegram Business
 
 1. В @BotFather включи Business Mode для FLAMEXBOT.
