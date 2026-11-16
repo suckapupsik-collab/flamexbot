@@ -9,7 +9,7 @@ const PRICE_STARS=5;
 const corsHeaders={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Content-Type":"application/json"};
 const response=(body:Record<string,unknown>,status=200)=>new Response(JSON.stringify(body),{status,headers:corsHeaders});
 async function telegram(method:string,body:Record<string,unknown>){
- const r=await fetch("https://api.telegram.org/bot"+BOT_TOKEN+"/"+method,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+ const r=await fetch("https://api.telegram.org/bot"+BOT_TOKEN+"/"+method,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),signal:AbortSignal.timeout(12000)});
  const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.description??("Telegram API "+method+" failed"));return d.result;
 }
 Deno.serve(async(req:Request)=>{
@@ -32,13 +32,39 @@ Deno.serve(async(req:Request)=>{
     const {data:prize,error:prizeError}=await admin.rpc("redeem_flamexbot_free_wheel_spin",{p_user_id:authData.user.id});
     if(prizeError)throw prizeError;
     try {
-      await telegram("sendMessage",{
-        chat_id:Number(profile.telegram_id),
-        text:"🎡 Колесо фортуны FLAMEXBOT\n\nТвоя награда: "+String(prize?.prize_label??"Награда начислена")+".\nОткрой Mini App, чтобы посмотреть баланс и срок тарифа.",
-        reply_markup:{inline_keyboard:[[{text:"✦ Открыть FLAMEXBOT",web_app:{url:"https://flamexbot.pages.dev"}}]]},
-        disable_web_page_preview:true
-      });
-    } catch(notificationError) {
+      let buttonEmojiId:string|null=null;
+      try{
+        const id="5877318502947229960";
+        const stickers=await telegram("getCustomEmojiStickers",{custom_emoji_ids:[id]});
+        buttonEmojiId=Array.isArray(stickers)&&stickers.some((item:any)=>String(item?.custom_emoji_id)===id)?id:null;
+      }catch(error){
+        console.warn("Wheel button emoji unavailable; using fallback:",(error as any)?.message??error);
+      }
+      const button:any={text:"✦ Открыть FLAMEXBOT",web_app:{url:"https://flamexbot.pages.dev"}};
+      if(buttonEmojiId)button.icon_custom_emoji_id=buttonEmojiId;
+      const notificationText="🎡 Колесо фортуны FLAMEXBOT\\n\\nТвоя награда: "+String(prize?.prize_label??"Награда начислена")+".\\nОткрой Mini App, чтобы посмотреть баланс и срок тарифа.";
+      try{
+        await telegram("sendMessage",{
+          chat_id:Number(profile.telegram_id),text:notificationText,
+          reply_markup:{inline_keyboard:[[button]]},disable_web_page_preview:true
+        });
+      }catch(buttonError){
+        if(!buttonEmojiId)throw buttonError;
+        delete button.icon_custom_emoji_id;
+        await telegram("sendMessage",{
+          chat_id:Number(profile.telegram_id),text:notificationText,
+          reply_markup:{inline_keyboard:[[button]]},disable_web_page_preview:true
+        });
+      }
+      if(prize?.notification_id){
+        const {error:markError}=await admin.from("notifications")
+          .update({telegram_delivered_at:new Date().toISOString()})
+          .eq("id",prize.notification_id)
+          .eq("user_id",authData.user.id)
+          .is("telegram_delivered_at",null);
+        if(markError)console.warn("Could not mark free wheel notice delivered:",markError.message);
+      }
+    }catch(notificationError){
       console.warn("Wheel reward DM was not delivered:",notificationError?.message??notificationError);
     }
     return response({ok:true,free_spin:true,prize});
