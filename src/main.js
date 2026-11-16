@@ -1529,15 +1529,47 @@ async function startNotificationRealtime(session) {
   state.notificationChannel=channel;
 }
 
+
+async function clearUserScopedState() {
+  const channels=[
+    state.businessChatChannel,state.businessListChannel,state.presenceChannel,
+    state.notificationChannel,state.moderationChannel
+  ].filter(Boolean);
+  await Promise.all(channels.map(channel=>supabase.removeChannel(channel).catch(()=>null)));
+  state.messageRefreshTimers.forEach(timer=>clearTimeout(timer));
+  state.messageRefreshTimers.clear();
+  if(state.businessListRefreshTimer)clearTimeout(state.businessListRefreshTimer);
+  state.businessListRefreshTimer=null;
+  state.businessChatChannel=null;
+  state.businessListChannel=null;
+  state.presenceChannel=null;
+  state.notificationChannel=null;
+  state.moderationChannel=null;
+  state.messageRefreshInFlight.clear();
+  state.messageRefreshPending.clear();
+  state.businessMediaUrlCache.clear();
+  state.avatarRefreshAttempted.clear();
+  state.profile=null;
+  state.profileBadges=[];
+  state.subscription=null;
+  state.businessConnection=null;
+  state.businessRights=null;
+  state.isAdmin=false;
+  state.streaks=[];
+  state.businessChats=[];
+  state.activeBusinessChat=null;
+  state.businessMessages=[];
+  state.onlineUserIds=[];
+  state.notificationCount=0;
+  state.session=null;
+}
+
 async function boot(session) {
   const nextUserId=session?.user?.id||null;
   const currentUserId=state.session?.user?.id||null;
+  if(!session||(currentUserId&&nextUserId!==currentUserId))await clearUserScopedState();
   state.session=session;
   if(!session){
-    if(state.presenceChannel){await supabase.removeChannel(state.presenceChannel);state.presenceChannel=null;}
-    if(state.notificationChannel){await supabase.removeChannel(state.notificationChannel);state.notificationChannel=null;}
-    if(state.moderationChannel){await supabase.removeChannel(state.moderationChannel);state.moderationChannel=null;}
-    state.onlineUserIds=[];state.notificationCount=0;state.profileBadges=[];
     if(state.blockedReason)renderBlockedScreen();else renderAuth();
     return;
   }
