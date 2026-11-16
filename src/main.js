@@ -274,6 +274,32 @@ async function loadPage() {
   }
 }
 
+function refreshMissingBusinessAvatars(host) {
+  const missing=state.businessChats.filter(chat=>!chat.photo_url&&!state.avatarRefreshAttempted.has(chat.id)).slice(0,10);
+  if(!missing.length)return;
+  missing.forEach(chat=>state.avatarRefreshAttempted.add(chat.id));
+  Promise.all(missing.map(async chat=>{
+    const {data,error}=await supabase.functions.invoke('business-chat-send',{body:{action:'refresh_avatar',chat_id:chat.id}});
+    if(error||data?.error)return null;
+    return {id:chat.id,url:data.photo_url||null};
+  })).then(results=>{
+    let changed=false;
+    results.forEach(result=>{
+      if(!result?.url)return;
+      const chat=state.businessChats.find(item=>item.id===result.id);
+      if(chat){chat.photo_url=result.url;changed=true;}
+    });
+    if(changed&&host.isConnected){
+      const list=host.querySelector('.chat-list');
+      if(list){list.innerHTML=renderBusinessChatChoices(state.businessChats);bindBusinessChatChoices(host);bindBusinessChatPreferences(host);}
+      const active=state.businessChats.find(item=>item.id===state.activeBusinessChat);
+      const head=host.querySelector('.chat-head-person');
+      if(active&&head)head.innerHTML=avatar(active.photo_url,[active.first_name,active.last_name].filter(Boolean).join(' ')||active.username,'chat-avatar')+head.querySelector('div')?.outerHTML;
+      if(state.activeBusinessChat)refreshBusinessMessages(state.activeBusinessChat);
+    }
+  }).catch(error=>console.warn('Business avatar refresh skipped:',error?.message||error));
+}
+
 function renderBusinessChatChoices(chats) {
   const q=(document.querySelector('#business-chat-search')?.value||'').trim().toLowerCase();
   const filtered=chats.filter(c=>!q||[c.username,c.first_name,c.last_name].filter(Boolean).join(' ').toLowerCase().includes(q))
@@ -352,6 +378,7 @@ async function renderBusinessMessages(host) {
     <div class="business-inbox-tools"><input id="business-chat-search" type="search" placeholder="Найти диалог по имени"/><div class="quick-replies"><button type="button" data-quick-reply="Привет! Чем могу помочь?">Привет</button><button type="button" data-quick-reply="Спасибо за сообщение!">Спасибо</button><button type="button" data-quick-reply="Сейчас уточню и вернусь с ответом.">Уточню</button></div></div><div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
     <section class="chat-window" id="business-chat-window"><div class="chat-placeholder"><span>✈</span><b>Твои переписки</b><small>Выбери диалог, чтобы открыть историю сообщений и настройки.</small></div></section></div>`;
   bindBusinessChatChoices(host);bindBusinessChatPreferences(host);bindBusinessSearch(host);
+  refreshMissingBusinessAvatars(host);
   host.querySelectorAll('[data-quick-reply]').forEach(btn=>btn.addEventListener('click',()=>{const input=document.querySelector('#business-send-form input[name=content]');if(input){input.value=btn.dataset.quickReply;input.focus();}}));
   state.businessListChannel = supabase.channel(`business-chat-list-${uid}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'flamexbot_business_chats', filter: `profile_id=eq.${uid}` }, () => refreshBusinessChatList(host))
@@ -363,6 +390,9 @@ async function renderBusinessMessages(host) {
 
 function renderBusinessBubble(message, mediaUrl = '') {
   const mine = message.direction === 'outbound';
+  const chat=state.businessChats.find(item=>item.id===state.activeBusinessChat);
+  const chatName=[chat?.first_name,chat?.last_name].filter(Boolean).join(' ')||chat?.username||'Telegram-пользователь';
+  const contactAvatar=!mine?avatar(chat?.photo_url,chatName,'message-avatar'):'';
   const content = message.deleted_at ? 'Сообщение удалено в Telegram' : (message.content || '');
   const raw = message.raw || {};
   const mediaName = raw.document?.file_name || raw.audio?.file_name || raw.video?.file_name || 'Вложение';
@@ -371,16 +401,17 @@ function renderBusinessBubble(message, mediaUrl = '') {
   const mediaType = message.message_type || 'text';
   let media = '';
   if (mediaType !== 'text' && !message.deleted_at) {
-    if (mediaUrl && mediaType === 'photo') media = `<a class="business-media-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="Фото"/></a>`;
-    else if (mediaUrl && ['animation','sticker'].includes(mediaType)) media = `<a class="business-media-preview business-animation-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="${mediaType==='sticker'?'Стикер':'GIF-анимация'}"/></a>`;
-    else if (mediaUrl && ['video','video_note'].includes(mediaType)) media = `<video class="business-video-preview" controls playsinline preload="metadata" src="${esc(mediaUrl)}"></video>`;
-    else if (mediaUrl && ['audio','voice'].includes(mediaType)) media = `<div class="business-audio-card"><span>${mediaType==='voice'?'🎙 Голосовое сообщение':'🎵 Аудио'}</span><audio class="business-audio-preview" controls preload="metadata" src="${esc(mediaUrl)}"></audio></div>`;
-    else if (mediaUrl) media = `<a class="business-file-link" href="${esc(mediaUrl)}" target="_blank" rel="noopener" download="${esc(mediaName)}"><span>📎</span><span><b>${esc(mediaName)}</b><small>${esc(mediaType.toUpperCase())}${mediaSizeLabel}</small></span><span>↓</span></a>`;
-    else media = `<div class="business-media-note">Вложение: ${esc(mediaType)}${message.media_file_id ? ' · получено от Telegram' : ''}</div>`;
+    if (mediaUrl && mediaType === 'photo') media = \`<a class="business-media-preview" href="\${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="\${esc(mediaUrl)}" loading="lazy" alt="Фото"/></a>\`;
+    else if (mediaUrl && ['animation','sticker'].includes(mediaType)) media = \`<a class="business-media-preview business-animation-preview" href="\${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="\${esc(mediaUrl)}" loading="lazy" alt="\${mediaType==='sticker'?'Стикер':'GIF-анимация'}"/></a>\`;
+    else if (mediaUrl && ['video','video_note'].includes(mediaType)) media = \`<video class="business-video-preview" controls playsinline preload="metadata" src="\${esc(mediaUrl)}"></video>\`;
+    else if (mediaUrl && ['audio','voice'].includes(mediaType)) media = \`<div class="business-audio-card"><span>\${mediaType==='voice'?'🎙 Голосовое сообщение':'🎵 Аудио'}</span><audio class="business-audio-preview" controls preload="metadata" src="\${esc(mediaUrl)}"></audio></div>\`;
+    else if (mediaUrl) media = \`<a class="business-file-link" href="\${esc(mediaUrl)}" target="_blank" rel="noopener" download="\${esc(mediaName)}"><span>📎</span><span><b>\${esc(mediaName)}</b><small>\${esc(mediaType.toUpperCase())}\${mediaSizeLabel}</small></span><span>↓</span></a>\`;
+    else media = \`<div class="business-media-note">Вложение: \${esc(mediaType)}\${message.media_file_id ? ' · получено от Telegram' : ''}</div>\`;
   }
-  const reply = message.reply_to_message_id ? `<div class="reply-reference">↪ Ответ на сообщение #${message.reply_to_message_id}</div>` : '';
-  const replyButton = !message.deleted_at && message.telegram_message_id ? `<button type="button" class="reply-message" data-reply-to="${message.telegram_message_id}">Ответить</button>` : '';
-  return `<div class="bubble ${mine ? 'mine' : ''}">${reply}${content ? `<div>${esc(content)}</div>` : ''}${media}<div class="bubble-footer"><small>${formatMskTime(message.created_at)}</small>${replyButton}</div></div>`;
+  const reply = message.reply_to_message_id ? \`<div class="reply-reference">↪ Ответ на сообщение #\${message.reply_to_message_id}</div>\` : '';
+  const replyButton = !message.deleted_at && message.telegram_message_id ? \`<button type="button" class="reply-message" data-reply-to="\${message.telegram_message_id}">Ответить</button>\` : '';
+  const bubble = \`<div class="bubble \${mine ? 'mine' : ''}">\${reply}\${content ? \`<div>\${esc(content)}</div>\` : ''}\${media}<div class="bubble-footer"><small>\${formatMskTime(message.created_at)}</small>\${replyButton}</div></div>\`;
+  return \`<div class="bubble-row \${mine?'mine':''}">\${contactAvatar}\${bubble}</div>\`;
 }
 
 async function refreshBusinessMessages(chatId) {
@@ -442,7 +473,7 @@ async function openBusinessChat(id) {
   await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:new Date().toISOString()},{onConflict:'profile_id,business_chat_id'});
   await refreshBusinessChatList(document.querySelector('#page-content'));
   box.closest('.business-inbox')?.classList.add('chat-open');
-  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div><input class="message-search" id="business-message-search" type="search" placeholder="Поиск по переписке…"/></div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
+  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div class="chat-head-person">${avatar(chat.photo_url,name,'chat-avatar')}<div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div></div><input class="message-search" id="business-message-search" type="search" placeholder="Поиск по переписке…"/></div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
   const controlsHost = box.querySelector('#business-chat-controls');
   const renderBusinessControls = () => {
     if (!controlsHost) return;
@@ -780,39 +811,67 @@ async function renderAdminUser(host) {
 
 async function renderTariffs(host) {
  const premium=isPremium();
- const expires=state.subscription?.expires_at?new Date(state.subscription.expires_at).toLocaleDateString('ru-RU'):'Без срока';
- host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT MEMBERSHIP</div><h1>Тарифы и возможности</h1><p class="muted">Выбирай подходящий уровень доступа. Оплата и продление проходят через Telegram Stars.</p></div>
+ const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
+ host.innerHTML=\`<div class="page-heading"><div class="eyebrow">FLAMEXBOT MEMBERSHIP</div><h1>Тарифы и возможности <span>✦</span></h1><p class="muted">Больше контроля над Telegram Business, удобные инструменты и расширенные возможности аккаунта.</p></div>
  <div class="tariff-grid">
-  <section class="business-card tariff-card ${!premium?'tariff-current':''}">
-   <div class="eyebrow">ДЛЯ СТАРТА</div><h2>Free</h2><p class="muted">Всё необходимое, чтобы оставаться на связи и пользоваться FLAMEXBOT каждый день.</p>
-   <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и уведомления</li><li>Базовая статистика и достижения</li></ul>
-   <span class="business-status ${!premium?'is-connected':''}">${!premium?'Твой текущий тариф':'Бесплатно'}</span>
+  <section class="business-card tariff-card \${!premium?'tariff-current':''}">
+   <div class="eyebrow">СТАРТ</div><h2>Free</h2><p class="muted">Всё необходимое, чтобы пользоваться FLAMEXBOT и оставаться на связи.</p>
+   <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и ежедневные задания</li><li>Достижения, уровни и базовая статистика</li></ul>
+   <span class="business-status \${!premium?'is-connected':''}">\${!premium?'Твой текущий тариф':'Бесплатно'}</span>
   </section>
-  <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}">
-   <div class="eyebrow">БОЛЬШЕ ВОЗМОЖНОСТЕЙ</div><h2>✦ Premium</h2><p class="muted">Расширенное управление Telegram Business и дополнительные инструменты для твоих диалогов.</p>
+  <section class="business-card tariff-card premium-card \${premium?'tariff-current':''}">
+   <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2><p class="muted">Дополнительные инструменты для управления Business-диалогами и оформления аккаунта.</p>
    <ul>
-    <li><code>.mute</code> / <code>.unmute</code> — удаление новых сообщений и отключение мута в текущем диалоге</li>
-    <li><code>.antimute on/off</code> — включить или выключить одну ручную попытку отправки через Business</li>
-    <li><code>.antimute текст</code> — отправить одно сообщение через Business с учётом ответа Telegram</li>
-    <li><code>.spam 2-5 текст</code> — отправить от 2 до 5 копий сообщения в текущий диалог</li>
-    <li>AFK-автоответ, авто-прочтение и статусы набора</li>
-    <li>Фильтр стикеров, часовой пояс и оформление текста</li>
-    <li>Премиум-эмодзи в сообщениях и уведомлениях бота, если Telegram разрешает их отправку</li>
-    <li>Расширенные настройки Business-диалогов</li>
+    <li><code>.mute</code> / <code>.unmute</code> — управление удалением новых входящих сообщений</li>
+    <li><code>.antimute on/off</code> — безопасное включение ручной попытки отправки</li>
+    <li><code>.antimute текст</code> — одна отправка через разрешённый Telegram Business</li>
+    <li>AFK-автоответ и автоматическое прочтение сообщений</li>
+    <li>Статусы «печатает…» и «записывает голосовое»</li>
+    <li>Фильтр входящих стикеров и оформление текста</li>
+    <li>Премиум-эмодзи в сообщениях и уведомлениях, если их поддерживает Telegram</li>
+    <li>Расширенные настройки и управление Business-диалогами</li>
    </ul>
-   <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · до '+expires:'100 ⭐ · 30 дней'}</span>
-   ${premium?'': '<button class="primary" id="buy-premium" type="button">✦ Подключить Premium за 100 ⭐</button>'}
+   <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
+   <span class="business-status \${premium?'is-connected':''}">\${premium?'Premium активен · до '+expires:'Подписка не активна'}</span>
+   \${premium?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">⭐ Оплатить 100 Stars</button>'}
+   <small class="premium-payment-note">Оплата проходит внутри Telegram. Подписка действует 30 дней и не продлевается автоматически.</small>
   </section>
  </div>
- <div class="business-command-hint"><span>⌘</span><div><b>Команды не нужно отправлять боту в личные сообщения</b><small>Открой переписку с нужным человеком и отправь команду прямо туда. FLAMEXBOT сам определит текущий диалог — без @username и ID.</small></div></div>
- <p class="business-note">Premium действует 30 дней с момента оплаты. Антимут не снимает блокировки и не обходит ограничения Telegram: он выполняет только одну ручную попытку отправки через разрешённое Business-подключение. Если Telegram отказывает, FLAMEXBOT показывает причину и не повторяет отправку автоматически.</p>`;
+ <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
+ <p class="business-note">Антимут не снимает блокировки и не обходит ограничения Telegram: он выполняет только одну ручную попытку отправки. Если Telegram отказывает, FLAMEXBOT показывает причину и не повторяет отправку автоматически.</p>\`;
  const buyButton=host.querySelector('#buy-premium');
  buyButton?.addEventListener('click',async()=>{
-   buyButton.disabled=true;buyButton.textContent='Создаём счёт…';
-   const {data,error}=await supabase.functions.invoke('create-premium-invoice');
-   buyButton.disabled=false;buyButton.textContent='✦ Подключить Premium за 100 ⭐';
-   if(error||data?.error){toast(data?.error||error?.message||'Не удалось создать счёт на оплату');return;}
-   toast('Счёт создан. Открой диалог с FLAMEXBOT и подтверди оплату в Telegram.');
+   buyButton.disabled=true;buyButton.classList.add('is-loading');buyButton.textContent='Подготавливаем оплату…';
+   try{
+     const {data,error}=await supabase.functions.invoke('create-premium-invoice');
+     if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать ссылку на оплату');
+     const webApp=window.Telegram?.WebApp;
+     if(typeof webApp?.openInvoice!=='function'){
+       if(typeof webApp?.openTelegramLink==='function')webApp.openTelegramLink(data.invoice_link);
+       else window.open(data.invoice_link,'_blank','noopener');
+       toast('Открываем счёт Telegram Stars');
+       return;
+     }
+     webApp.openInvoice(data.invoice_link,async status=>{
+       if(status==='paid'){
+         toast('Оплата принята. Активируем Premium…');
+         let activated=false;
+         for(let attempt=0;attempt<8;attempt++){
+           const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+           if(subscription?.plan==='premium'&&(!subscription.expires_at||new Date(subscription.expires_at).getTime()>Date.now())){
+             state.subscription=subscription;activated=true;break;
+           }
+           await new Promise(resolve=>setTimeout(resolve,900));
+         }
+         updateHeaderProfile();
+         toast(activated?'⭐ Premium успешно активирован!':'Платёж получен. Статус Premium обновится в ближайшие секунды.');
+         await renderTariffs(host);
+       }else if(status==='cancelled')toast('Оплата отменена. Списания не произошло.');
+       else if(status==='failed')toast('Telegram не смог завершить оплату. Попробуй ещё раз.');
+       else if(status==='pending')toast('Платёж обрабатывается. Premium появится после подтверждения Telegram.');
+     });
+   }catch(error){toast('Оплата не запущена: '+(error?.message||'неизвестная ошибка'));}
+   finally{if(host.contains(buyButton)){buyButton.disabled=false;buyButton.classList.remove('is-loading');buyButton.textContent='⭐ Оплатить 100 Stars';}}
  });
 }
 
