@@ -250,15 +250,28 @@ async function loadPage() {
   host.innerHTML=`<div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем FLAMEXBOT</strong><small>Подготавливаем твоё пространство…</small></div>`;
   try {
     if(state.page==='home'){
-      const [streaks,earned]=await Promise.all([
+      const [streaks,earned,deletedEvents,editedEvents]=await Promise.all([
         supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false}),
-        supabase.from('user_achievements').select('achievement_id',{count:'exact',head:true}).eq('user_id',state.session.user.id)
+        supabase.from('user_achievements').select('achievement_id',{count:'exact',head:true}).eq('user_id',state.session.user.id),
+        supabase.from('flamexbot_business_message_events').select('id',{count:'exact',head:true}).eq('profile_id',state.session.user.id).eq('event_type','deleted'),
+        supabase.from('flamexbot_business_message_events').select('id',{count:'exact',head:true}).eq('profile_id',state.session.user.id).eq('event_type','edited')
       ]);
+      const deletedCount=deletedEvents.count||0;
+      const editedCount=editedEvents.count||0;
       state.streaks=(streaks.data||[]).sort((a,b)=>effectiveStreakDays(b)-effectiveStreakDays(a)).slice(0,5);
       const p=state.profile||{};
       host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'))} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
+        <div class="section-heading archive-section-heading"><div><div class="eyebrow">TELEGRAM BUSINESS</div><h3>История сообщений</h3></div><span class="archive-section-note">Архив переписок</span></div>
+        <div class="home-archive-grid">
+          <button class="home-archive-card deleted" data-go="deleted" type="button">
+            <span class="home-archive-icon">▤</span><span class="home-archive-copy"><b>Удалённые сообщения</b><small>Сообщения собеседников, удалённые в Telegram</small></span><strong class="home-archive-count">${deletedCount}</strong><i>→</i>
+          </button>
+          <button class="home-archive-card edited" data-go="edited" type="button">
+            <span class="home-archive-icon">✎</span><span class="home-archive-copy"><b>Изменённые сообщения</b><small>Предыдущие и текущие версии сообщений</small></span><strong class="home-archive-count">${editedCount}</strong><i>→</i>
+          </button>
+        </div>
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
         <div class="streak-list">${state.streaks.filter(s=>effectiveStreakDays(s)>0).length?state.streaks.filter(s=>effectiveStreakDays(s)>0).map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${effectiveStreakDays(s)} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Найди друга и начните обмениваться сообщениями каждый день.</div>'}</div>
         <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
