@@ -321,3 +321,55 @@ input,button{max-width:100%}
 .premium-card{background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,var(--panel)),var(--panel))}
 .profile-time-display{padding:12px 14px;border:1px solid var(--border);border-radius:12px;color:var(--muted);font-size:13px}
 @media(max-width:720px){.tariff-grid{grid-template-columns:1fr}}
+
+
+/* FLAMEXBOT 2026 — Business controls, mobile-first navigation and motion */
+.business-control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.business-control-card{min-width:0;padding:13px 14px;border:1px solid var(--line);border-radius:13px;background:linear-gradient(145deg,#1c1c1c,#151515);display:grid;gap:8px}
+.business-control-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.business-control-title b{font-size:12px}
+.business-control-state{padding:4px 8px;border-radius:20px;background:#292929;color:#aaa;font-size:9px;font-weight:800;white-space:nowrap}
+.business-control-state.active{background:#1b3424;color:#84d99b}
+.business-control-card p{margin:0;color:#aaa;font-size:10px;line-height:1.55}
+.business-control-note{color:#d39b74;font-size:9px;line-height:1.45}
+.antimut-attempt-form{display:flex;gap:7px;align-items:center;min-width:0}
+.antimut-attempt-form input{min-width:0;flex:1;width:100%;padding:9px 10px;border-radius:9px;border:1px solid #353535;background:#101010;color:#fff;font-size:11px}
+.antimut-attempt-form button{white-space:nowrap}
+.chat-back{border:1px solid var(--line);background:#202020;color:#ddd;border-radius:8px;padding:8px 10px;font-size:10px;flex:none}
+.chat-head{animation:flame-slide-in .22s ease-out both}
+.business-control-card{animation:flame-rise .28s ease-out both}
+.business-control-card:nth-child(2){animation-delay:.05s}
+.business-card,.stat-card,.streak-card,.achievement-card,.daily-task{transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
+.business-card:hover,.stat-card:hover,.achievement-card:hover,.daily-task:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--orange) 42%,var(--line))}
+.nav-item{transition:background .18s ease,color .18s ease,transform .18s ease}
+.nav-item:active,.primary:active,.outline:active{transform:scale(.98)}
+@keyframes flame-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes flame-slide-in{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
+@media(max-width:850px){
+  .sidebar{position:fixed;left:0;right:0;top:auto;bottom:0;width:100%;height:auto;min-height:0;padding:7px 8px calc(7px + env(safe-area-inset-bottom));z-index:50;border:0;border-top:1px solid var(--line);background:rgba(16,16,16,.96);backdrop-filter:blur(18px);overflow:hidden}
+  .sidebar .brand,.sidebar-bottom{display:none}
+  .sidebar nav{display:flex;align-items:center;gap:4px;width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:0 1px 2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .sidebar nav::-webkit-scrollbar{display:none}
+  .nav-item{flex:0 0 auto;min-height:42px;padding:9px 11px;border-radius:11px;font-size:10px}
+  .main-area{padding-bottom:calc(62px + env(safe-area-inset-bottom))}
+  .page-content{padding-bottom:24px}
+  .business-inbox:not(.chat-open) .chat-window{display:none}
+  .business-inbox.chat-open .chat-list{display:none}
+  .business-inbox.chat-open .chat-window{display:block;min-height:calc(100dvh - 178px)}
+  .business-inbox.chat-open .chat-head{position:sticky;top:0;z-index:5;padding:8px 0;background:var(--bg)}
+  .business-control-grid{grid-template-columns:1fr}
+  .antimut-attempt-form{flex-wrap:wrap}
+  .antimut-attempt-form button{width:100%;justify-content:center}
+}
+@media(max-width:480px){
+  .chat-head{align-items:flex-start;gap:8px}
+  .chat-head>div{flex:1}
+  .chat-back{padding:8px}
+  .message-search{width:100%;flex-basis:100%}
+  .send-form{position:sticky;bottom:calc(60px + env(safe-area-inset-bottom));z-index:4;padding:7px;background:rgba(16,16,16,.96);backdrop-filter:blur(12px);border-top:1px solid var(--line)}
+  .send-form input[name="content"]{font-size:16px}
+  .business-control-card{padding:12px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
