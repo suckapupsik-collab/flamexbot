@@ -1334,3 +1334,6 @@ body{
 .home-referral-actions{display:flex;flex-direction:column;justify-content:center;gap:10px}.home-referral-actions code{padding:9px 11px;border:1px solid var(--border);border-radius:10px;text-align:center;overflow-wrap:anywhere}
 .event-sticker{display:block;max-width:180px;max-height:180px;object-fit:contain;margin:12px auto}
 @media(max-width:650px){.home-referral-card{grid-template-columns:1fr}.home-referral-actions{max-width:none}.wheel-odds{display:grid;grid-template-columns:1fr}}
+
+.badge-pro{border-color:rgba(255,119,64,.42);background:linear-gradient(135deg,rgba(255,112,61,.18),rgba(255,184,105,.07));color:#ffad7e}
+.admin-action.pro{border-color:rgba(255,133,78,.38);color:#ffad7e}
