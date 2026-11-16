@@ -1096,7 +1096,7 @@ function animateFortuneWheel(prizeType) {
  const centers={premium_day:27,addon:117,free_spin:252};
  const target=centers[prizeType]??252;
  if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
-   wheel.style.transform='rotate('+((360-target)%360)+'deg');
+   wheel.style.transform='rotate('+((360-target)%360)+'deg)';
    return Promise.resolve();
  }
  wheel.style.transition='none';
