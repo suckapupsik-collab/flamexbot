@@ -1322,3 +1322,15 @@ body{
   .home-archive-count{margin-right:12px}
 }
 @media(prefers-reduced-motion:reduce){.home-archive-card{transition:none}.home-archive-card:hover{transform:none}}
+
+/* Membership additions */
+.pro-card{border-color:rgba(255,145,91,.42);background:radial-gradient(ellipse at 100% 0%,rgba(255,100,60,.15),transparent 55%),linear-gradient(145deg,rgba(255,255,255,.05),rgba(255,255,255,.015))}
+.trial-card,.wheel-card{margin-top:18px;padding:22px;border:1px solid rgba(255,145,91,.22);border-radius:18px;background:linear-gradient(145deg,rgba(255,125,75,.08),rgba(255,255,255,.02))}
+.trial-card h2,.wheel-card h2{margin:8px 0}
+.wheel-odds{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0;color:var(--muted);font-size:12px}
+.wheel-odds span{padding:7px 10px;border:1px solid var(--border);border-radius:999px}
+.home-referral-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,260px);gap:18px;margin:0 0 28px;padding:20px;border:1px solid rgba(255,145,91,.25);border-radius:18px;background:radial-gradient(ellipse at 100% 0%,rgba(255,126,75,.12),transparent 55%),var(--card-bg,rgba(255,255,255,.025))}
+.home-referral-copy h3{margin:7px 0;font-size:18px}.home-referral-copy p{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.6}.home-referral-copy small{color:var(--muted)}
+.home-referral-actions{display:flex;flex-direction:column;justify-content:center;gap:10px}.home-referral-actions code{padding:9px 11px;border:1px solid var(--border);border-radius:10px;text-align:center;overflow-wrap:anywhere}
+.event-sticker{display:block;max-width:180px;max-height:180px;object-fit:contain;margin:12px auto}
+@media(max-width:650px){.home-referral-card{grid-template-columns:1fr}.home-referral-actions{max-width:none}.wheel-odds{display:grid;grid-template-columns:1fr}}
