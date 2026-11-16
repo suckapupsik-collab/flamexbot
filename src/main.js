@@ -727,6 +727,7 @@ async function renderUsers(host) {
       const owner=u.telegram_id===FOUNDER_TELEGRAM_ID;
       const badges=[...(u.badge_codes||[])];
       if(u.is_premium&&!badges.includes('premium'))badges.push('premium');
+      const currentRole=badges.find(code=>code!=='premium')||'';
       const display=u.display_name||u.username||'Пользователь';
       return `<article class="admin-user-card" data-user-card="${u.id}">
         <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
@@ -737,7 +738,7 @@ async function renderUsers(host) {
           <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${owner?'disabled':''}>✦ ${owner?'Premium владельца':u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
           <button class="admin-action" data-user-action="premium_revoke" data-user-id="${u.id}" ${!u.is_premium||owner?'disabled':''}>Снять Premium</button>
         </div>
-        <div class="admin-role-controls"><label>Значок роли<select data-role-select="${u.id}"><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}">Выдать значок</button><label>Снять значок<select data-role-remove="${u.id}"><option value="">Выбрать значок…</option>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<option value="${code}">${esc(BADGE_META[code]?.label||code)}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}" ${owner?'disabled':''} title="${owner?'Значки владельца защищены':'Снять значок'}">Снять</button>
+        <div class="admin-role-controls"><label>Заменить значок<select data-role-select="${u.id}"><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}" ${currentRole===code?'selected':''}>${label}${currentRole===code?' · текущий':''}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}">Заменить значок</button><label>Снять значок<select data-role-remove="${u.id}"><option value="">Выбрать значок…</option>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<option value="${code}">${esc(BADGE_META[code]?.label||code)}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}" ${owner?'disabled':''} title="${owner?'Значки владельца защищены':'Снять значок'}">Снять</button>
         </div>
       </article>`;
     }).join('')||'<div class="empty-state">По заданным фильтрам никого не найдено.</div>'}</div>
@@ -930,7 +931,7 @@ async function renderFriends(host) {
   }).join('');
   const outgoingCards=(outgoing.data||[]).map(r=>{
     const p=profileMap.get(r.receiver_id);if(!p)return '';
-    return profileCard(p,`Ожидает ответа · ${new Date(r.created_at).toLocaleDateString('ru-RU')}`,
+    return profileCard(p,`Ожидает ответа · ${formatMskDate(r.created_at)}`,
       `<button class="outline small" data-friend-cancel="${r.id}">Отменить заявку</button>`,
       badgeMap.get(r.receiver_id)||[]);
   }).join('');
