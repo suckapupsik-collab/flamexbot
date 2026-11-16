@@ -17,9 +17,13 @@ FLAMEXBOT — Telegram Mini App для общения, общих огонько
 4. Выполни `npm install`, затем `npm run dev`.
 5. Для проверки production-сборки выполни `npm run build`.
 
-## Database migration
+## Database migrations
 
-The antimut feature uses the per-chat `antimut_enabled` flag. The migration is stored in `supabase/migrations/20261116000000_add_antimut_enabled_to_business_chat_settings.sql` and has already been applied to the connected Supabase project.
+- `20261116000000_add_antimut_enabled_to_business_chat_settings.sql` — per-chat antimut state.
+- `20261116010000_flamexbot_admin_badges_daily_tasks_achievements.sql` — moderation fields, role badges, admin RPCs, rotating daily tasks and achievement catalogue.
+- `20261116011000_fix_admin_premium_upsert.sql` — safe Premium extension upsert.
+
+These migrations have been applied to the connected Supabase project. The owner account has the protected Founder, Verified, Developer and Administrator badges.
 
 ## Telegram Business
 
@@ -36,7 +40,9 @@ FLAMEXBOT работает только с диалогами и разреше�
 
 | Команда | Действие |
 |---|---|
-| `.help` | Показать список команд |
+| `/start` | Открыть бота и Mini App |
+| `/help` | Получить подсказку в личном чате с ботом |
+| `.help` | Показать список Business-команд в текущем диалоге |
 | `.mute` | Включить удаление новых входящих сообщений в текущем диалоге |
 | `.unmute` | Отключить удаление новых сообщений |
 | `.antimute on` / `.antimut on` | Разрешить одну ручную попытку отправки через Business |
@@ -58,6 +64,38 @@ FLAMEXBOT работает только с диалогами и разреше�
 ## Защита владельца
 
 Telegram ID владельца FLAMEXBOT защищён на серверной стороне. Ни команды, ни inline-кнопки, ни автоматические действия не применяются к его диалогу. Защита действует независимо от состояния переключателей в Mini App.
+
+
+
+## Mini App 2.0
+
+- Основная навигация находится в меню аватара справа сверху; нижней панели и отдельного центра уведомлений больше нет.
+- Страница работает как SPA: переключение разделов не перемонтирует всё приложение, а обновление токена авторизации не запускает повторный рендер.
+- Уведомления автоматически отмечаются прочитанными при входе и сразу после поступления.
+- Для загрузки разделов используется отдельный экран ожидания с анимированным знаком FLAMEXBOT.
+- Профиль поддерживает ролевые значки: Verified (синяя галочка), Founder, Developer, Administrator, Moderator, Designer, Creator, Supporter, Beta Tester, Community Manager и Partner.
+
+## Ежедневные задания и достижения
+
+- Каждый день сервер выбирает три задания из пула из десяти вариантов.
+- Набор меняется по UTC-дате; награда проверяется серверной функцией, повторное получение за тот же день невозможно.
+- Достижения отделены от ежедневных заданий: серия, сообщения, друзья, Business-диалоги, заполненный профиль, Premium и активность по времени.
+- XP за задания и достижения формируют уровень пользователя.
+
+## Административная панель
+
+Админ-панель доступна только владельцу через серверную проверку `is_flamexbot_admin()`. Значок Administrator сам по себе не выдаёт административные права.
+
+В разделе «Все пользователи» доступны:
+- сортировка от новых регистраций к старым;
+- поиск по имени, никнейму и Telegram ID;
+- фильтры Verified / без галочки, Premium / Free и активные / заблокированные;
+- выдача и снятие синей галочки;
+- блокировка с причиной и разблокировка;
+- выдача Premium на срок от 1 до 3650 дней или бессрочно, продление и снятие;
+- выдача и снятие ролевых значков.
+
+Защита на сервере не позволяет заблокировать владельца или снять его синюю галочку и значок Founder. Бан проверяется при Telegram-входе и при загрузке профиля. Ролевые значки не меняют реальные права доступа.
 
 ## Ограничения Telegram
 
