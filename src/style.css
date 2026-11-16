@@ -1287,3 +1287,6 @@ body{
   .message-event-top>time{font-size:8px}
   .message-event-content{font-size:11px}
 }
+
+.message-event-current{margin:8px 0 10px;padding:11px 13px;border:1px solid rgba(95,190,140,.24);border-radius:11px;background:rgba(95,190,140,.055);color:#e4f4eb;font-size:12px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+.message-event-current>small,.message-event-content>small{display:block;margin-bottom:7px;color:#91a0b3;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
