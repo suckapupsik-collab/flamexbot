@@ -24,6 +24,7 @@ FLAMEXBOT — Telegram Mini App для общения, общих огонько
 - `20261116011000_fix_admin_premium_upsert.sql` — safe Premium extension upsert.
 - `20261116012000_guarantee_daily_task_rotation.sql` — guarantees a different daily challenge set.
 - `20261116013000_publish_profiles_for_moderation.sql` — enables immediate ban updates in active sessions.
+- `20261116014000_admin_directory_telegram_avatar.sql` — shows Telegram avatars in the admin directory.
 
 These migrations have been applied to the connected Supabase project. The owner account has the protected Founder, Verified, Developer and Administrator badges.
 
