@@ -4,6 +4,7 @@ import './style.css';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const FOUNDER_TELEGRAM_ID = '7781170049';
+const FOUNDER_PROFILE_ID = '74a352c0-5a26-46a8-9b88-e71d0c3a9879';
 const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_')
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
@@ -698,7 +699,7 @@ async function renderAdmin(host) {
 async function renderUsers(host) {
   const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
   if(accessError||allowed!==true||!state.isAdmin){
-    host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Раздел доступен только владельцу FLAMEXBOT.</p></div>';
+    host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Раздел доступен только владельцу и администраторам FLAMEXBOT.</p></div>';
     return;
   }
   const filters=state.userFilters;
@@ -725,6 +726,8 @@ async function renderUsers(host) {
     </section>
     <div class="admin-user-list">${users.map(u=>{
       const owner=u.telegram_id===FOUNDER_TELEGRAM_ID;
+      const targetAdmin=owner||(u.badge_codes||[]).includes('administrator');
+      const locked=owner||(targetAdmin&&state.session.user.id!==FOUNDER_PROFILE_ID);
       const badges=[...(u.badge_codes||[])];
       if(u.is_premium&&!badges.includes('premium'))badges.push('premium');
       const currentRole=badges.find(code=>code!=='premium')||'';
@@ -733,12 +736,12 @@ async function renderUsers(host) {
         <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
         <div class="admin-user-actions">
           <button class="admin-action" data-admin-open="${u.id}">Открыть управление →</button>
-          <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${owner&&u.is_verified?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
-          <button class="admin-action ${u.is_banned?'safe':''}" data-user-action="${u.is_banned?'unban':'ban'}" data-user-id="${u.id}" ${owner?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
-          <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${owner?'disabled':''}>✦ ${owner?'Premium владельца':u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
-          <button class="admin-action" data-user-action="premium_revoke" data-user-id="${u.id}" ${!u.is_premium||owner?'disabled':''}>Снять Premium</button>
+          <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
+          <button class="admin-action ${u.is_banned?'safe':''}" data-user-action="${u.is_banned?'unban':'ban'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
+          <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${locked?'disabled':''}>✦ ${owner?'Premium владельца':u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
+          <button class="admin-action" data-user-action="premium_revoke" data-user-id="${u.id}" ${!u.is_premium||locked?'disabled':''}>Снять Premium</button>
         </div>
-        <div class="admin-role-controls"><label>Заменить значок<select data-role-select="${u.id}"><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}" ${currentRole===code?'selected':''}>${label}${currentRole===code?' · текущий':''}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}">Заменить значок</button><label>Снять значок<select data-role-remove="${u.id}"><option value="">Выбрать значок…</option>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<option value="${code}">${esc(BADGE_META[code]?.label||code)}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}" ${owner?'disabled':''} title="${owner?'Значки владельца защищены':'Снять значок'}">Снять</button>
+        <div class="admin-role-controls"><label>Заменить значок<select data-role-select="${u.id}" ${locked?'disabled':''}><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}" ${currentRole===code?'selected':''}>${label}${currentRole===code?' · текущий':''}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}">Заменить значок</button><label>Снять значок<select data-role-remove="${u.id}" ${locked?'disabled':''}><option value="">Выбрать значок…</option>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<option value="${code}">${esc(BADGE_META[code]?.label||code)}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}" ${locked?'disabled':''} title="${locked?'Аккаунт администрации защищён от других администраторов':'Снять значок'}">Снять</button>
         </div>
       </article>`;
     }).join('')||'<div class="empty-state">По заданным фильтрам никого не найдено.</div>'}</div>
@@ -779,6 +782,8 @@ async function renderAdminUser(host) {
   if(error||!u){host.innerHTML=`<div class="page-heading"><h1>Не удалось открыть карточку</h1><p class="muted">${esc(error?.message||'Пользователь не найден')}</p></div><button class="outline" data-go="users">← К пользователям</button>`;return;}
   const owner=u.telegram_id===FOUNDER_TELEGRAM_ID;
   const badges=u.badge_codes||[];
+  const targetAdmin=owner||badges.includes('administrator');
+  const locked=owner||(targetAdmin&&state.session.user.id!==FOUNDER_PROFILE_ID);
   const roleOptions=[['verified','Подтверждён'],['developer','Разработчик'],['administrator','Администратор'],['moderator','Модератор'],['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']];
   const premiumUntil=u.is_premium?(u.premium_expires_at?formatMskDate(u.premium_expires_at):'Бессрочно'):'Не активен';
   host.innerHTML=`<div class="page-heading"><button class="text-button" data-go="users">← Все пользователи</button><div class="eyebrow">ADMIN USER CONTROL</div><h1>Управление аккаунтом</h1><p class="muted">Все изменения проходят серверную проверку и попадают в журнал администрации.</p></div>
@@ -789,10 +794,11 @@ async function renderAdminUser(host) {
         <button class="admin-action" data-admin-detail-action="${u.is_verified?'unverify':'verify'}" ${owner?'disabled':''}>${u.is_verified?'🔵 Снять подтверждение':'🔵 Подтвердить аккаунт'}</button>
         <button class="admin-action ${u.is_banned?'safe':''}" data-admin-detail-action="${u.is_banned?'unban':'ban'}" ${owner?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
         <button class="admin-action premium" data-admin-detail-action="premium_grant" ${owner?'disabled':''}>✦ ${u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
-        <button class="admin-action" data-admin-detail-action="premium_revoke" ${!u.is_premium||owner?'disabled':''}>Снять Premium</button>
+        <button class="admin-action" data-admin-detail-action="premium_revoke" ${!u.is_premium||locked?'disabled':''}>Снять Premium</button>
       </div>
-      <div class="admin-detail-badge-form"><label>Единственный значок аккаунта<select id="admin-detail-badge"><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="primary small" data-admin-detail-action="badge_grant" ${owner?'disabled':''}>Заменить значок</button><button class="outline small" data-admin-detail-action="badge_revoke" ${owner?'disabled':''}>Снять значок</button></div>
+      <div class="admin-detail-badge-form"><label>Единственный значок аккаунта<select id="admin-detail-badge" ${locked?'disabled':''}><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="primary small" data-admin-detail-action="badge_grant" ${owner?'disabled':''}>Заменить значок</button><button class="outline small" data-admin-detail-action="badge_revoke" ${owner?'disabled':''}>Снять значок</button></div>
       <small class="admin-detail-note">На одном аккаунте может быть только один значок роли. Выдача нового заменяет предыдущий. Premium отображается отдельно и не занимает слот значка.</small>
+      ${locked&&!owner?'<p class="business-warning">Управлять аккаунтом другого администратора может только владелец FLAMEXBOT.</p>':''}
       ${u.is_banned&&u.ban_reason?'<p class="business-warning">Причина блокировки: '+esc(u.ban_reason)+'</p>':''}
     </div></section>`;
   host.querySelectorAll('[data-admin-detail-action]').forEach(btn=>btn.addEventListener('click',async()=>{
