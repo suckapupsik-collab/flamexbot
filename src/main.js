@@ -62,8 +62,11 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
 }
 
 function renderBlockedScreen() {
-  app.innerHTML=`<main class="blocked-screen"><div class="blocked-icon">⛔</div><div class="eyebrow">ACCOUNT RESTRICTED</div><h1>Доступ ограничен</h1><p>${esc(state.blockedReason||'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.')}</p><button class="outline" id="blocked-logout">Выйти из аккаунта</button></main><div class="toast"></div>`;
-  document.querySelector('#blocked-logout')?.addEventListener('click',()=>supabase.auth.signOut());
+  app.innerHTML=`<main class="blocked-screen"><div class="blocked-icon">⛔</div><div class="eyebrow">ACCOUNT RESTRICTED</div><h1>Доступ ограничен</h1><p>${esc(state.blockedReason||'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.')}</p><button class="outline" id="blocked-logout">Вернуться ко входу</button></main><div class="toast"></div>`;
+  document.querySelector('#blocked-logout')?.addEventListener('click',()=>{
+    state.blockedReason=null;
+    renderAuth();
+  });
 }
 
 function renderAuth() {
@@ -801,43 +804,22 @@ async function renderProfile(host) {
 
 async function renderDailyMissions(host) {
   const uid=state.session.user.id;
-  const now=new Date();
-  const dayStart=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));
-  const dayEnd=new Date(dayStart.getTime()+86400000);
-  const start=dayStart.toISOString(),end=dayEnd.toISOString(),today=dayStart.toISOString().slice(0,10);
-  const [catalog,sent,received,sentChats,streaks,friends,claims]=await Promise.all([
+  const [catalog,progress,claims]=await Promise.all([
     supabase.rpc('get_flamexbot_daily_tasks'),
-    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}).eq('direction','outbound').gte('created_at',start).lt('created_at',end),
-    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}).eq('direction','inbound').gte('created_at',start).lt('created_at',end),
-    supabase.from('flamexbot_business_messages').select('business_chat_id').eq('direction','outbound').gte('created_at',start).lt('created_at',end).limit(1000),
-    supabase.from('streaks').select('id',{count:'exact',head:true}).or(`user_low.eq.${uid},user_high.eq.${uid}`).eq('last_activity_date',today),
-    supabase.from('friendships').select('id',{count:'exact',head:true}).or(`user_low.eq.${uid},user_high.eq.${uid}`).gte('created_at',start).lt('created_at',end),
-    supabase.from('flamexbot_daily_task_claims').select('task_code,xp_reward').eq('user_id',uid).eq('task_date',today)
+    supabase.rpc('get_flamexbot_daily_task_progress'),
+    supabase.from('flamexbot_daily_task_claims').select('task_code,xp_reward').eq('user_id',uid).eq('task_date',new Date().toISOString().slice(0,10))
   ]);
-  const sentCount=sent.count||0,receivedCount=received.count||0;
-  const chatCount=new Set((sentChats.data||[]).map(x=>x.business_chat_id)).size;
-  const streakCount=streaks.count||0,friendCount=friends.count||0;
-  const progressByCode={
-    send_message:[sentCount,1],
-    receive_message:[receivedCount,1],
-    keep_streak:[streakCount,1],
-    add_friend:[friendCount,1],
-    send_three_messages:[sentCount,3],
-    message_two_chats:[chatCount,2],
-    receive_three_messages:[receivedCount,3],
-    send_five_messages:[sentCount,5],
-    keep_two_streaks:[streakCount,2],
-    message_three_chats:[chatCount,3]
-  };
-  const completed=new Set((claims.data||[]).map(x=>x.task_code));
+  const progressByCode=new Map((progress.data||[]).map(item=>[item.task_code,item]));
+  const completed=new Set((claims.data||[]).map(item=>item.task_code));
   const tasks=catalog.data||[];
-  const totalXp=(claims.data||[]).reduce((sum,x)=>sum+(x.xp_reward||0),0);
+  const totalXp=(claims.data||[]).reduce((sum,item)=>sum+(item.xp_reward||0),0);
+  const today=new Date().toISOString().slice(0,10);
   host.innerHTML=`<div class="page-heading"><div class="eyebrow">НОВЫЙ ЦИКЛ КАЖДЫЙ ДЕНЬ</div><h1>Ежедневные задания <span>⚡</span></h1><p class="muted">Каждый день система выбирает три новых испытания. Выполняй их, забирай XP и прокачивай свой уровень.</p></div>
     <section class="daily-mission-hero"><div><span class="mission-live-dot"></span><b>Сегодняшний набор</b><small>Обновление в 00:00 UTC · ${new Date(today+'T00:00:00Z').toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</small></div><strong>+ ${totalXp} XP <small>сегодня</small></strong></section>
     <div class="daily-task-list">${tasks.map(t=>{
-      const [current,target]=progressByCode[t.task_code]||[0,1];
-      const claimed=completed.has(t.task_code);
-      const done=current>=target;
+      const stat=progressByCode.get(t.task_code)||{current_progress:0,target_progress:1,completed:false};
+      const current=Number(stat.current_progress)||0,target=Math.max(1,Number(stat.target_progress)||1);
+      const claimed=completed.has(t.task_code),done=stat.completed===true||current>=target;
       const percent=Math.min(100,Math.round(current/target*100));
       return `<article class="daily-task task-v2 ${claimed?'claimed':done?'ready':''}">
         <div class="daily-task-icon">${esc(t.icon||'⚡')}</div>
@@ -848,8 +830,8 @@ async function renderDailyMissions(host) {
         <button class="${done&&!claimed?'primary':'outline'} small" data-claim-task="${esc(t.task_code)}" ${!done||claimed?'disabled':''}>${claimed?'Получено':done?'Забрать XP':'В процессе'}</button>
       </article>`;
     }).join('')||'<div class="empty-state">Новый набор заданий скоро появится.</div>'}</div>
-    <div class="daily-task-footer"><span>🎯</span><div><b>Задания меняются автоматически</b><small>Условия честно проверяются сервером. Повторно забрать награду за одно задание в тот же день нельзя.</small></div></div>
-    ${catalog.error||sent.error||received.error||sentChats.error||streaks.error||friends.error||claims.error?'<p class="business-warning">Не удалось загрузить часть прогресса. Попробуй открыть задания ещё раз.</p>':''}`;
+    <div class="daily-task-footer"><span>🎯</span><div><b>Задания меняются автоматически</b><small>Прогресс рассчитывается на сервере только по твоим чатам. Награду за одно задание можно забрать один раз в день.</small></div></div>
+    ${catalog.error||progress.error||claims.error?'<p class="business-warning">Не удалось загрузить прогресс заданий: '+esc(catalog.error?.message||progress.error?.message||claims.error?.message||'попробуй ещё раз')+'</p>':''}`;
   host.querySelectorAll('[data-claim-task]').forEach(btn=>btn.addEventListener('click',async()=>{
     const taskCode=btn.dataset.claimTask;
     btn.disabled=true;btn.classList.add('is-loading');
@@ -857,7 +839,7 @@ async function renderDailyMissions(host) {
     if(error){toast(error.message.includes('already claimed')?'Награда уже получена сегодня':error.message.includes('not active today')?'Набор заданий обновился. Открой страницу ещё раз.':'Не удалось забрать награду: '+error.message);btn.disabled=false;btn.classList.remove('is-loading');return;}
     await supabase.rpc('sync_flamexbot_achievements');
     toast('Получено +'+(data?.xp_reward||0)+' XP');
-    renderDailyMissions(host);
+    await renderDailyMissions(host);
   }));
 }
 
