@@ -21,6 +21,29 @@ function mimeTypeFromName(fileName: string) {
  };
  return types[extension] || "application/octet-stream";
 }
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = 20000,
+  service = "Внешний сервис",
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted || (error as any)?.name === "AbortError") {
+      throw new Error(`${service} не ответил за ${Math.round(timeoutMs / 1000)} сек. Повтори действие.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const supabaseTimedFetch = (input: RequestInfo | URL, init?: RequestInit) =>
+  fetchWithTimeout(input, init, 25000, "Supabase");
+
 function explainTelegramSendError(description: unknown) {
  const raw=String(description??"ошибка Telegram API"), lower=raw.toLowerCase();
  if(/blocked by the user|bot was blocked|user is deactivated|chat not found|peer_id_invalid/.test(lower))return "Telegram отклонил отправку: чат недоступен или получатель ограничил сообщения. FLAMEXBOT не может обходить блокировки.";
@@ -48,7 +71,7 @@ Deno.serve(async (req: Request) => {
     if (!supabaseUrl || !anonKey || !serviceKey || !botToken) return reply({ error: "Сервис Business-чата не настроен." }, 503);
 
     const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
+      global: { headers: { Authorization: `Bearer ${token}` }, fetch: supabaseTimedFetch },
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const { data: authData, error: authError } = await userClient.auth.getUser(token);
@@ -90,7 +113,10 @@ Deno.serve(async (req: Request) => {
     }
     if (hasMedia && text.length > 1024) return reply({ error: "Подпись к файлу должна быть не длиннее 1024 символов." }, 400);
 
-    const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    const admin = createClient(supabaseUrl, serviceKey, {
+      global: { fetch: supabaseTimedFetch },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
     const { data: moderation, error: moderationError } = await admin.from("profiles")
       .select("is_banned,ban_reason,telegram_id").eq("id", profileId).maybeSingle();
     if (moderationError) throw moderationError;
@@ -108,9 +134,9 @@ Deno.serve(async (req: Request) => {
       const telegramUserId = String(chat.telegram_user_id || chat.telegram_chat_id || "");
       if (!telegramUserId || !/^\d+$/.test(telegramUserId)) return reply({ error: "Не удалось определить Telegram ID собеседника." }, 400);
       const telegramCall = async (method: string, payload: Record<string, unknown>) => {
-        const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+        const response = await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/${method}`, {
           method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
-        });
+        }, 12000, `Telegram ${method}`);
         const result = await response.json();
         if (!response.ok || !result.ok) throw new Error(result.description || `Telegram ${method} failed`);
         return result.result;
@@ -121,7 +147,7 @@ Deno.serve(async (req: Request) => {
       const best = [...sizes].sort((a: any,b: any) => (b.width*b.height)-(a.width*a.height))[0];
       const file = await telegramCall("getFile", { file_id: best.file_id });
       if (!file?.file_path || (file.file_size && file.file_size > 5*1024*1024)) return reply({ ok: true, photo_url: chat.photo_url || null });
-      const imageResponse = await fetch(`https://api.telegram.org/file/bot${botToken}/${file.file_path}`);
+      const imageResponse = await fetchWithTimeout(`https://api.telegram.org/file/bot${botToken}/${file.file_path}`, {}, 20000, "Telegram file download");
       if (!imageResponse.ok) throw new Error("Не удалось получить фотографию Telegram.");
       const imageBlob = await imageResponse.blob();
       if (imageBlob.size > 5*1024*1024) return reply({ ok: true, photo_url: chat.photo_url || null });
@@ -278,10 +304,10 @@ Deno.serve(async (req: Request) => {
       method = "sendMessage";
       telegramPayload.append("text", text);
     }
-    const tgResponse = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+    const tgResponse = await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/${method}`, {
       method: "POST",
       body: telegramPayload,
-    });
+    }, 15000, `Telegram ${method}`);
     const tgData = await tgResponse.json();
     if (!tgResponse.ok || !tgData.ok) {
       console.error(`Business ${method} failed:`, tgData.description ?? "unknown error");
