@@ -1028,6 +1028,13 @@ async function handleSuccessfulPayment(message: any) {
     await sendRichTelegramMessage(message.chat.id,
       `${tgEmoji("sparkles")} <b>Колесо фортуны!</b>\nТвоя награда: <b>${String(prize?.prize_label??"Награда начислена")}</b>.\nОткрой FLAMEXBOT, чтобы посмотреть результат.`,
       "HTML",{inline_keyboard:[[{text:"✦ Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
+    const {error:wheelNoticeMarkError}=await admin.from("notifications")
+      .update({telegram_delivered_at:new Date().toISOString()})
+      .eq("user_id",wheelUserId)
+      .eq("type","wheel_prize")
+      .contains("data",{wheel_order_id:order.id})
+      .is("telegram_delivered_at",null);
+    if(wheelNoticeMarkError)console.warn("Could not mark paid wheel notice delivered:",wheelNoticeMarkError.message);
     return;
   }
   const addonUserId = parseCommandProtectionPayload(invoicePayload);
@@ -1113,17 +1120,28 @@ async function handleSuccessfulPayment(message: any) {
     p_plan: plan,
   });
   if (applyError) throw applyError;
-  if (applied === true) await sendRichTelegramMessage(
-    message.chat.id,
-    plan === "pro"
-      ? `${tgEmoji("diamond")} <b>Оплата прошла успешно!</b> FLAMEX PRO активирован на 30 дней. Тебе доступны 2 прокрутки каждую неделю и +10% к шансу редких наград.`
-      : `${tgEmoji("star")} <b>Оплата прошла успешно!</b> FLAMEXBOT Premium активирован на 30 дней. Тебе доступна 1 прокрутка каждую неделю.`,
-    "HTML",
-  );
+  if (applied === true) {
+    await sendRichTelegramMessage(
+      message.chat.id,
+      plan === "pro"
+        ? `${tgEmoji("diamond")} <b>Оплата прошла успешно!</b> FLAMEX PRO активирован на 30 дней. Тебе доступны 2 прокрутки каждую неделю и +10% к шансу редких наград.`
+        : `${tgEmoji("star")} <b>Оплата прошла успешно!</b> FLAMEXBOT Premium активирован на 30 дней. Тебе доступна 1 прокрутка каждую неделю.`,
+      "HTML",
+    );
+    const {error:tierNoticeMarkError}=await admin.from("notifications")
+      .update({telegram_delivered_at:new Date().toISOString()})
+      .eq("user_id",userId)
+      .eq("type","subscription_activated")
+      .contains("data",{payment_charge_id:payment.telegram_payment_charge_id})
+      .is("telegram_delivered_at",null);
+    if(tierNoticeMarkError)console.warn("Could not mark subscription notice delivered:",tierNoticeMarkError.message);
+  }
 }
 
 const TELEGRAM_DELIVERABLE_NOTIFICATION_TYPES = [
   "weekly_wheel_spins",
+  "subscription_activated",
+  "wheel_prize",
   "referral_reward",
   "trial_activated",
   "account_banned",
