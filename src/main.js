@@ -69,7 +69,7 @@ function renderAuth() {
         <div class="visual-footer">© 2026 FLAMEXBOT <span>MADE FOR YOUR PEOPLE</span></div>
       </section>
       <section class="auth-panel"><div class="mobile-brand brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="auth-card">
-        <div class="eyebrow">WELCOME TO FLAMEXBOT</div><h2>Вход через Telegram</h2><p class="muted">Без паролей и почты. Используй свой Telegram-аккаунт.</p>
+        <div class="eyebrow">ТВОЁ ПРОСТРАНСТВО НАЧИНАЕТСЯ ЗДЕСЬ</div><h2>Войти через Telegram</h2><p class="muted">Один быстрый вход — и все твои переписки, огоньки и настройки будут под рукой.</p>
         <button class="telegram-login full" id="telegram-login" ${inTelegram ? '' : 'disabled'}><span>✈</span> Продолжить через Telegram</button>
         <p class="auth-note">${inTelegram ? 'Подтверди вход, чтобы открыть своё пространство FLAMEXBOT.' : 'Открой FLAMEXBOT через кнопку Mini App в нашем Telegram-боте.'}</p>
         <div class="auth-error" id="auth-error"></div>
@@ -85,8 +85,8 @@ function planLabel() { return isPremium() ? 'PREMIUM' : 'FREE'; }
 function renderApp() {
   const p = state.profile || {}; const profileAvatar = p.avatar_url || p.telegram_photo_url;
   app.innerHTML = `
-    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Главная')}${navItem('messages','◌','Business-чаты')}${navItem('tariffs','✦','Тарифы')}${navItem('streaks','🔥','Огоньки')}${navItem('missions','⚡','Задания')}${navItem('profile','◉','Профиль')}${navItem('achievements','🏆','Достижения')}${`<button class="nav-item ${state.page === 'notifications' ? 'selected' : ''}" data-page="notifications"><span>♧</span>Уведомления${state.notificationCount ? `<i class="nav-unread-count">${state.notificationCount > 99 ? '99+' : state.notificationCount}</i>` : ''}</button>`}${navItem('stats','▥','Статистика')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(profileAvatar, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
-    <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Главная',messages:'Business-чаты',tariffs:'Тарифы',streaks:'Огоньки',missions:'Задания',profile:'Профиль',admin:'Админ-панель',achievements:'Достижения',notifications:'Уведомления',stats:'Статистика'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(profileAvatar,p.username)}</span></div></header>
+    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Обзор')}${navItem('messages','◌','Переписки')}${navItem('tariffs','✦','Premium')}${navItem('streaks','🔥','Огоньки')}${navItem('missions','⚡','Задания')}${navItem('profile','◉','Профиль')}${navItem('achievements','🏆','Награды')}${`<button class="nav-item ${state.page === 'notifications' ? 'selected' : ''}" data-page="notifications"><span>♧</span>Уведомления${state.notificationCount ? `<i class="nav-unread-count">${state.notificationCount > 99 ? '99+' : state.notificationCount}</i>` : ''}</button>`}${navItem('stats','▥','Статистика')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(profileAvatar, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
+    <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Обзор',messages:'Переписки',tariffs:'Premium',streaks:'Огоньки',missions:'Задания',profile:'Профиль',admin:'Админ-панель',achievements:'Достижения',notifications:'Уведомления',stats:'Статистика'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(profileAvatar,p.username)}</span></div></header>
     <section class="page-content" id="page-content"></section></main></div><div class="toast"></div>`;
   document.querySelectorAll('[data-page]').forEach(btn => btn.addEventListener('click', () => {
     if (state.page === 'messages' && btn.dataset.page !== 'messages') {
@@ -109,11 +109,11 @@ async function loadPage() {
       supabase.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',state.session.user.id).is('read_at',null)
     ]);
     state.streaks = streaks.data || [];
-    host.innerHTML = `<div class="welcome-row"><div><div class="eyebrow">ТВОЁ ПРОСТРАНСТВО</div><h1>Привет, ${esc(p.username || 'друг')} <span>✦</span></h1><p class="muted">Каждый день — ещё один повод оставаться на связи.</p></div><div class="date-chip">${new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'long'})}</div></div>
-      <div class="hero-card"><div class="hero-copy"><div class="eyebrow">KEEP THE FLAME ALIVE</div><h2>Один день.<br/><em>Одно сообщение.</em></h2><p>Обменивайтесь сообщениями каждый день, чтобы ваш общий огонёк продолжал гореть.</p><button class="primary" data-go="messages">Открыть Business-чаты <b>→</b></button></div><div class="hero-fire">🔥<span class="fire-glow"></span></div><div class="hero-watermark">FLAME</div></div>
+    host.innerHTML = `<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.username || 'друг')} <span>✦</span></h1><p class="muted">Твои переписки, общие огоньки и важные события — в одном месте.</p></div><div class="date-chip">${new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'long'})}</div></div>
+      <div class="hero-card"><div class="hero-copy"><div class="eyebrow">KEEP THE FLAME ALIVE</div><h2>Один день.<br/><em>Одно сообщение.</em></h2><p>Поддерживай связь с близкими, возвращайся к важным диалогам и не давай общим огонькам гаснуть.</p><button class="primary" data-go="messages">Перейти к перепискам <b>→</b></button></div><div class="hero-fire">🔥<span class="fire-glow"></span></div><div class="hero-watermark">FLAME</div></div>
       <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✦</span><small>ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">✉</span><small>УВЕДОМЛЕНИЯ</small><strong>${unread.count || 0}</strong><span class="stat-foot">Непрочитанные</span></div></div>
       <div class="section-heading"><div><div class="eyebrow">YOUR CONNECTIONS</div><h3>Твои огоньки</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
-      <div class="streak-list">${state.streaks.length ? state.streaks.map(s => `<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${s.current_days || 0} <small>дн.</small></strong></div>`).join('') : '<div class="empty-state">Пока нет огоньков. Продолжай общаться через Telegram Business.</div>'}</div>`;
+      <div class="streak-list">${state.streaks.length ? state.streaks.map(s => `<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${s.current_days || 0} <small>дн.</small></strong></div>`).join('') : '<div class="empty-state">Здесь появятся ваши общие серии. Начни с ежедневного сообщения в Telegram Business.</div>'}</div>`;
   } else if (state.page === 'tariffs') await renderTariffs(host);
   else if (state.page === 'messages') await renderBusinessMessages(host);
   else if (state.page === 'streaks') await renderStreaks(host);
@@ -199,10 +199,10 @@ async function renderBusinessMessages(host) {
     .select('is_enabled,rights').eq('profile_id', uid).maybeSingle();
   const connected = Boolean(connection?.is_enabled);
   state.businessRights = connection?.rights || {};
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS INBOX</div><h1>Business-чаты</h1><p class="muted">Все переписки приходят из Telegram Business. Ответы отправляются от имени твоего Telegram-аккаунта.</p></div>
-    <div class="business-inbox-status ${connected ? 'online' : ''}"><span></span><div><b>${connected ? 'Бизнес-бот подключён' : 'Бизнес-бот не подключён'}</b><small>${connected ? 'Входящие чаты синхронизируются через Telegram.' : 'Подключи FLAMEXBOT в Telegram → Настройки → Telegram Business → Чат-боты.'}</small></div></div>
-    <div class="business-inbox-tools"><input id="business-chat-search" type="search" placeholder="Поиск по имени или @username"/><div class="quick-replies"><button type="button" data-quick-reply="Привет! Чем могу помочь?">Привет</button><button type="button" data-quick-reply="Спасибо за сообщение!">Спасибо</button><button type="button" data-quick-reply="Сейчас уточню и вернусь с ответом.">Уточню</button></div></div><div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
-    <section class="chat-window" id="business-chat-window"><div class="chat-placeholder"><span>✈</span><b>Твои Business-переписки</b><small>Выбери чат слева.</small></div></section></div>`;
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS INBOX</div><h1>Business-чаты</h1><p class="muted">Все диалоги синхронизируются через Telegram Business. Сообщения отправляются от имени подключённого аккаунта — только в пределах выданных Telegram разрешений.</p></div>
+    <div class="business-inbox-status ${connected ? 'online' : ''}"><span></span><div><b>${connected ? 'Telegram Business подключён' : 'Telegram Business не подключён'}</b><small>${connected ? 'Список диалогов обновляется автоматически.' : 'Подключи FLAMEXBOT в Telegram → Настройки → Telegram Business → Чат-боты.'}</small></div></div>
+    <div class="business-inbox-tools"><input id="business-chat-search" type="search" placeholder="Найти диалог по имени"/><div class="quick-replies"><button type="button" data-quick-reply="Привет! Чем могу помочь?">Привет</button><button type="button" data-quick-reply="Спасибо за сообщение!">Спасибо</button><button type="button" data-quick-reply="Сейчас уточню и вернусь с ответом.">Уточню</button></div></div><div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
+    <section class="chat-window" id="business-chat-window"><div class="chat-placeholder"><span>✈</span><b>Твои переписки</b><small>Выбери диалог, чтобы открыть историю сообщений и настройки.</small></div></section></div>`;
   bindBusinessChatChoices(host);bindBusinessChatPreferences(host);bindBusinessSearch(host);
   host.querySelectorAll('[data-quick-reply]').forEach(btn=>btn.addEventListener('click',()=>{const input=document.querySelector('#business-send-form input[name=content]');if(input){input.value=btn.dataset.quickReply;input.focus();}}));
   state.businessListChannel = supabase.channel(`business-chat-list-${uid}`)
@@ -287,37 +287,39 @@ async function openBusinessChat(id) {
   const name = [chat.first_name,chat.last_name].filter(Boolean).join(' ') || (chat.username ? '@'+chat.username : 'Telegram-пользователь');
   const founderChat = String(chat.telegram_chat_id) === FOUNDER_TELEGRAM_ID || String(chat.telegram_user_id || '') === FOUNDER_TELEGRAM_ID;
   let chatMuted = Boolean(chat.is_muted) && !founderChat;
-  let antimutEnabled = Boolean(chat.antimut_enabled);
+  let antimutEnabled = Boolean(chat.antimut_enabled) && !founderChat;
   const canDeleteMessages = state.businessRights?.can_delete_all_messages === true;
   const canReplyMessages = state.businessRights?.can_reply === true;
   const premiumAccess = isPremium();
   await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:new Date().toISOString()},{onConflict:'profile_id,business_chat_id'});
   await refreshBusinessChatList(document.querySelector('#page-content'));
   box.closest('.business-inbox')?.classList.add('chat-open');
-  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Чаты</button><div><b>${esc(name)}</b><small>${chat.username ? '@'+esc(chat.username)+' · ' : ''}Переписка через Telegram Business</small></div><input class="message-search" id="business-message-search" type="search" placeholder="Найти сообщение…"/></div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
+  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div><input class="message-search" id="business-message-search" type="search" placeholder="Поиск по переписке…"/></div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
   const controlsHost = box.querySelector('#business-chat-controls');
   const renderBusinessControls = () => {
     if (!controlsHost) return;
-    controlsHost.innerHTML = `<div class="business-control-grid">
+    controlsHost.innerHTML = `<div class="business-control-intro">
+      ${founderChat ? '<div class="business-protection-banner"><span>👑</span><div><b>Защищённый диалог владельца</b><small>Все команды и автоматические действия FLAMEXBOT здесь отключены.</small></div></div>' : '<div class="business-command-hint"><span>⌘</span><div><b>Команды вводятся прямо в этом Telegram-диалоге</b><small>Без @username и ID. Например: <code>.mute</code>, <code>.unmute</code>, <code>.antimute on</code>.</small></div></div>'}
+    </div><div class="business-control-grid">
       <section class="business-control-card">
         <div class="business-control-title"><b>🔇 Мут</b><span class="business-control-state ${chatMuted?'active':''}">${chatMuted?'Включён':'Выключен'}</span></div>
-        <p>Новые сообщения этого собеседника будут удаляться в Telegram. Старые сообщения не затрагиваются.</p>
-        ${founderChat ? '<small class="business-control-note">Владелец FLAMEXBOT защищён от мута.</small>' : !canDeleteMessages && !chatMuted ? '<small class="business-control-note">Нужно разрешение Telegram Business «Удалять все сообщения».</small>' : ''}
-        ${!premiumAccess && !chatMuted ? '<small class="business-control-note">Функция доступна в Premium.</small>' : ''}
-        <button type="button" class="outline small" id="toggle-business-mute" ${(!premiumAccess && !chatMuted)||(founderChat && !chatMuted)||(!canDeleteMessages && !chatMuted)?'disabled':''}>${chatMuted?'Размутить собеседника':'Включить мут'}</button>
+        <p>Удаляет новые входящие сообщения в этом диалоге. Уже сохранённая переписка остаётся на месте.</p>
+        ${!founderChat && !canDeleteMessages && !chatMuted ? '<small class="business-control-note">В Telegram Business нужно разрешить «Удалять все сообщения».</small>' : ''}
+        ${!founderChat && !premiumAccess && !chatMuted ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
+        <button type="button" class="outline small" id="toggle-business-mute" ${founderChat||(!premiumAccess && !chatMuted)||(!canDeleteMessages && !chatMuted)?'disabled':''}>${chatMuted?'Выключить мут':'Включить мут'}</button>
       </section>
       <section class="business-control-card">
         <div class="business-control-title"><b>🛡 Антимут</b><span class="business-control-state ${antimutEnabled?'active':''}">${antimutEnabled?'Включён':'Выключен'}</span></div>
-        <p>Разрешает отдельную ручную попытку отправки через твой Business-аккаунт. Это не снимает блокировку и не обходит ограничения Telegram.</p>
-        ${!canReplyMessages && !antimutEnabled ? '<small class="business-control-note">Нужно право Telegram Business «Отвечать» и подходящий активный чат.</small>' : ''}
-        ${!premiumAccess && !antimutEnabled ? '<small class="business-control-note">Функция доступна в Premium.</small>' : ''}
-        <button type="button" class="outline small" id="toggle-business-antimut" ${(!premiumAccess && !antimutEnabled)||(!canReplyMessages && !antimutEnabled)?'disabled':''}>${antimutEnabled?'Выключить антимут':'Включить антимут'}</button>
-        ${antimutEnabled ? '<form class="antimut-attempt-form" id="antimut-attempt-form"><input name="antimut_text" maxlength="4096" placeholder="Текст для одной попытки отправки" required/><button type="submit" class="primary small">Попробовать отправить</button></form><small class="business-control-note">Отправка выполняется один раз. Если Telegram запрещает её, повторных обходных попыток не будет.</small>' : ''}
+        <p>Позволяет сделать одну ручную попытку отправки через твой Telegram Business. Антимут не снимает блокировки и не обходит запреты Telegram.</p>
+        ${!founderChat && !canReplyMessages && !antimutEnabled ? '<small class="business-control-note">Нужно разрешение Telegram Business «Отвечать».</small>' : ''}
+        ${!founderChat && !premiumAccess && !antimutEnabled ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
+        <button type="button" class="outline small" id="toggle-business-antimut" ${founderChat||(!premiumAccess && !antimutEnabled)||(!canReplyMessages && !antimutEnabled)?'disabled':''}>${antimutEnabled?'Выключить антимут':'Включить антимут'}</button>
+        ${antimutEnabled && !founderChat ? '<small class="business-control-note">Для одной попытки отправь в этом же диалоге: <code>.antimute текст</code>. Повторная отправка не запускается автоматически.</small>' : ''}
       </section>
     </div>`;
     controlsHost.querySelector('#toggle-business-mute')?.addEventListener('click', async e => {
       const next = !chatMuted;
-      if (next && (!premiumAccess || founderChat || !canDeleteMessages)) return;
+      if (next && (founderChat || !premiumAccess || !canDeleteMessages)) return;
       e.currentTarget.disabled = true;
       const { error } = await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_muted:next},{onConflict:'profile_id,business_chat_id'});
       if (error) { toast('Не удалось изменить мут: '+error.message); e.currentTarget.disabled = false; return; }
@@ -328,7 +330,7 @@ async function openBusinessChat(id) {
     });
     controlsHost.querySelector('#toggle-business-antimut')?.addEventListener('click', async e => {
       const next = !antimutEnabled;
-      if (next && (!premiumAccess || !canReplyMessages)) return;
+      if (next && (founderChat || !premiumAccess || !canReplyMessages)) return;
       e.currentTarget.disabled = true;
       const { error } = await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,antimut_enabled:next},{onConflict:'profile_id,business_chat_id'});
       if (error) { toast('Не удалось изменить антимут: '+error.message); e.currentTarget.disabled = false; return; }
@@ -337,27 +339,13 @@ async function openBusinessChat(id) {
       renderBusinessControls();
       await refreshBusinessChatList(document.querySelector('#page-content'));
     });
-    controlsHost.querySelector('#antimut-attempt-form')?.addEventListener('submit', async e => {
-      e.preventDefault();
-      const form = e.currentTarget;
-      const input = form.querySelector('input[name="antimut_text"]');
-      const button = form.querySelector('button[type="submit"]');
-      const outgoingText = input.value.trim();
-      if (!outgoingText || !antimutEnabled) return;
-      button.disabled = true;
-      const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id:id, text:outgoingText, antimut_mode:true } });
-      button.disabled = false;
-      if (error || data?.error) { toast(data?.error || error?.message || 'Telegram отклонил отправку'); return; }
-      input.value = '';
-      toast('Telegram принял сообщение для отправки');
-      await refreshBusinessMessages(id);
-    });
+
   };
   renderBusinessControls();
   box.querySelector('#business-chat-back')?.addEventListener('click', () => {
     state.activeBusinessChat = null;
     box.closest('.business-inbox')?.classList.remove('chat-open');
-    box.innerHTML = '<div class="chat-placeholder"><span>✈</span><b>Твои Business-переписки</b><small>Выбери чат слева.</small></div>';
+    box.innerHTML = '<div class="chat-placeholder"><span>✈</span><b>Твои переписки</b><small>Выбери чат слева.</small></div>';
     document.querySelectorAll('[data-business-chat]').forEach(btn => btn.classList.remove('active'));
   });
   await refreshBusinessMessages(id);
@@ -500,44 +488,45 @@ async function renderAdmin(host) {
 async function renderTariffs(host) {
  const premium=isPremium();
  const expires=state.subscription?.expires_at?new Date(state.subscription.expires_at).toLocaleDateString('ru-RU'):'Без срока';
- host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT PLANS</div><h1>Тарифы</h1><p class="muted">Выбери комфортный уровень управления Telegram Business.</p></div>
+ host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT MEMBERSHIP</div><h1>Тарифы и возможности</h1><p class="muted">Выбирай подходящий уровень доступа. Оплата и продление проходят через Telegram Stars.</p></div>
  <div class="tariff-grid">
   <section class="business-card tariff-card ${!premium?'tariff-current':''}">
-   <div class="eyebrow">СТАРТ</div><h2>Free</h2><p class="muted">Для повседневного общения и знакомства с FLAMEXBOT.</p>
-   <ul><li>Telegram Business-чаты и Mini App</li><li>Отправка сообщений и файлов</li><li>Профиль, друзья и огоньки</li><li>Базовая статистика и уведомления</li></ul>
-   <span class="business-status ${!premium?'is-connected':''}">${!premium?'Текущий тариф':'Доступен всем'}</span>
+   <div class="eyebrow">ДЛЯ СТАРТА</div><h2>Free</h2><p class="muted">Всё необходимое, чтобы оставаться на связи и пользоваться FLAMEXBOT каждый день.</p>
+   <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и уведомления</li><li>Базовая статистика и достижения</li></ul>
+   <span class="business-status ${!premium?'is-connected':''}">${!premium?'Твой текущий тариф':'Бесплатно'}</span>
   </section>
   <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}">
-   <div class="eyebrow">ПОЛНЫЙ КОНТРОЛЬ</div><h2>✦ Premium</h2><p class="muted">Инструменты автоматизации и расширенные настройки Business-чатов.</p>
+   <div class="eyebrow">БОЛЬШЕ ВОЗМОЖНОСТЕЙ</div><h2>✦ Premium</h2><p class="muted">Расширенное управление Telegram Business и дополнительные инструменты для твоих диалогов.</p>
    <ul>
-    <li><code>.mute</code> / <code>.unmute</code> — удаление новых входящих сообщений и размут</li>
-    <li><code>.antimute on/off</code> — ручная попытка отправки через Business с ответом Telegram</li>
-    <li><code>.spam 2-5 текст</code> — повторная отправка</li>
-    <li>AFK, автоответы и авто-прочтение</li>
-    <li>Статусы «печатает» и «записывает голосовое»</li>
+    <li><code>.mute</code> / <code>.unmute</code> — удаление новых сообщений и отключение мута в текущем диалоге</li>
+    <li><code>.antimute on/off</code> — включить или выключить одну ручную попытку отправки через Business</li>
+    <li><code>.antimute текст</code> — отправить одно сообщение через Business с учётом ответа Telegram</li>
+    <li><code>.spam 2-5 текст</code> — отправить от 2 до 5 копий сообщения в текущий диалог</li>
+    <li>AFK-автоответ, авто-прочтение и статусы набора</li>
     <li>Фильтр стикеров, часовой пояс и оформление текста</li>
-    <li>Premium Emoji в уведомлениях бота</li>
-    <li>Расширенные инструменты управления чатами</li>
+    <li>Премиум-эмодзи в сообщениях и уведомлениях бота, если Telegram разрешает их отправку</li>
+    <li>Расширенные настройки Business-диалогов</li>
    </ul>
-   <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+expires:'100 ⭐ · 30 дней'}</span>
-   ${premium?'': '<button class="primary" id="buy-premium" type="button">Купить за 100 ⭐</button>'}
+   <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · до '+expires:'100 ⭐ · 30 дней'}</span>
+   ${premium?'': '<button class="primary" id="buy-premium" type="button">✦ Подключить Premium за 100 ⭐</button>'}
   </section>
  </div>
- <p class="business-note">Оплата проходит через Telegram Stars. Premium включается автоматически на 30 дней после подтверждения оплаты. Антимут не снимает блокировки: он только делает одну ручную попытку отправки через разрешённое Business-подключение. Telegram может отклонить её.</p>`;
+ <div class="business-command-hint"><span>⌘</span><div><b>Команды не нужно отправлять боту в личные сообщения</b><small>Открой переписку с нужным человеком и отправь команду прямо туда. FLAMEXBOT сам определит текущий диалог — без @username и ID.</small></div></div>
+ <p class="business-note">Premium действует 30 дней с момента оплаты. Антимут не снимает блокировки и не обходит ограничения Telegram: он выполняет только одну ручную попытку отправки через разрешённое Business-подключение. Если Telegram отказывает, FLAMEXBOT показывает причину и не повторяет отправку автоматически.</p>`;
  const buyButton=host.querySelector('#buy-premium');
  buyButton?.addEventListener('click',async()=>{
-   buyButton.disabled=true;buyButton.textContent='Создаю счёт…';
+   buyButton.disabled=true;buyButton.textContent='Создаём счёт…';
    const {data,error}=await supabase.functions.invoke('create-premium-invoice');
-   buyButton.disabled=false;buyButton.textContent='Купить за 100 ⭐';
-   if(error||data?.error){toast(data?.error||error?.message||'Не удалось создать счёт');return;}
-   toast('Счёт отправлен в Telegram. Открой чат с FLAMEXBOT и оплати его.');
+   buyButton.disabled=false;buyButton.textContent='✦ Подключить Premium за 100 ⭐';
+   if(error||data?.error){toast(data?.error||error?.message||'Не удалось создать счёт на оплату');return;}
+   toast('Счёт создан. Открой диалог с FLAMEXBOT и подтверди оплату в Telegram.');
  });
 }
 
 async function renderStreaks(host) {
   const { data, error } = await supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false});
   state.streaks = data || [];
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Серия сохраняется за ежедневную активность в Telegram Business.</p></div><div class="streak-list large">${error ? esc(error.message) : state.streaks.length ? state.streaks.map(s => `<div class="streak-card"><div class="streak-symbol">🔥</div><div><div class="eyebrow">ОБЩАЯ СЕРИЯ</div><h3>${s.current_days || 0} дней</h3><p class="muted">Лучшая серия: ${s.best_days || 0} дней</p></div></div>`).join('') : '<div class="empty-state">Активных серий пока нет. История серий останется доступна.</div>'}</div>`;
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Поддерживай ежедневное общение, чтобы продлевать общие серии.</p></div><div class="streak-list large">${error ? esc(error.message) : state.streaks.length ? state.streaks.map(s => `<div class="streak-card"><div class="streak-symbol">🔥</div><div><div class="eyebrow">ОБЩАЯ СЕРИЯ</div><h3>${s.current_days || 0} дней</h3><p class="muted">Лучшая серия: ${s.best_days || 0} дней</p></div></div>`).join('') : '<div class="empty-state">Активных серий пока нет. История серий останется доступна.</div>'}</div>`;
 }
 
 async function renderProfile(host) {
@@ -549,7 +538,7 @@ async function renderProfile(host) {
   const businessConnected = Boolean(businessConnection?.is_enabled);
   const rights = businessConnection?.rights || {};
   const grantedRights = Object.entries(rights).filter(([, value]) => value === true).map(([key]) => key);
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">YOUR IDENTITY</div><h1>Профиль</h1><p class="muted">Настрой свой профиль FLAMEXBOT.</p></div>
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль</h1><p class="muted">Управляй именем, оформлением и подключением Telegram Business.</p></div>
     <form class="profile-card" id="profile-form">${avatar(profileAvatar,p.display_name||p.username,'avatar-xl')}
       <label>Отображаемое имя<input name="display_name" value="${esc(p.display_name || '')}" placeholder="Как тебя называть" maxlength="48"/></label>
       <label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label>
@@ -562,7 +551,7 @@ async function renderProfile(host) {
       <button class="primary">Сохранить изменения <b>→</b></button>
     </form>
     <section class="business-card">
-      <div class="business-card-head"><div><div class="eyebrow">TELEGRAM INTEGRATION</div><h2>Telegram Business</h2><p class="muted">Подключи бизнес-аккаунт, чтобы FLAMEXBOT мог работать с разрешёнными тобой чатами.</p></div><span class="business-status ${businessConnected ? 'is-connected' : ''}">${businessConnected ? 'Подключено' : 'Не подключено'}</span></div>
+      <div class="business-card-head"><div><div class="eyebrow">TELEGRAM INTEGRATION</div><h2>Telegram Business</h2><p class="muted">Подключи Telegram Business и выбери разрешения, с которыми FLAMEXBOT сможет работать в твоих диалогах.</p></div><span class="business-status ${businessConnected ? 'is-connected' : ''}">${businessConnected ? 'Подключено' : 'Не подключено'}</span></div>
       <div class="business-steps">
         <div><b>1.</b><span>Открой <strong>@BotFather</strong> и включи Business Mode для бота FLAMEXBOT.</span></div>
         <div><b>2.</b><span>В Telegram открой <strong>Настройки → Telegram Business → Чат-боты</strong>.</span></div>
@@ -573,7 +562,7 @@ async function renderProfile(host) {
       </div>
       ${businessError ? '<p class="business-warning">Не удалось получить статус. Проверь подключение и обнови страницу.</p>' : ''}
       <button class="outline small" type="button" id="refresh-business">↻ Проверить подключение</button>
-      <p class="business-note">FLAMEXBOT не может включить Business Mode или выдать себе права вместо тебя. Управляй разрешениями и отключением в настройках Telegram.</p>
+      <p class="business-note">FLAMEXBOT не меняет настройки Telegram и не выдаёт себе разрешения. Ты в любой момент можешь проверить или отозвать доступ в настройках Telegram Business.</p>
     </section>`;
   document.querySelector('[data-telegram-link]').addEventListener('click', () => telegramAuthFlow({ linkCurrent: true }));
   document.querySelector('#refresh-business').addEventListener('click', async e => {
@@ -609,7 +598,7 @@ async function renderDailyMissions(host) {
     {code:'receive_message',title:'Быть на связи',desc:'Получи хотя бы одно входящее сообщение',reward:5,done:(received.count||0)>0,progress:Math.min(1,received.count||0)},
     {code:'keep_streak',title:'Сохранить огонёк',desc:'Поддержи совместную серию сегодня',reward:10,done:(streaks.count||0)>0,progress:Math.min(1,streaks.count||0)}
   ];
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">DAILY FLAME QUESTS</div><h1>Ежедневные задания ⚡</h1><p class="muted">Выполняй реальные действия и забирай опыт. Сброс заданий — ежедневно в 00:00 UTC.</p></div><div class="daily-task-list">${tasks.map(t=>{const claimed=completed.has(t.code);return `<article class="daily-task ${claimed?'claimed':t.done?'ready':''}"><div class="daily-task-icon">${t.code==='send_message'?'💬':t.code==='receive_message'?'📩':'🔥'}</div><div class="daily-task-copy"><b>${t.title}</b><p>${t.desc}</p><small>${claimed?'Награда получена':t.done?'Задание выполнено':'Прогресс: '+(t.progress?'1':'0')+'/1'} · +${t.reward} XP</small></div><button class="${t.done&&!claimed?'primary':'outline'} small" data-claim-task="${t.code}" ${!t.done||claimed?'disabled':''}>${claimed?'Получено':t.done?'Забрать':'В процессе'}</button></article>`;}).join('')}</div>${sent.error||received.error||streaks.error||claims.error?'<p class="business-warning">Часть прогресса не удалось загрузить. Попробуй обновить страницу.</p>':''}`;
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">DAILY FLAME QUESTS</div><h1>Ежедневные задания ⚡</h1><p class="muted">Выполняй небольшие ежедневные задания, получай XP и открывай новые достижения. Прогресс обновляется каждый день.</p></div><div class="daily-task-list">${tasks.map(t=>{const claimed=completed.has(t.code);return `<article class="daily-task ${claimed?'claimed':t.done?'ready':''}"><div class="daily-task-icon">${t.code==='send_message'?'💬':t.code==='receive_message'?'📩':'🔥'}</div><div class="daily-task-copy"><b>${t.title}</b><p>${t.desc}</p><small>${claimed?'Награда получена':t.done?'Задание выполнено':'Прогресс: '+(t.progress?'1':'0')+'/1'} · +${t.reward} XP</small></div><button class="${t.done&&!claimed?'primary':'outline'} small" data-claim-task="${t.code}" ${!t.done||claimed?'disabled':''}>${claimed?'Получено':t.done?'Забрать':'В процессе'}</button></article>`;}).join('')}</div>${sent.error||received.error||streaks.error||claims.error?'<p class="business-warning">Часть прогресса не удалось загрузить. Попробуй обновить страницу.</p>':''}`;
   host.querySelectorAll('[data-claim-task]').forEach(btn=>btn.addEventListener('click',async()=>{
     btn.disabled=true;const {data,error}=await supabase.rpc('claim_flamexbot_daily_task',{p_task_code:btn.dataset.claimTask});
     if(error){toast(error.message.includes('already claimed')?'Награда уже получена сегодня':'Не удалось забрать награду: '+error.message);btn.disabled=false;return;}
@@ -631,13 +620,13 @@ async function renderAchievements(host) {
   const level=Math.floor(totalXp/100)+1;
   const nextXp=level*100;
   const progress=totalXp%100;
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR COLLECTION</div><h1>Достижения 🏆</h1><p class="muted">Награды открываются за реальные действия в FLAMEXBOT.</p></div><section class="business-card level-card"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ</small><h2>Уровень ${level}</h2></div><strong>${totalXp} XP</strong></div><div class="xp-track"><span style="width:${progress}%"></span></div><small>${progress}/100 XP до следующего уровня</small></section><div class="achievement-grid">${(all.data||[]).map(a=>{const e=got.get(a.id);return `<article class="achievement-card ${e?'earned':'locked'}"><div class="achievement-icon">${esc(a.icon||'✦')}</div><div><b>${esc(a.title)}</b><p>${esc(a.description||'')}</p><small>${e?'Получено '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Пока не получено'} · ${a.points} XP</small></div></article>`;}).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div><section class="leaderboard-panel"><div class="section-heading"><div><div class="eyebrow">FLAME RANKING</div><h3>Таблица лидеров</h3></div></div><div class="leaderboard-list">${(leaderboard.data||[]).map((u,i)=>`<div class="leaderboard-row"><strong>#${i+1}</strong><span><b>${esc(u.display_name||u.username)}</b><small>Уровень ${u.level}</small></span><em>${u.xp} XP</em></div>`).join('')||'<div class="empty-state">Рейтинг появится, когда участники начнут получать XP.</div>'}</div></section>${all.error||earned.error||taskClaims.error||leaderboard.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию или рейтинг.</p>':''}`;
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR COLLECTION</div><h1>Достижения 🏆</h1><p class="muted">Каждое достижение связано с активностью внутри FLAMEXBOT.</p></div><section class="business-card level-card"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ</small><h2>Уровень ${level}</h2></div><strong>${totalXp} XP</strong></div><div class="xp-track"><span style="width:${progress}%"></span></div><small>${progress}/100 XP до следующего уровня</small></section><div class="achievement-grid">${(all.data||[]).map(a=>{const e=got.get(a.id);return `<article class="achievement-card ${e?'earned':'locked'}"><div class="achievement-icon">${esc(a.icon||'✦')}</div><div><b>${esc(a.title)}</b><p>${esc(a.description||'')}</p><small>${e?'Получено '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Пока не получено'} · ${a.points} XP</small></div></article>`;}).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div><section class="leaderboard-panel"><div class="section-heading"><div><div class="eyebrow">FLAME RANKING</div><h3>Таблица лидеров</h3></div></div><div class="leaderboard-list">${(leaderboard.data||[]).map((u,i)=>`<div class="leaderboard-row"><strong>#${i+1}</strong><span><b>${esc(u.display_name||u.username)}</b><small>Уровень ${u.level}</small></span><em>${u.xp} XP</em></div>`).join('')||'<div class="empty-state">Рейтинг появится, когда участники начнут получать XP.</div>'}</div></section>${all.error||earned.error||taskClaims.error||leaderboard.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию или рейтинг.</p>':''}`;
 }
 async function renderNotifications(host) {
   const uid=state.session.user.id;
   const {data,error}=await supabase.from('notifications').select('id,type,title,body,data,created_at,read_at').eq('user_id',uid).order('created_at',{ascending:false}).limit(50);
   state.notificationCount=(data||[]).filter(n=>!n.read_at).length;
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ACTIVITY CENTER</div><h1>Уведомления</h1><p class="muted">События, заявки и важные обновления аккаунта.</p><div class="notification-toolbar"><span class="muted">${state.notificationCount} непрочитанных</span><button class="outline small" type="button" id="read-all-notifications" ${state.notificationCount?'':'disabled'}>Отметить всё прочитанным</button></div></div><div class="notification-list">${(data||[]).map(n=>`<button class="notification-item ${n.read_at?'read':'unread'}" data-notification="${n.id}"><span class="notification-mark">${n.read_at?'✓':'•'}</span><span><b>${esc(n.title)}</b><small>${esc(n.body||'')}</small><time>${new Date(n.created_at).toLocaleString('ru-RU')}</time></span></button>`).join('')||'<div class="empty-state">Пока нет уведомлений. Новые события появятся здесь.</div>'}</div>${error?'<p class="business-warning">Не удалось загрузить уведомления.</p>':''}`;
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ACTIVITY CENTER</div><h1>Уведомления</h1><p class="muted">Здесь собраны новые сообщения, события и изменения в твоём аккаунте.</p><div class="notification-toolbar"><span class="muted">${state.notificationCount} непрочитанных</span><button class="outline small" type="button" id="read-all-notifications" ${state.notificationCount?'':'disabled'}>Отметить всё прочитанным</button></div></div><div class="notification-list">${(data||[]).map(n=>`<button class="notification-item ${n.read_at?'read':'unread'}" data-notification="${n.id}"><span class="notification-mark">${n.read_at?'✓':'•'}</span><span><b>${esc(n.title)}</b><small>${esc(n.body||'')}</small><time>${new Date(n.created_at).toLocaleString('ru-RU')}</time></span></button>`).join('')||'<div class="empty-state">Пока тихо. Новые сообщения и события появятся здесь автоматически.</div>'}</div>${error?'<p class="business-warning">Не удалось загрузить уведомления.</p>':''}`;
   host.querySelector('#read-all-notifications')?.addEventListener('click',async()=>{
     const {error:markError}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('user_id',uid).is('read_at',null);
     if(markError)toast('Не удалось обновить уведомления');else{state.notificationCount=0;renderNotifications(host);renderApp();}
@@ -659,7 +648,7 @@ async function renderStats(host) {
   ]);
   const best=Math.max(0,...(streaks.data||[]).map(s=>s.best_days||0));
   const current=Math.max(0,...(streaks.data||[]).map(s=>s.current_days||0));
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR FLAME REPORT</div><h1>Статистика</h1><p class="muted">Твоя история активности в FLAMEXBOT.</p></div><div class="stats-grid"><div class="stat-card"><small>ТАРИФ</small><strong>${planLabel()}</strong></div><div class="stat-card"><small>BUSINESS-ЧАТЫ</small><strong>${chats.count||0}</strong></div><div class="stat-card"><small>СООБЩЕНИЯ</small><strong>${messages.count||0}</strong></div><div class="stat-card"><small>ТЕКУЩАЯ СЕРИЯ</small><strong>${current} дн.</strong></div><div class="stat-card"><small>ЛУЧШАЯ СЕРИЯ</small><strong>${best} дн.</strong></div><div class="stat-card"><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong></div></div><section class="business-card"><div class="eyebrow">FLAMEX ID</div><div class="flame-id-line"><h2>${esc(uid.slice(0,8).toUpperCase())}</h2><button class="outline small" type="button" id="copy-flame-id">Скопировать ID</button></div><p class="muted">Уникальный идентификатор твоего пространства FLAMEXBOT.</p><small>В приложении с ${profile.data?.created_at?new Date(profile.data.created_at).toLocaleDateString('ru-RU'):'—'} · Telegram ${profile.data?.telegram_id?'привязан':'не привязан'}</small></section>`;
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">YOUR FLAME REPORT</div><h1>Статистика</h1><p class="muted">Краткая сводка твоих переписок, серий и достижений.</p></div><div class="stats-grid"><div class="stat-card"><small>ТАРИФ</small><strong>${planLabel()}</strong></div><div class="stat-card"><small>BUSINESS-ЧАТЫ</small><strong>${chats.count||0}</strong></div><div class="stat-card"><small>СООБЩЕНИЯ</small><strong>${messages.count||0}</strong></div><div class="stat-card"><small>ТЕКУЩАЯ СЕРИЯ</small><strong>${current} дн.</strong></div><div class="stat-card"><small>ЛУЧШАЯ СЕРИЯ</small><strong>${best} дн.</strong></div><div class="stat-card"><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong></div></div><section class="business-card"><div class="eyebrow">FLAMEX ID</div><div class="flame-id-line"><h2>${esc(uid.slice(0,8).toUpperCase())}</h2><button class="outline small" type="button" id="copy-flame-id">Скопировать ID</button></div><p class="muted">Уникальный идентификатор твоего пространства FLAMEXBOT.</p><small>В приложении с ${profile.data?.created_at?new Date(profile.data.created_at).toLocaleDateString('ru-RU'):'—'} · Telegram ${profile.data?.telegram_id?'привязан':'не привязан'}</small></section>`;
   host.querySelector('#copy-flame-id')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(uid);toast('FLAMEX ID скопирован');}catch{toast('Не удалось скопировать ID');}});
 }
 
