@@ -1205,6 +1205,14 @@ async function renderTariffs(host, initialTab='premium') {
    ${protectionFounder?'':'<button class="primary addon-buy-button" id="buy-command-protection" type="button">'+protectionLabel+'</button>'}
    <small class="premium-payment-note">Оплата — Telegram Stars. Срок начинается после подтверждения успешного платежа. Продление суммируется с оставшимся временем.</small>
   </section>
+  <div class="addon-feature-heading"><div class="eyebrow">ВКЛЮЧЕНО В PREMIUM</div><h2>✨ Дополнительные возможности</h2><p class="muted">Эти функции работают отдельно в каждом Business-диалоге.</p></div>
+  <div class="addon-feature-grid">
+   <article class="addon-feature"><span>👁️</span><b>Автопрочтение</b><small>Отдельное включение для каждого чата.</small><em>В Premium</em></article>
+   <article class="addon-feature"><span>⌨️</span><b>Автостатусы</b><small>«Печатает…» и «Записывает голосовое» только в выбранном диалоге.</small><em>В Premium</em></article>
+   <article class="addon-feature"><span>🛡️</span><b>Антимут</b><small>Отправка через аккаунт бота, если собеседник открыл FLAMEXBOT.</small><em>В Premium</em></article>
+   <article class="addon-feature"><span>🗂️</span><b>Архив изменений</b><small>История удалённых и отредактированных сообщений с момента подключения.</small><em>В Premium</em></article>
+   <article class="addon-feature"><span>💎</span><b>Премиум-эмодзи</b><small>Украшенные ответы, уведомления и новые команды.</small><em>В Premium</em></article>
+  </div>
  </section>
  <p class="business-note">Платежи подтверждаются Telegram. Доступ открывается только после получения и проверки successful_payment на сервере.</p>`;
  const tabs=[...host.querySelectorAll('[data-tariff-tab]')];
