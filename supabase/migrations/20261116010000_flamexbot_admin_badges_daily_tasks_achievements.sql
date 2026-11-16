@@ -255,7 +255,7 @@ begin
     or (a.code='premium_member' and exists(select 1 from public.user_subscriptions s where s.user_id=v_uid and s.plan='premium' and (s.expires_at is null or s.expires_at>now())))
     or (a.code='account_30_days' and exists(select 1 from public.profiles p where p.id=v_uid and p.created_at<=now()-interval '30 days'))
     or (a.code='early_bird' and exists(select 1 from public.flamexbot_business_messages m join public.flamexbot_business_chats c on c.id=m.business_chat_id where c.profile_id=v_uid and m.direction='outbound' and extract(hour from m.created_at at time zone 'UTC') between 5 and 7))
-    or (a.code='night_owl' and exists(select 1 from public.flamexbot_business_messages m join public.flamexbot_business_chats c on c.id=m.business_chat_id where c.profile_id=v_uid and m.direction='outbound' and extract(hour from m.created_at at time zone 'UTC')>=22)
+    or (a.code='night_owl' and exists(select 1 from public.flamexbot_business_messages m join public.flamexbot_business_chats c on c.id=m.business_chat_id where c.profile_id=v_uid and m.direction='outbound' and extract(hour from m.created_at at time zone 'UTC')>=22))
   on conflict(user_id,achievement_id) do nothing;
   get diagnostics v_added=row_count;
   return v_added;
