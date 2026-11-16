@@ -1061,10 +1061,10 @@ async function renderAdminUser(host) {
       <div class="admin-detail-actions"><h3>Действия с аккаунтом</h3><div class="admin-detail-action-grid">
         <button class="admin-action" data-admin-detail-action="${u.is_verified?'unverify':'verify'}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять подтверждение':'🔵 Подтвердить аккаунт'}</button>
         <button class="admin-action ${u.is_banned?'safe':''}" data-admin-detail-action="${u.is_banned?'unban':'ban'}" ${locked?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
-        <button class="admin-action premium" data-admin-detail-action="premium_grant" ${locked?'disabled':''}>✦ ${u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
-        <button class="admin-action" data-admin-detail-action="premium_revoke" ${!u.is_premium||locked?'disabled':''}>Снять Premium</button>
-        <button class="admin-action pro" data-admin-detail-action="pro_grant" ${locked?'disabled':''}>🔥 Выдать / продлить PRO</button>
-        <button class="admin-action" data-admin-detail-action="pro_revoke" ${locked?'disabled':''}>Снять PRO</button>
+        <button class="admin-action premium" data-admin-detail-action="premium_grant" ${locked||badges.includes('pro')?'disabled':''}>✦ ${u.is_premium&&!badges.includes('pro')?'Продлить Premium':'Выдать Premium'}</button>
+        <button class="admin-action" data-admin-detail-action="premium_revoke" ${!u.is_premium||badges.includes('pro')||locked?'disabled':''}>Снять Premium</button>
+        <button class="admin-action pro" data-admin-detail-action="pro_grant" ${locked?'disabled':''}>🔥 ${badges.includes('pro')?'Продлить PRO':'Выдать PRO'}</button>
+        <button class="admin-action" data-admin-detail-action="pro_revoke" ${!badges.includes('pro')||locked?'disabled':''}>Снять PRO</button>
       </div>
       <div class="admin-detail-badge-form"><label>Единственный значок аккаунта<select id="admin-detail-badge" ${locked?'disabled':''}><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="primary small" data-admin-detail-action="badge_grant" ${locked?'disabled':''}>Заменить значок</button><button class="outline small" data-admin-detail-action="badge_revoke" ${locked?'disabled':''}>Снять значок</button></div>
       <small class="admin-detail-note">На одном аккаунте может быть только один значок роли. Выдача нового заменяет предыдущий. Premium отображается отдельно и не занимает слот значка.</small>
