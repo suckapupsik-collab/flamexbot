@@ -8,7 +8,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all' } };
+const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all' } };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -59,6 +59,11 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
     const current = document.querySelector(linkCurrent ? '[data-telegram-link]' : '#telegram-login');
     if (current) current.disabled = false;
   }
+}
+
+function renderBlockedScreen() {
+  app.innerHTML=`<main class="blocked-screen"><div class="blocked-icon">⛔</div><div class="eyebrow">ACCOUNT RESTRICTED</div><h1>Доступ ограничен</h1><p>${esc(state.blockedReason||'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.')}</p><button class="outline" id="blocked-logout">Выйти из аккаунта</button></main><div class="toast"></div>`;
+  document.querySelector('#blocked-logout')?.addEventListener('click',()=>supabase.auth.signOut());
 }
 
 function renderAuth() {
@@ -930,6 +935,23 @@ document.addEventListener('visibilitychange',()=>{
   if(channel&&state.session?.user?.id) channel.track({user_id:state.session.user.id,online:!document.hidden,seen_at:new Date().toISOString()});
 });
 
+async function startModerationRealtime(session) {
+  if(state.moderationChannel){await supabase.removeChannel(state.moderationChannel);state.moderationChannel=null;}
+  if(!session?.user?.id)return;
+  const uid=session.user.id;
+  const channel=supabase.channel(`flamexbot-moderation-${uid}`)
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'profiles',filter:`id=eq.${uid}`},async payload=>{
+      const profile=payload.new||{};
+      if(profile.is_banned){
+        state.blockedReason=profile.ban_reason||'Этот аккаунт заблокирован администрацией FLAMEXBOT.';
+        await supabase.auth.signOut();
+        renderBlockedScreen();
+      }
+    })
+    .subscribe(status=>{if(status==='SUBSCRIBED')console.info('FLAMEXBOT moderation watch active');});
+  state.moderationChannel=channel;
+}
+
 async function startNotificationRealtime(session) {
   if(state.notificationChannel){await supabase.removeChannel(state.notificationChannel);state.notificationChannel=null;}
   if(!session?.user?.id)return;
@@ -955,8 +977,9 @@ async function boot(session) {
   if(!session){
     if(state.presenceChannel){await supabase.removeChannel(state.presenceChannel);state.presenceChannel=null;}
     if(state.notificationChannel){await supabase.removeChannel(state.notificationChannel);state.notificationChannel=null;}
+    if(state.moderationChannel){await supabase.removeChannel(state.moderationChannel);state.moderationChannel=null;}
     state.onlineUserIds=[];state.notificationCount=0;state.profileBadges=[];
-    renderAuth();
+    if(state.blockedReason)renderBlockedScreen();else renderAuth();
     return;
   }
   if(nextUserId===currentUserId&&document.querySelector('.app-layout'))return;
@@ -970,11 +993,12 @@ async function boot(session) {
   ]);
   if(profileResult.error)console.warn('Profile load:',profileResult.error.message);
   if(profileResult.data?.is_banned){
-    app.innerHTML=`<main class="blocked-screen"><div class="blocked-icon">⛔</div><div class="eyebrow">ACCOUNT RESTRICTED</div><h1>Доступ ограничен</h1><p>${esc(profileResult.data.ban_reason||'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.')}</p><button class="outline" id="blocked-logout">Выйти из аккаунта</button></main>`;
+    state.blockedReason=profileResult.data.ban_reason||'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.';
     await supabase.auth.signOut();
-    document.querySelector('#blocked-logout')?.addEventListener('click',()=>supabase.auth.signOut());
+    renderBlockedScreen();
     return;
   }
+  state.blockedReason=null;
   const data=profileResult.data;
   state.profile={...(data||{username:session.user.email?.split('@')[0]||'Flame user'}),timezone_offset:preferencesResult.data?.timezone_offset??0};
   state.profileBadges=(badgesResult.data||[]).map(x=>x.badge_code);
@@ -989,7 +1013,7 @@ async function boot(session) {
   state.isAdmin=!adminResult.error&&adminResult.data===true;
   const {error:achievementSyncError}=await supabase.rpc('sync_flamexbot_achievements');
   if(achievementSyncError)console.warn('Achievement sync:',achievementSyncError.message);
-  await Promise.all([startPresence(session),startNotificationRealtime(session)]);
+  await Promise.all([startPresence(session),startNotificationRealtime(session),startModerationRealtime(session)]);
   renderApp();
 }
 
