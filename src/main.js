@@ -99,7 +99,7 @@ function navItem(page, icon, label) { return `<button class="nav-item ${state.pa
 function isPremium() { return state.subscription?.plan === 'premium' && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
 function planLabel() { return isPremium() ? 'PREMIUM' : 'FREE'; }
 const PAGE_LABELS = {
-  home:'Обзор', messages:'Переписки', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
+  home:'Обзор', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
   stats:'Статистика', commands:'Все команды', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
@@ -125,7 +125,7 @@ function verifiedMarkMarkup(verified=false) {
 }
 function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
   const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&isPremium()?['premium']:[])])];
-  return unique.filter(code=>BADGE_META[code]).map(code=>{
+  return unique.filter(code=>code!=='verified'&&BADGE_META[code]).map(code=>{
     const b=BADGE_META[code];
     return `<span class="role-badge badge-${b.className} ${compact?'compact':''}" title="${esc(b.label)}"><i>${b.icon}</i>${compact?'':`<span>${esc(b.label)}</span>`}</span>`;
   }).join('');
@@ -138,13 +138,13 @@ function updateHeaderProfile() {
   if(top)top.innerHTML=avatar(url,p.display_name||p.username);
   if(menu)menu.innerHTML=avatar(url,p.display_name||p.username,'avatar-lg');
   const name=document.querySelector('#menu-display-name');
-  if(name)name.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p));
+  if(name)name.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'));
   const triggerName=document.querySelector('.profile-trigger-name');
-  if(triggerName)triggerName.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p));
+  if(triggerName)triggerName.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'));
   const badges=document.querySelector('#menu-profile-badges');
   if(badges)badges.innerHTML=badgeMarkup(state.profileBadges);
   const triggerBadges=document.querySelector('#top-profile-badges');
-  if(triggerBadges)triggerBadges.innerHTML=verifiedMarkMarkup(isFounderProfile(p))+badgeMarkup(state.profileBadges,true);
+  if(triggerBadges)triggerBadges.innerHTML=badgeMarkup(state.profileBadges,true);
 }
 function closeProfileMenu() {
   const menu=document.querySelector('#profile-menu');
@@ -179,6 +179,8 @@ function renderApp() {
   const items=[
     ['home','⌂','Обзор','Главная'],
     ['messages','✉','Переписки','Telegram Business'],
+    ['deleted','🗑️','Удалённые сообщения','Архив удалённых сообщений собеседников'],
+    ['edited','✏️','Изменённые сообщения','История правок сообщений собеседников'],
     ['friends','👥','Друзья','Заявки и совместные огоньки'],
     ['streaks','🔥','Огоньки','Общие серии'],
     ['missions','⚡','Ежедневные задания','Новые задания каждый день'],
@@ -254,7 +256,7 @@ async function loadPage() {
       ]);
       state.streaks=(streaks.data||[]).sort((a,b)=>effectiveStreakDays(b)-effectiveStreakDays(a)).slice(0,5);
       const p=state.profile||{};
-      host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup(isFounderProfile(p))} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
+      host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'))} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
@@ -262,6 +264,8 @@ async function loadPage() {
         <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
     } else if(state.page==='tariffs') await renderTariffs(host);
     else if(state.page==='messages') await renderBusinessMessages(host);
+    else if(state.page==='deleted') await renderBusinessMessageEvents(host,'deleted');
+    else if(state.page==='edited') await renderBusinessMessageEvents(host,'edited');
     else if(state.page==='friends') await renderFriends(host);
     else if(state.page==='streaks') await renderStreaks(host);
     else if(state.page==='missions') await renderDailyMissions(host);
@@ -368,6 +372,52 @@ async function refreshBusinessChatList(host) {
   if (!list) return;
   list.innerHTML = renderBusinessChatChoices(state.businessChats);
   bindBusinessChatChoices(list);bindBusinessChatPreferences(list);
+}
+
+async function renderBusinessMessageEvents(host,eventType) {
+  const uid=state.session.user.id;
+  const deleted=eventType==='deleted';
+  const title=deleted?'Удалённые сообщения':'Изменённые сообщения';
+  const icon=deleted?'🗑️':'✏️';
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS · ИСТОРИЯ</div><h1>${icon} ${title}</h1><p class="muted">Здесь сохраняются только сообщения собеседников. Твои исходящие сообщения в этот журнал не попадают.</p></div><div class="message-events-list"><div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем историю</strong></div></div>`;
+  const list=host.querySelector('.message-events-list');
+  const {data:events,error}=await supabase.from('flamexbot_business_message_events')
+    .select('id,business_chat_id,telegram_message_id,event_type,original_content,message_type,media_file_id,media_url,original_raw,occurred_at')
+    .eq('profile_id',uid).eq('event_type',eventType).order('occurred_at',{ascending:false}).limit(100);
+  if(error){list.innerHTML=`<div class="empty-state">Не удалось загрузить историю: ${esc(error.message)}</div>`;return;}
+  if(!events?.length){list.innerHTML=`<div class="empty-state">${deleted?'Удалённых сообщений собеседников пока нет.':'Изменённых сообщений собеседников пока нет.'}</div>`;return;}
+  const chatIds=[...new Set(events.map(e=>e.business_chat_id))];
+  const {data:chats,error:chatError}=await supabase.from('flamexbot_business_chats')
+    .select('id,telegram_chat_id,username,first_name,last_name,photo_url').eq('profile_id',uid).in('id',chatIds);
+  if(chatError){list.innerHTML=`<div class="empty-state">Не удалось загрузить собеседников: ${esc(chatError.message)}</div>`;return;}
+  const chatMap=new Map((chats||[]).map(c=>[c.id,c]));
+  const paths=[...new Set(events.map(e=>e.media_url).filter(Boolean))];
+  const mediaUrlMap={};
+  if(paths.length){
+    try{
+      const {data:signed,error:signedError}=await supabase.storage.from('flamex-business-media').createSignedUrls(paths,3600);
+      if(!signedError)for(const item of signed||[])if(item.path&&item.signedUrl)mediaUrlMap[item.path]=item.signedUrl;
+    }catch(error){console.warn('Message event media preview:',error?.message||error);}
+  }
+  list.innerHTML=events.map(event=>{
+    const chat=chatMap.get(event.business_chat_id)||{};
+    const chatName=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||(chat.username?'@'+chat.username:'Telegram-пользователь');
+    const raw=event.original_raw||{};
+    const mediaType=event.message_type||'text';
+    const mediaUrl=mediaUrlMap[event.media_url]||'';
+    const mediaName=raw.document?.file_name||raw.audio?.file_name||raw.video?.file_name||raw.animation?.file_name||'Вложение';
+    let media='';
+    if(mediaUrl&&mediaType==='photo')media=`<a class="event-media" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="Фото из сообщения"/></a>`;
+    else if(mediaUrl&&['video','video_note'].includes(mediaType))media=`<video class="event-video" controls preload="metadata" src="${esc(mediaUrl)}"></video>`;
+    else if(mediaUrl&&['voice','audio'].includes(mediaType))media=`<audio class="event-audio" controls preload="metadata" src="${esc(mediaUrl)}"></audio>`;
+    else if(mediaType!=='text')media=`<div class="event-attachment">📎 ${esc(mediaName)} · ${esc(mediaType)}</div>`;
+    const text=event.original_content||raw.text||raw.caption||'';
+    return `<article class="message-event-card ${deleted?'is-deleted':'is-edited'}">
+      <div class="message-event-top"><span class="message-event-icon">${deleted?'🗑️':'✏️'}</span><div><b>${esc(chatName)}</b><small>${deleted?'Сообщение удалено':'Сохранена предыдущая версия'} · #${esc(event.telegram_message_id)}</small></div><time>${formatMskDateTime(event.occurred_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</time></div>
+      <div class="message-event-content">${text?esc(text):'<span class="muted">Текст отсутствует</span>'}</div>${media}
+      <div class="message-event-footer"><span>${deleted?'Удалено в Telegram':'Отредактировано в Telegram'}</span><small>Только входящее сообщение</small></div>
+    </article>`;
+  }).join('');
 }
 
 async function renderBusinessMessages(host) {
@@ -1180,7 +1230,7 @@ async function renderFriends(host) {
   const outgoingByUser=new Map((outgoing.data||[]).map(r=>[r.receiver_id,r]));
   const streakByFriend=new Map((streakResult.data||[]).map(s=>[s.user_low===uid?s.user_high:s.user_low,s]));
   const displayName=id=>{const p=profileMap.get(id);return p?.display_name||p?.username||'Пользователь';};
-  const profileCard=(p,subline,actions='',badges=[])=>`<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url||p.telegram_photo_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${badgeMarkup(badges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
+  const profileCard=(p,subline,actions='',badges=[])=>`<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url||p.telegram_photo_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${verifiedMarkMarkup((badges||[]).includes('verified')||isFounderProfile(p))} ${badgeMarkup(badges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
   const friendCards=friendIds.map(id=>{
     const p=profileMap.get(id);if(!p)return '';
     const streak=streakByFriend.get(id),days=effectiveStreakDays(streak);
@@ -1284,7 +1334,7 @@ async function renderProfile(host) {
   const businessConnected = Boolean(businessConnection?.is_enabled);
   const rights = businessConnection?.rights || {};
   const grantedRights = Object.entries(rights).filter(([, value]) => value === true).map(([key]) => key);
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль ${verifiedMarkMarkup(isFounderProfile(p))}</h1><div class="profile-badge-row">${badgeMarkup(state.profileBadges)}</div><p class="muted">Управляй именем, оформлением, значками и подключением Telegram Business.</p></div>
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль ${verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'))}</h1><div class="profile-badge-row">${badgeMarkup(state.profileBadges)}</div><p class="muted">Управляй именем, оформлением, значками и подключением Telegram Business.</p></div>
     <form class="profile-card" id="profile-form">${avatar(profileAvatar,p.display_name||p.username,'avatar-xl')}
       <label>Отображаемое имя<input name="display_name" value="${esc(p.display_name || '')}" placeholder="Как тебя называть" maxlength="48"/></label>
       <label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label>
