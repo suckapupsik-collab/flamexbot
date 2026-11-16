@@ -800,3 +800,80 @@ body::before{
  .admin-audit-copy>small{font-size:7px}
  .admin-audit-row time{font-size:7px}
 }
+
+
+/* Friends, requests and real daily streaks */
+.friends-search-panel,.friends-section{
+  padding:20px;border:1px solid rgba(255,255,255,.09);border-radius:19px;
+  background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.012));
+}
+.friends-search-panel{margin:20px 0}
+.friends-search-panel .section-heading,.friends-section .section-heading{margin:0 0 14px}
+.friends-search-panel .section-heading h3,.friends-section .section-heading h3{margin:0;font:800 18px Manrope,sans-serif}
+.friend-counter{
+  display:inline-flex;align-items:center;justify-content:center;min-width:27px;height:24px;
+  padding:0 8px;border-radius:9px;background:rgba(82,147,239,.12);
+  color:#9ac7ff;font-size:9px;font-weight:900;
+}
+.friend-search-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}
+.friend-search-form input{
+  width:100%;min-width:0;padding:13px 14px;border:1px solid rgba(255,255,255,.10);
+  border-radius:11px;background:#171b23;color:#f4f6fa;font-size:11px;outline:none;
+}
+.friend-search-form input:focus{border-color:rgba(82,151,255,.55);box-shadow:0 0 0 3px rgba(82,151,255,.08)}
+.friend-search-hint{display:block;margin-top:8px;color:#7e8b9d;font-size:8px}
+.friends-columns{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:14px}
+.friends-section{min-width:0}
+.friend-list{display:grid;gap:9px}
+.friend-card{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;
+  padding:12px;border:1px solid rgba(255,255,255,.065);border-radius:14px;
+  background:rgba(255,255,255,.025);transition:border-color .18s,background .18s,transform .18s;
+}
+.friend-card:hover{border-color:rgba(84,150,245,.28);background:rgba(72,129,215,.045);transform:translateY(-1px)}
+.friend-card-main{display:flex;align-items:center;gap:11px;min-width:0;flex:1}
+.friend-avatar{flex:none}
+.friend-card-identity{display:grid;gap:5px;min-width:0}
+.friend-card-identity>b{display:flex;align-items:center;flex-wrap:wrap;gap:6px;color:#edf1f7;font-size:10px}
+.friend-card-identity>small{color:#8491a4;font-size:8px;overflow-wrap:anywhere}
+.friend-card-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;flex:none}
+.friend-card-actions .primary,.friend-card-actions .outline{font-size:8px;padding:8px 10px;min-height:31px}
+.friend-link{
+  display:inline-flex;align-items:center;padding:7px 9px;border:1px solid rgba(82,151,255,.23);
+  border-radius:9px;background:rgba(82,151,255,.07);color:#91c2ff;font-size:8px;font-weight:800;text-decoration:none;white-space:nowrap;
+}
+.friend-link:hover{background:rgba(82,151,255,.13)}
+.friend-state-pill{
+  display:inline-flex;align-items:center;padding:7px 9px;border-radius:9px;
+  background:rgba(65,190,132,.10);color:#8cddb4;font-size:8px;font-weight:900;white-space:nowrap;
+}
+.friend-search-results{margin-top:13px}
+.outgoing-heading{display:flex;justify-content:space-between;align-items:center;margin:18px 0 9px;padding-top:14px;border-top:1px solid rgba(255,255,255,.07);color:#cbd4e1;font-size:10px}
+.outgoing-heading span{color:#8291a5;font-size:9px}
+.compact-empty{padding:10px!important;font-size:9px}
+.streak-card-main{min-width:0;flex:1}
+.streak-card-main h3{overflow-wrap:anywhere}
+.streak-days-badge{
+  display:grid;place-items:center;min-width:46px;height:38px;padding:0 8px;
+  border-radius:12px;background:rgba(255,113,55,.10);color:#ffb184;font-size:11px;font-weight:900;
+}
+.streak-active{border-color:rgba(255,128,67,.23)}
+.streak-expired{opacity:.78}
+.streak-expired .streak-days-badge{background:rgba(255,255,255,.045);color:#8290a2}
+@media(max-width:900px){
+ .friends-columns{grid-template-columns:1fr}
+}
+@media(max-width:720px){
+ .friends-search-panel,.friends-section{padding:15px}
+ .friend-card{align-items:flex-start;flex-direction:column}
+ .friend-card-main{width:100%}
+ .friend-card-actions{width:100%;justify-content:flex-start;padding-left:59px}
+ .friend-search-form{grid-template-columns:1fr}
+ .friend-search-form button{width:100%}
+ .streak-card{align-items:flex-start}
+ .streak-days-badge{min-width:40px;height:34px}
+}
+@media(max-width:420px){
+ .friend-card-actions{padding-left:0}
+ .friend-card-actions .primary,.friend-card-actions .outline{flex:1}
+}
