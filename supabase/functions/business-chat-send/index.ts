@@ -65,7 +65,7 @@ Deno.serve(async (req: Request) => {
     const hasMedia = Boolean(storagePath);
     const antimutMode = body?.antimut_mode === true;
     const settingAction = action === "set_mute" || action === "set_antimute";
-    const commandMatch = text.trim().match(/^[./]([a-z][a-z0-9_]*)(?:@\\w+)?(?:\\s+([\\s\\S]*))?$/i);
+    const commandMatch = text.trim().match(/^[./]([a-z][a-z0-9_]*)(?:@\w+)?(?:\s+([\s\S]*))?$/i);
     const commandName = String(body?.command_name || commandMatch?.[1] || (action === "set_mute" ? (body.enabled ? "mute" : "unmute") : action === "set_antimute" ? "antimute" : "")).toLowerCase();
     const commandArgs = String(commandMatch?.[2] || "").trim().toLowerCase();
     const commandMode = antimutMode || body?.command_mode === true || settingAction || Boolean(commandMatch);
