@@ -135,6 +135,23 @@ Deno.serve(async (req: Request) => {
 
     try {
       await sendBotMessage(String(profile.telegram_id), message);
+      const deliveredTypes: Record<string, string[]> = {
+        ban: ["account_banned"], unban: ["account_unbanned"],
+        verify: ["verified"], unverify: ["unverified"],
+        premium_grant: ["premium_granted"], premium_revoke: ["premium_revoked"],
+        pro_grant: ["pro_granted"], pro_revoke: ["pro_revoked"],
+        badge_grant: ["badge_granted"], badge_revoke: ["badge_revoked"],
+      };
+      const types = deliveredTypes[action] ?? [];
+      if (types.length) {
+        const { error: markError } = await admin.from("notifications")
+          .update({ telegram_delivered_at: new Date().toISOString() })
+          .eq("user_id", targetUserId)
+          .in("type", types)
+          .is("telegram_delivered_at", null)
+          .gte("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString());
+        if (markError) console.warn("Could not mark admin bot notice delivered:", markError.message);
+      }
       return response({ ok: true, delivered: true });
     } catch (error) {
       const reason = String((error as any)?.message ?? error);
