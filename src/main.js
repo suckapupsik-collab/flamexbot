@@ -552,8 +552,8 @@ async function openBusinessChat(id) {
       const next = !chatMuted;
       if (next && (founderChat || !premiumAccess || !canDeleteMessages)) return;
       e.currentTarget.disabled = true;
-      const { error } = await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_muted:next},{onConflict:'profile_id,business_chat_id'});
-      if (error) { toast('Не удалось изменить мут: '+error.message); e.currentTarget.disabled = false; return; }
+      const { data, error } = await supabase.functions.invoke('business-chat-send',{body:{action:'set_mute',chat_id:id,enabled:next}});
+      if (error || data?.error) { toast(data?.error || 'Не удалось изменить мут: '+(error?.message||'')); e.currentTarget.disabled = false; return; }
       chatMuted = next; chat.is_muted = next;
       toast(next ? 'Мут включён: новые сообщения будут удаляться' : 'Размут выполнен: сообщения больше не удаляются');
       renderBusinessControls();
@@ -563,8 +563,8 @@ async function openBusinessChat(id) {
       const next = !antimutEnabled;
       if (next && (founderChat || !premiumAccess || !canReplyMessages)) return;
       e.currentTarget.disabled = true;
-      const { error } = await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,antimut_enabled:next},{onConflict:'profile_id,business_chat_id'});
-      if (error) { toast('Не удалось изменить антимут: '+error.message); e.currentTarget.disabled = false; return; }
+      const { data, error } = await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next}});
+      if (error || data?.error) { toast(data?.error || 'Не удалось изменить антимут: '+(error?.message||'')); e.currentTarget.disabled = false; return; }
       antimutEnabled = next; chat.antimut_enabled = next;
       toast(next ? 'Антимут включён: доступна ручная попытка отправки' : 'Антимут выключен');
       renderBusinessControls();
@@ -650,27 +650,28 @@ async function openBusinessChat(id) {
     if(command){
       const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
       if(['help','inf'].includes(name)){toast('.spam 2-5 текст · .mute · .unmute · .antimute on/off · .antimute текст');button.disabled=false;return;}
-      if(!isPremium()){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
+      const freeCommand=name==='unmute'||(name==='antimute'&&args==='off')||name==='untime';
+      if(!isPremium()&&!freeCommand){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
       if(name==='mute'||name==='unmute'){
         const next=name==='mute';
         if(next && String(chat.telegram_chat_id)===FOUNDER_TELEGRAM_ID){button.disabled=false;toast('Владелец FLAMEXBOT защищён от мута.');return;}
         if(next && !state.businessRights?.can_delete_all_messages){button.disabled=false;toast('Для мута нужно разрешение Telegram Business «Удалять все сообщения».');return;}
-        const {error:settingError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_muted:next},{onConflict:'profile_id,business_chat_id'});
-        button.disabled=false;if(settingError){toast('Не удалось изменить настройку чата');return;}
+        const {data:settingData,error:settingError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_mute',chat_id:id,enabled:next}});
+        button.disabled=false;if(settingError||settingData?.error){toast(settingData?.error||settingError?.message||'Не удалось изменить настройку чата');return;}
         chatMuted=next;chat.is_muted=next;renderBusinessControls();toast(next?'Мут включён':'Собеседник размучен');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
       }
       if(name==='antimute'){
-        if(!isPremium()){button.disabled=false;toast('Антимут доступен только в Premium.');return;}
+        if(args!=='off'&&!isPremium()){button.disabled=false;toast('Включение антимута доступно только в Premium.');return;}
         if(args==='on'||args==='off'){
           const next=args==='on';
           if(next && state.businessRights?.can_reply!==true){button.disabled=false;toast('Telegram Business не выдал право «Отвечать» для этого чата.');return;}
-          const {error:antiError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,antimut_enabled:next},{onConflict:'profile_id,business_chat_id'});
-          button.disabled=false;if(antiError){toast('Не удалось изменить антимут');return;}
+          const {data:antiSettingData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next}});
+          button.disabled=false;if(antiError||antiSettingData?.error){toast(antiSettingData?.error||antiError?.message||'Не удалось изменить антимут');return;}
           antimutEnabled=next;chat.antimut_enabled=next;renderBusinessControls();toast(next?'Антимут включён: доступна ручная попытка отправки':'Антимут выключен');form.reset();return;
         }
         if(!antimutEnabled){button.disabled=false;toast('Сначала включи антимут командой .antimute on или в настройках чата.');return;}
         if(!args){button.disabled=false;toast('Формат: .antimute on/off или .antimute текст');return;}
-        const {data:antiData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text:args,antimut_mode:true}});
+        const {data:antiData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text:args,antimut_mode:true,command_mode:true,command_name:'antimute'}});
         button.disabled=false;if(antiError||antiData?.error){toast(antiData?.error||antiError?.message||'Telegram отклонил отправку');return;}
         form.reset();toast('Telegram принял сообщение для отправки');await refreshBusinessMessages(id);return;
       }
@@ -682,7 +683,7 @@ async function openBusinessChat(id) {
         const match=args.match(/^(\d{1,2})\s+([\s\S]+)$/);if(!match){button.disabled=false;toast('Формат: .spam 2-5 текст сообщения');return;}
         const count=Number(match[1]),spamText=match[2].trim();if(count<2||count>5||!spamText){button.disabled=false;toast('Разрешено отправить от 2 до 5 повторов.');return;}
         const replyId=form.querySelector('[name=reply_to_message_id]').value||null;
-        for(let i=0;i<count;i++){const {data:spamData,error:spamError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text:spamText,reply_to_message_id:i===0?replyId:null}});
+        for(let i=0;i<count;i++){const {data:spamData,error:spamError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text:spamText,reply_to_message_id:i===0?replyId:null,command_mode:true,command_name:'spam'}});
           if(spamError||spamData?.error){button.disabled=false;toast(spamData?.error||spamError?.message||'Отправка остановлена');await refreshBusinessMessages(id);return;}
           if(i<count-1)await new Promise(resolve=>setTimeout(resolve,1200));
         }
