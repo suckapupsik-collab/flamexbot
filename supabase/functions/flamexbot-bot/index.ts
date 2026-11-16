@@ -315,6 +315,21 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
             .update({ deleted_at: deletedAt })
             .eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id);
           if (markDeletedError) throw markDeletedError;
+          // Delete first so Telegram removal is not delayed by file downloads.
+          // Preserve media in the archive afterwards for the deleted-message page.
+          if (media.fileId) {
+            try {
+              const archivedUrl = await archiveBusinessMedia(media.fileId, connection.profile_id, chat.id, message.message_id, originalName);
+              if (archivedUrl) {
+                const { error: mediaEventError } = await admin.from("flamexbot_business_message_events")
+                  .update({ media_url: archivedUrl })
+                  .eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id).eq("event_type", "deleted").eq("occurred_at", deletedAt);
+                if (mediaEventError) throw mediaEventError;
+              }
+            } catch (mediaError) {
+              console.warn("Deleted Business media archive skipped:", mediaError?.message ?? mediaError);
+            }
+          }
           return;
         } catch (deleteError) {
           console.warn("Business incoming message deletion failed:", deleteError?.message ?? deleteError);
@@ -549,6 +564,11 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
   };
   const preferenceCommand = preferenceCommands[command];
   if (preferenceCommand) {
+    if (preferenceCommand.enabled && ["mutestick_enabled","antimat_enabled"].includes(preferenceCommand.key) &&
+        connectionOverride?.rights?.can_delete_all_messages !== true) {
+      await reply("⛔ Для включения фильтра Telegram Business должен выдать право «Удалять все сообщения».");
+      return true;
+    }
     await savePreference({ [preferenceCommand.key]: preferenceCommand.enabled });
     await reply((preferenceCommand.enabled ? tgEmoji("success") + " <b>" : tgEmoji("lock") + " <b>") +
       escapeHtml(preferenceCommand.label) + (preferenceCommand.enabled ? " включён.</b>" : " выключен.</b>"), "HTML");
