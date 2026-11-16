@@ -9,7 +9,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', selectedAdminUserId: null, avatarRefreshAttempted: new Set(), webhookSetupAttempted: false, businessMediaUrlCache: new Map(), messageRefreshInFlight: new Set(), messageRefreshPending: new Set(), messageRefreshTimers: new Map(), businessListRefreshTimer: null, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
+const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessMessagesHasMore: false, businessMessagesLoadingOlder: false, businessMessagesInitialLoaded: false, businessMessagesOldestAt: null, businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', selectedAdminUserId: null, avatarRefreshAttempted: new Set(), webhookSetupAttempted: false, businessMediaUrlCache: new Map(), messageRefreshInFlight: new Set(), messageRefreshPending: new Set(), messageRefreshTimers: new Map(), businessListRefreshTimer: null, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -509,6 +509,11 @@ async function refreshBusinessMessagesNow(chatId) {
 
 async function openBusinessChat(id) {
   state.activeBusinessChat = id;
+  state.businessMessages=[];
+  state.businessMessagesHasMore=false;
+  state.businessMessagesLoadingOlder=false;
+  state.businessMessagesInitialLoaded=false;
+  state.businessMessagesOldestAt=null;
   document.querySelectorAll('[data-business-chat]').forEach(btn => btn.classList.toggle('active', btn.dataset.businessChat === id));
   if (state.businessChatChannel) { await supabase.removeChannel(state.businessChatChannel); state.businessChatChannel = null; }
   const chat = state.businessChats.find(item => item.id === id);
@@ -1511,6 +1516,10 @@ async function clearUserScopedState() {
   state.businessChats=[];
   state.activeBusinessChat=null;
   state.businessMessages=[];
+  state.businessMessagesHasMore=false;
+  state.businessMessagesLoadingOlder=false;
+  state.businessMessagesInitialLoaded=false;
+  state.businessMessagesOldestAt=null;
   state.onlineUserIds=[];
   state.notificationCount=0;
   state.session=null;
