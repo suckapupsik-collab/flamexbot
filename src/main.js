@@ -707,10 +707,11 @@ async function renderUsers(host) {
     p_search:filters.search||null,p_verified:filters.verified,p_premium:filters.premium,p_banned:filters.banned,p_limit:50,p_offset:filters.offset||0
   });
   const users=data||[];
+  const actorOwner=state.session.user.id===FOUNDER_PROFILE_ID;
   const total=users[0]?.total_count||0;
   const roleOptions=[
-    ['developer','Разработчик'],['administrator','Администратор'],['moderator','Модератор'],
-    ['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],
+    ...(actorOwner?[['developer','Разработчик'],['administrator','Администратор']]:[]),
+    ['moderator','Модератор'],['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],
     ['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']
   ];
   host.innerHTML=`<div class="page-heading"><div class="eyebrow">COMMUNITY DIRECTORY</div><h1>Управление пользователями <span>👥</span></h1><p class="muted">Открой карточку участника для отдельного управления. На каждом аккаунте может быть только один значок роли; новый заменяет предыдущий.</p></div>
@@ -725,8 +726,8 @@ async function renderUsers(host) {
       <div class="users-toolbar-foot"><span>Найдено участников: <b>${total}</b></span><span>Сортировка: <b>сначала новые ↓</b></span></div>
     </section>
     <div class="admin-user-list">${users.map(u=>{
-      const owner=u.telegram_id===FOUNDER_TELEGRAM_ID;
-      const targetAdmin=owner||(u.badge_codes||[]).includes('administrator');
+      const owner=u.telegram_id===FOUNDER_TELEGRAM_ID||u.id===FOUNDER_PROFILE_ID;
+      const targetAdmin=owner||(u.badge_codes||[]).some(code=>['founder','developer','administrator'].includes(code));
       const locked=owner||(targetAdmin&&state.session.user.id!==FOUNDER_PROFILE_ID);
       const badges=[...(u.badge_codes||[])];
       if(u.is_premium&&!badges.includes('premium'))badges.push('premium');
@@ -780,11 +781,12 @@ async function renderAdminUser(host) {
   const {data,error}=await supabase.rpc('admin_get_flamexbot_user',{p_user_id:state.selectedAdminUserId});
   const u=data?.[0];
   if(error||!u){host.innerHTML=`<div class="page-heading"><h1>Не удалось открыть карточку</h1><p class="muted">${esc(error?.message||'Пользователь не найден')}</p></div><button class="outline" data-go="users">← К пользователям</button>`;return;}
-  const owner=u.telegram_id===FOUNDER_TELEGRAM_ID;
+  const owner=u.telegram_id===FOUNDER_TELEGRAM_ID||u.id===FOUNDER_PROFILE_ID;
   const badges=u.badge_codes||[];
-  const targetAdmin=owner||badges.includes('administrator');
+  const actorOwner=state.session.user.id===FOUNDER_PROFILE_ID;
+  const targetAdmin=owner||badges.some(code=>['founder','developer','administrator'].includes(code));
   const locked=owner||(targetAdmin&&state.session.user.id!==FOUNDER_PROFILE_ID);
-  const roleOptions=[['verified','Подтверждён'],['developer','Разработчик'],['administrator','Администратор'],['moderator','Модератор'],['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']];
+  const roleOptions=[['verified','Подтверждён'],...(actorOwner?[['developer','Разработчик'],['administrator','Администратор']]:[]),['moderator','Модератор'],['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']];
   const premiumUntil=u.is_premium?(u.premium_expires_at?formatMskDate(u.premium_expires_at):'Бессрочно'):'Не активен';
   host.innerHTML=`<div class="page-heading"><button class="text-button" data-go="users">← Все пользователи</button><div class="eyebrow">ADMIN USER CONTROL</div><h1>Управление аккаунтом</h1><p class="muted">Все изменения проходят серверную проверку и попадают в журнал администрации.</p></div>
     <section class="admin-user-detail-card"><div class="admin-user-detail-top">${avatar(u.avatar_url||u.telegram_photo_url,u.display_name||u.username,'avatar-xl')}<div><h2>${esc(u.display_name||u.username||'Пользователь')}</h2><p>@${esc(u.telegram_username||u.username||'не задан')} · ${u.telegram_id?'Telegram ID '+esc(u.telegram_id):'Telegram не привязан'}</p><div class="profile-badge-row">${badgeMarkup(badges,false,false)} ${u.is_premium?badgeMarkup(['premium'],false,false):''}</div></div></div>
