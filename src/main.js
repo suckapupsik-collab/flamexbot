@@ -38,7 +38,9 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
       const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', state.session.user.id).maybeSingle();
       if (profileError) throw profileError;
       state.profile = profile || state.profile;
-      renderApp();
+      const {data:badges}=await supabase.from('profile_badges').select('badge_code').eq('user_id',state.session.user.id);
+      state.profileBadges=(badges||[]).map(x=>x.badge_code);
+      updateHeaderProfile();
       toast('Telegram успешно привязан к аккаунту.');
       return;
     }
@@ -233,7 +235,7 @@ async function loadPage() {
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
         <div class="streak-list">${state.streaks.length?state.streaks.map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${s.current_days||0} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Начни общаться — и здесь появятся ваши огоньки.</div>'}</div>
-        <div class="home-feature-grid"><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button><button class="home-feature-card" data-go="users"><span>👥</span><b>Сообщество</b><small>Знакомься с участниками FLAMEXBOT</small><i>→</i></button></div>`;
+        <div class="home-feature-grid"><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
     } else if(state.page==='tariffs') await renderTariffs(host);
     else if(state.page==='messages') await renderBusinessMessages(host);
     else if(state.page==='streaks') await renderStreaks(host);
@@ -740,7 +742,7 @@ async function renderProfile(host) {
   const businessConnected = Boolean(businessConnection?.is_enabled);
   const rights = businessConnection?.rights || {};
   const grantedRights = Object.entries(rights).filter(([, value]) => value === true).map(([key]) => key);
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль</h1><p class="muted">Управляй именем, оформлением и подключением Telegram Business.</p></div>
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль</h1><div class="profile-badge-row">${badgeMarkup(state.profileBadges)}</div><p class="muted">Управляй именем, оформлением, значками и подключением Telegram Business.</p></div>
     <form class="profile-card" id="profile-form">${avatar(profileAvatar,p.display_name||p.username,'avatar-xl')}
       <label>Отображаемое имя<input name="display_name" value="${esc(p.display_name || '')}" placeholder="Как тебя называть" maxlength="48"/></label>
       <label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label>
