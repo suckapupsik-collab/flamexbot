@@ -96,8 +96,8 @@ function renderAuth() {
 }
 
 function navItem(page, icon, label) { return `<button class="nav-item ${state.page === page ? 'selected' : ''}" data-page="${page}"><span>${icon}</span>${label}</button>`; }
-function isPremium() { return ['premium','pro'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
-function planLabel() { return state.subscription?.plan==='pro'&&isPremium()?'PRO':isPremium()?'PREMIUM':'FREE'; }
+function isPremium() { return ['premium','pro','founder'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
+function planLabel() { return state.subscription?.plan==='founder'&&isPremium()?'FOUNDER':state.subscription?.plan==='pro'&&isPremium()?'PRO':isPremium()?'PREMIUM':'FREE'; }
 const PAGE_LABELS = {
   home:'Обзор', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
@@ -126,7 +126,7 @@ function verifiedMarkMarkup(verified=false) {
 }
 function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
   const ownPlan=state.subscription?.plan;
-  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&ownPlan==='premium'&&isPremium()?['premium']:[]),...(includeOwnPremium&&ownPlan==='pro'&&isPremium()?['pro']:[])])];
+  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&ownPlan==='premium'&&isPremium()?['premium']:[]),...(includeOwnPremium&&ownPlan==='pro'&&isPremium()?['pro']:[]),...(includeOwnPremium&&ownPlan==='founder'&&isPremium()?['founder']:[])])];
   return unique.filter(code=>code!=='verified'&&BADGE_META[code]).map(code=>{
     const b=BADGE_META[code];
     return `<span class="role-badge badge-${b.className} ${compact?'compact':''}" title="${esc(b.label)}"><i>${b.icon}</i>${compact?'':`<span>${esc(b.label)}</span>`}</span>`;
@@ -1105,7 +1105,7 @@ async function renderAdminUser(host) {
 function animateFortuneWheel(prizeType) {
  const wheel=document.querySelector('#fortune-wheel');
  if(!wheel)return Promise.resolve();
- const centers={premium_day:27,addon:117,free_spin:252};
+ const centers={free_spin:22.5,addon:67.5,premium_7d:112.5,premium_30d:157.5,premium_90d:202.5,pro_7d:247.5,pro_30d:292.5,pro_90d:337.5,premium_day:112.5};
  const target=centers[prizeType]??252;
  if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
    wheel.style.transform='rotate('+((360-target)%360)+'deg)';
@@ -1126,6 +1126,9 @@ function animateFortuneWheel(prizeType) {
 async function renderTariffs(host, initialTab='premium') {
  const premium=isPremium();
  const isPro=state.subscription?.plan==='pro'&&premium;
+ const isFounder=state.subscription?.plan==='founder'&&premium;
+ const weeklySpins=isFounder?3:isPro?2:premium?1:0;
+ const rareLuck=isFounder?15:isPro?10:0;
  const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
  const trialUsed=Boolean(trialRecord);
  const lifetime=premium&&!state.subscription?.expires_at;
@@ -1148,13 +1151,14 @@ async function renderTariffs(host, initialTab='premium') {
     <span class="business-status ${!premium?'is-connected':''}">${!premium?'Твой текущий тариф':'Бесплатно'}</span>
    </section>
    <section class="business-card tariff-card pro-card ${isPro?'tariff-current':''}">
-    <div class="eyebrow">EARLY ACCESS</div><h2>🔥 FLAMEX PRO</h2>
-    <p class="muted">Расширенный уровень для участников, которым нужны новые функции раньше остальных.</p>
-    <ul><li>Всё из Premium</li><li>Ранний доступ к новым функциям и тестовым возможностям</li><li>Эксклюзивный бейдж PRO в профиле</li><li>Дополнительные настройки и расширенные лимиты по мере выхода функций</li></ul>
-    <span class="business-status ${isPro?'is-connected':''}">${isPro?'Твой текущий тариф':'Скоро открытие продаж'}</span>
-    <small class="premium-payment-note">Стоимость и дата запуска будут объявлены отдельно.</small>
+    <div class="eyebrow">POWER TIER</div><h2>🔥 FLAMEX PRO</h2>
+    <p class="muted">Расширенные инструменты, больше автоматизации и повышенный шанс редких наград.</p>
+    <ul><li>Всё из Premium</li><li><b>+2 бесплатные прокрутки колеса каждую неделю</b></li><li><b>+10% к относительному шансу редких наград</b></li><li>Бейдж PRO и ранний доступ к новым функциям</li><li>Экспорт истории Business-переписки в JSON</li></ul>
+    <span class="business-status ${isPro?'is-connected':''}">${isPro?'Твой текущий тариф · '+(lifetime?'бессрочно':'до '+expires):'Выдаётся администрацией FLAMEXBOT'}</span>
+    <small class="premium-payment-note">Срок выдачи настраивается владельцем или администратором в карточке пользователя.</small>
    </section>
-   <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}">
+   ${isFounder?'<section class="business-card tariff-card founder-card tariff-current"><div class="eyebrow">OWNER EXCLUSIVE</div><h2>👑 FLAMEX FOUNDER</h2><p class="muted">Главный бессрочный тариф владельца проекта.</p><ul><li>Все возможности Premium и PRO</li><li>3 бесплатные прокрутки колеса каждую неделю</li><li>+15% к относительному шансу редких наград</li><li>Защита тарифа на уровне базы данных</li><li>Владелец не может потерять этот тариф из-за продления или награды</li></ul><span class="business-status is-connected">Твой главный тариф · бессрочно</span></section>':''}
+   <section class="business-card tariff-card premium-card ${premium&&!isPro&&!isFounder?'tariff-current':''}">
     <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2><p class="muted">Дополнительные инструменты для управления Business-диалогами и оформления аккаунта.</p>
     <ul>
      <li><code>.mute</code> / <code>.unmute</code> — управление удалением новых входящих сообщений</li>
@@ -1165,10 +1169,11 @@ async function renderTariffs(host, initialTab='premium') {
      <li>Фильтр входящих стикеров, время профиля по МСК и оформление текста</li>
      <li>Эмодзи-оформление Premium-разделов, команд и уведомлений</li>
      <li>Расширенные настройки и управление Business-диалогами</li>
+     <li><b>+1 бесплатная прокрутка колеса каждую неделю</b></li>
     </ul>
     <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
-    <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
-    ${lifetime||isPro?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
+    <span class="business-status ${premium?'is-connected':''}">${premium?(isFounder?'Доступ из FOUNDER':isPro?'Включён в PRO':'Premium активен · '+(lifetime?'бессрочно':'до '+expires)):'Подписка не активна'}</span>
+    ${lifetime||isPro||isFounder?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
     <small class="premium-payment-note">Оплата проходит внутри Telegram. Подписка действует 30 дней и не продлевается автоматически.</small>
    </section>
   </div>
@@ -1185,16 +1190,21 @@ async function renderTariffs(host, initialTab='premium') {
    <div class="fortune-wheel-stage" aria-label="Колесо фортуны">
     <span class="fortune-wheel-pointer">▼</span>
     <div class="fortune-wheel" id="fortune-wheel">
-     <span class="wheel-prize wheel-prize-premium">⭐</span>
-     <span class="wheel-prize wheel-prize-addon">🛡️</span>
      <span class="wheel-prize wheel-prize-spin">🎁</span>
+     <span class="wheel-prize wheel-prize-addon">🛡️</span>
+     <span class="wheel-prize wheel-prize-premium7">⭐<small>7д</small></span>
+     <span class="wheel-prize wheel-prize-premium30">⭐<small>30д</small></span>
+     <span class="wheel-prize wheel-prize-premium90">⭐<small>90д</small></span>
+     <span class="wheel-prize wheel-prize-pro7">🔥<small>7д</small></span>
+     <span class="wheel-prize wheel-prize-pro30">🔥<small>30д</small></span>
+     <span class="wheel-prize wheel-prize-pro90">🔥<small>90д</small></span>
      <span class="fortune-wheel-center">✦</span>
     </div>
    </div>
-   <p class="muted">Прокрутка стоит 5 ⭐. Возможные награды: 1 день Premium, защита от команд на 5 дней или бесплатная прокрутка.</p>
-   <div class="wheel-odds"><span>15% · Premium 1 день</span><span>25% · Дополнение 5 дней</span><span>60% · Бесплатная прокрутка</span></div>
+   <p class="muted">Прокрутка стоит 5 ⭐. Можно выиграть Premium или PRO на 7, 30 и 90 дней, защиту от команд либо ещё одну прокрутку.</p>
+   <div class="wheel-odds"><span>55% · Прокрутка</span><span>25% · Защита 5 дней</span><span>12% · Premium 7 дней</span><span>5% · Premium 30 дней</span><span>1,5% · Premium 90 дней</span><span>1% · PRO 7 дней</span><span>0,4% · PRO 30 дней</span><span>0,1% · PRO 90 дней</span></div>
    <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐'}</button>
-   <small class="premium-payment-note">Бесплатных прокруток: ${state.profile?.wheel_free_spins||0}. Шансы: 15% Premium · 25% дополнение · 60% ещё одна прокрутка.</small>
+   <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${weeklySpins} для текущего тарифа${rareLuck?' · редкие награды +' + rareLuck + '%':''}.</small>
   </section>
  </section>
  <section class="tariff-tab-panel" data-tariff-panel="addons" hidden>
@@ -1217,14 +1227,16 @@ async function renderTariffs(host, initialTab='premium') {
    ${protectionFounder?'':'<button class="primary addon-buy-button" id="buy-command-protection" type="button">'+protectionLabel+'</button>'}
    <small class="premium-payment-note">Оплата — Telegram Stars. Срок начинается после подтверждения успешного платежа. Продление суммируется с оставшимся временем.</small>
   </section>
-  <div class="addon-feature-heading"><div class="eyebrow">ВКЛЮЧЕНО В PREMIUM</div><h2>✨ Дополнительные возможности</h2><p class="muted">Эти функции работают отдельно в каждом Business-диалоге.</p></div>
+  <div class="addon-feature-heading"><div class="eyebrow">ОТДЕЛЬНЫЕ ИНСТРУМЕНТЫ</div><h2>✨ Дополнительные функции</h2><p class="muted">Каждая возможность включается отдельно в нужном Business-диалоге.</p></div>
   <div class="addon-feature-grid">
-   <article class="addon-feature"><span>👁️</span><b>Автопрочтение</b><small>Отдельное включение для каждого чата.</small><em>В Premium</em></article>
-   <article class="addon-feature"><span>🌙</span><b>AFK-автоответ</b><small>Автоматический ответ включается только в выбранном диалоге.</small><em>В Premium</em></article>
-   <article class="addon-feature"><span>⌨️</span><b>Автостатусы</b><small>«Печатает…» и «Записывает голосовое» только в выбранном диалоге.</small><em>В Premium</em></article>
-   <article class="addon-feature"><span>🛡️</span><b>Антимут</b><small>Отправка через аккаунт бота, если собеседник открыл FLAMEXBOT.</small><em>В Premium</em></article>
-   <article class="addon-feature"><span>🗂️</span><b>Архив изменений</b><small>Архив событий, полученных после подключения и начала сохранения сообщений.</small><em>В Premium</em></article>
-   <article class="addon-feature"><span>💎</span><b>Премиум-эмодзи</b><small>Украшенные ответы, уведомления и новые команды.</small><em>В Premium</em></article>
+   <article class="addon-feature"><span>👁️</span><b>Автопрочтение</b><small>Помечает входящие Business-сообщения прочитанными только в выбранном диалоге.</small><em>Команда .autoread</em></article>
+   <article class="addon-feature"><span>🌙</span><b>Персональный AFK</b><small>Свой текст автоответа и отдельная настройка для каждого контакта.</small><em>Команда .afk</em></article>
+   <article class="addon-feature"><span>⌨️</span><b>Умные статусы</b><small>Показывает набор текста или запись голосового только при работе в этом чате.</small><em>.autotyping / .autovoice</em></article>
+   <article class="addon-feature"><span>🛡️</span><b>Антимут</b><small>Альтернативная отправка от имени FLAMEXBOT, когда Telegram разрешает написать получателю.</small><em>Команда .antimute</em></article>
+   <article class="addon-feature"><span>🗂️</span><b>История изменений</b><small>Показывает редакции и события удаления, полученные после начала архивирования.</small><em>Архив переписки</em></article>
+   <article class="addon-feature"><span>📦</span><b>Экспорт переписки</b><small>Скачивание истории выбранного чата в JSON вместе с датами, направлениями и типами вложений.</small><em>PRO и FOUNDER</em></article>
+   <article class="addon-feature"><span>🧩</span><b>Фильтр стикеров</b><small>Убирает входящие стикеры в том чате, где включена настройка.</small><em>Команда .mutestick</em></article>
+   <article class="addon-feature"><span>✍️</span><b>Антимат-фильтр</b><small>Фильтрует сообщения с распознанной ненормативной лексикой в выбранном диалоге.</small><em>Команда .antimat</em></article>
   </div>
  </section>
  <p class="business-note">Платежи подтверждаются Telegram. Доступ открывается только после получения и проверки successful_payment на сервере.</p>`;
@@ -1312,7 +1324,7 @@ async function renderTariffs(host, initialTab='premium') {
        await animateFortuneWheel(data.prize.prize_type);
        const {data:profile}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
        state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0,command_protection_expires_at:profile?.command_protection_expires_at};
-       if(data.prize.prize_type==='premium_day'){
+       if(String(data.prize.prize_type||'').startsWith('premium_')||String(data.prize.prize_type||'').startsWith('pro_')){
          const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
          state.subscription=subscription;
        }
@@ -1335,6 +1347,10 @@ async function renderTariffs(host, initialTab='premium') {
          toast(result?'🎉 Выпало: '+result.prize_label:'Платёж принят. Награда появится после подтверждения Telegram.');
          const {data:profile}=await supabase.from('profiles').select('wheel_free_spins').eq('id',state.session.user.id).maybeSingle();
          state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0};
+         if(result&&(/^(premium|pro)_/.test(result.prize_type||''))){
+           const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+           state.subscription=subscription;
+         }
          await renderTariffs(host,'premium');
        }else if(status==='cancelled')toast('Оплата отменена.');
        else if(status==='failed')toast('Telegram не смог завершить оплату.');
