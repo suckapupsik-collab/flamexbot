@@ -27,6 +27,7 @@ FLAMEXBOT — Telegram Mini App для общения, общих огонько
 - `20261116014000_admin_directory_telegram_avatar.sql` — shows Telegram avatars in the admin directory.
 - `20261116015000_daily_progress_and_auto_read_notifications.sql` — calculates daily task progress only from the signed-in user's Business chats and marks notifications read at insertion.
 - `20261116016000_enforced_bans_and_admin_audit.sql` — enforces bans in Supabase Auth and user-scoped RLS policies, and adds an owner-only moderation audit log.
+- `20261116035000_flamexbot_command_protection_addon_and_webhook_reliability.sql` — adds the five-day command-protection entitlement, private Stars payment ledger, and durable Telegram update receipts with retry-safe processing.
 
 These migrations have been applied to the connected Supabase project. The owner account has the protected Founder, Verified, Developer and Administrator badges.
 
@@ -49,6 +50,8 @@ FLAMEXBOT работает только с диалогами и разреше�
 | `/help` | Получить подсказку в личном чате с ботом |
 | `/ping` | Проверить, что бот отвечает в личном чате или Business-диалоге |
 | `/status` | Проверить состояние Telegram Business и выданные разрешения |
+| `/commands` | Получить справку по командам в личном чате с ботом |
+| `/premium` | Создать счёт на Premium в Telegram Stars |
 | `.ping` / `/ping` | Проверить обработчик Business-команд в текущем диалоге |
 | `.help` | Показать список Business-команд в текущем диалоге |
 | `.mute` | Включить удаление новых входящих сообщений в текущем диалоге |
@@ -68,6 +71,15 @@ FLAMEXBOT работает только с диалогами и разреше�
 | `.link текст` | Создать ссылку на текущий диалог |
 
 Для включения Premium-команд требуется активная подписка. Команды отключения и размут доступны и после окончания подписки, чтобы можно было безопасно отменить ранее включённые режимы.
+
+### Дополнение «Защита от команд»
+
+- Покупка в разделе «Тарифы → Дополнение» за **15 Telegram Stars на 5 дней**.
+- Пока защита активна, другие пользователи не могут применять к аккаунту команды FLAMEXBOT в Business-диалогах.
+- Основатель FLAMEXBOT может применять команды к любым аккаунтам независимо от их защиты.
+- Повторная покупка продлевает действующий срок ещё на пять дней.
+- Проверка защиты выполняется на стороне бота; скрытие кнопок в Mini App не используется как механизм безопасности.
+- Оплата подтверждается Telegram через `pre_checkout_query` и `successful_payment`; счёт имеет ограниченный срок действия, а повторная обработка платежа защищена уникальным идентификатором Telegram.
 
 ## Защита владельца
 
@@ -104,7 +116,7 @@ Telegram ID владельца FLAMEXBOT защищён на серверной 
 - выдача Premium на срок от 1 до 3650 дней или бессрочно, продление и снятие;
 - выдача и снятие ролевых значков.
 
-Защита на сервере не позволяет заблокировать владельца или снять его синюю галочку и значок Founder. Бан блокирует Supabase Auth, проверяется при Telegram-входе и при загрузке профиля; пользовательские RLS-политики дополнительно закрывают доступ к данным. Ролевые значки не меняют реальные права доступа.
+Защита на сервере не позволяет заблокировать владельца или снять его синюю галочку и значок Founder. Настройка Telegram webhook дополнительно разрешена только аккаунту Основателя. Бан блокирует Supabase Auth, проверяется при Telegram-входе и при загрузке профиля; пользовательские RLS-политики дополнительно закрывают доступ к данным. Ролевые значки не меняют реальные права доступа.
 
 ## Ограничения Telegram
 
@@ -128,7 +140,8 @@ Supabase Edge Functions:
 - `flamexbot-bot`
 - `business-chat-send`
 - `create-premium-invoice`
-- `setup-flamexbot-webhook`
+- `create-command-protection-invoice`
+- `setup-flamexbot-webhook` — вызов настройки webhook разрешён только Основателю; Telegram update_id сохраняются в журнале обработки, чтобы повторные webhook-доставки не запускали завершённые команды повторно.
 
 ## Безопасность
 
