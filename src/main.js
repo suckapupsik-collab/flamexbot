@@ -391,6 +391,15 @@ async function renderBusinessMessageEvents(host,eventType) {
     .select('id,telegram_chat_id,username,first_name,last_name,photo_url').eq('profile_id',uid).in('id',chatIds);
   if(chatError){list.innerHTML=`<div class="empty-state">Не удалось загрузить собеседников: ${esc(chatError.message)}</div>`;return;}
   const chatMap=new Map((chats||[]).map(c=>[c.id,c]));
+  const currentMessageMap=new Map();
+  if(!deleted){
+    const messageIds=[...new Set(events.map(e=>e.telegram_message_id))];
+    const {data:currentMessages,error:currentError}=await supabase.from('flamexbot_business_messages')
+      .select('business_chat_id,telegram_message_id,content,message_type')
+      .eq('direction','inbound').in('business_chat_id',chatIds).in('telegram_message_id',messageIds);
+    if(currentError){list.innerHTML=`<div class="empty-state">Не удалось загрузить актуальные версии сообщений: ${esc(currentError.message)}</div>`;return;}
+    (currentMessages||[]).forEach(m=>currentMessageMap.set(m.business_chat_id+':'+m.telegram_message_id,m));
+  }
   const paths=[...new Set(events.map(e=>e.media_url).filter(Boolean))];
   const mediaUrlMap={};
   if(paths.length){
@@ -412,9 +421,13 @@ async function renderBusinessMessageEvents(host,eventType) {
     else if(mediaUrl&&['voice','audio'].includes(mediaType))media=`<audio class="event-audio" controls preload="metadata" src="${esc(mediaUrl)}"></audio>`;
     else if(mediaType!=='text')media=`<div class="event-attachment">📎 ${esc(mediaName)} · ${esc(mediaType)}</div>`;
     const text=event.original_content||raw.text||raw.caption||'';
+    const current=currentMessageMap.get(event.business_chat_id+':'+event.telegram_message_id);
+    const currentMarkup=!deleted&&current
+      ? `<div class="message-event-current"><small>Текущая версия</small><div>${current.content?esc(current.content):'<span class="muted">Текст отсутствует</span>'}</div></div>`
+      : '';
     return `<article class="message-event-card ${deleted?'is-deleted':'is-edited'}">
       <div class="message-event-top"><span class="message-event-icon">${deleted?'🗑️':'✏️'}</span><div><b>${esc(chatName)}</b><small>${deleted?'Сообщение удалено':'Сохранена предыдущая версия'} · #${esc(event.telegram_message_id)}</small></div><time>${formatMskDateTime(event.occurred_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</time></div>
-      <div class="message-event-content">${text?esc(text):'<span class="muted">Текст отсутствует</span>'}</div>${media}
+      <div class="message-event-content"><small>${deleted?'Удалённое сообщение':'Было'}</small><div>${text?esc(text):'<span class="muted">Текст отсутствует</span>'}</div></div>${media}${currentMarkup}
       <div class="message-event-footer"><span>${deleted?'Удалено в Telegram':'Отредактировано в Telegram'}</span><small>Только входящее сообщение</small></div>
     </article>`;
   }).join('');
