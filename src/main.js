@@ -9,7 +9,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', selectedAdminUserId: null, avatarRefreshAttempted: new Set(), businessMediaUrlCache: new Map(), messageRefreshInFlight: new Set(), messageRefreshPending: new Set(), messageRefreshTimers: new Map(), businessListRefreshTimer: null, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
+const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', selectedAdminUserId: null, avatarRefreshAttempted: new Set(), webhookSetupAttempted: false, businessMediaUrlCache: new Map(), messageRefreshInFlight: new Set(), messageRefreshPending: new Set(), messageRefreshTimers: new Map(), businessListRefreshTimer: null, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -868,7 +868,166 @@ async function renderAdminUser(host) {
   }));
 }
 
-async function renderTariffs(host) {
+
+async function renderTariffs(host, initialTab='premium') {
+ const premium=isPremium();
+ const lifetime=premium&&!state.subscription?.expires_at;
+ const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
+ const buyLabel=premium?'↻ Продлить Premium за 100 ⭐':'⭐ Оплатить 100 Stars';
+ const protectionExpires=state.profile?.command_protection_expires_at||null;
+ const protectionActive=Boolean(protectionExpires&&new Date(protectionExpires).getTime()>Date.now());
+ const protectionFounder=isFounderProfile(state.profile);
+ const protectionLabel=protectionActive?'Продлить защиту ещё на 5 дней · 15 ⭐':'Купить защиту за 15 ⭐';
+ host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT MEMBERSHIP</div><h1>Тарифы и возможности <span>✦</span></h1><p class="muted">Выбирай возможности FLAMEXBOT и дополнительные уровни защиты аккаунта.</p></div>
+ <div class="tariff-tabs" role="tablist" aria-label="Разделы тарифов">
+  <button type="button" class="tariff-tab" data-tariff-tab="premium" role="tab" aria-selected="true">Тарифы</button>
+  <button type="button" class="tariff-tab" data-tariff-tab="addons" role="tab" aria-selected="false">Дополнение</button>
+ </div>
+ <section class="tariff-tab-panel" data-tariff-panel="premium">
+  <div class="tariff-grid">
+   <section class="business-card tariff-card ${!premium?'tariff-current':''}">
+    <div class="eyebrow">СТАРТ</div><h2>Free</h2><p class="muted">Всё необходимое, чтобы пользоваться FLAMEXBOT и оставаться на связи.</p>
+    <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и ежедневные задания</li><li>Достижения, уровни и базовая статистика</li></ul>
+    <span class="business-status ${!premium?'is-connected':''}">${!premium?'Твой текущий тариф':'Бесплатно'}</span>
+   </section>
+   <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}">
+    <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2><p class="muted">Дополнительные инструменты для управления Business-диалогами и оформления аккаунта.</p>
+    <ul>
+     <li><code>.mute</code> / <code>.unmute</code> — управление удалением новых входящих сообщений</li>
+     <li><code>.antimute on/off</code> — безопасное включение ручной попытки отправки</li>
+     <li><code>.antimute текст</code> — одна отправка через разрешённый Telegram Business</li>
+     <li>AFK-автоответ и автоматическое прочтение сообщений</li>
+     <li>Статусы «печатает…» и «записывает голосовое»</li>
+     <li>Фильтр входящих стикеров, время профиля по МСК и оформление текста</li>
+     <li>Премиум-эмодзи в сообщениях и уведомлениях, если их поддерживает Telegram</li>
+     <li>Расширенные настройки и управление Business-диалогами</li>
+    </ul>
+    <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
+    <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
+    ${lifetime?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
+    <small class="premium-payment-note">Оплата проходит внутри Telegram. Подписка действует 30 дней и не продлевается автоматически.</small>
+   </section>
+  </div>
+  <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
+  <p class="business-note">Антимут не снимает блокировки и не обходит ограничения Telegram: он выполняет только одну ручную попытку отправки. Если Telegram отказывает, FLAMEXBOT показывает причину и не повторяет отправку автоматически.</p>
+ </section>
+ <section class="tariff-tab-panel" data-tariff-panel="addons" hidden>
+  <section class="business-card addon-card">
+   <div class="addon-card-heading"><div><div class="eyebrow">АККАУНТ И ПРИВАТНОСТЬ</div><h2>🛡 Защита от команд</h2></div><span class="addon-price-pill">15 ⭐</span></div>
+   <p class="muted">Запрещает другим пользователям применять команды FLAMEXBOT к вашему Telegram-аккаунту.</p>
+   <ul>
+    <li>Другие пользователи не смогут использовать на вас команды в Telegram Business.</li>
+    <li>Защита проверяется сервером и действует для всех команд, включая команды управления.</li>
+    <li>Основатель FLAMEXBOT может использовать команды на любых аккаунтах, даже если защита включена.</li>
+    <li>Покупка добавляет 5 дней к текущему сроку, если защита уже активна.</li>
+   </ul>
+   <div class="addon-price-line"><b>15 ⭐</b><span>5 дней · разовая оплата</span></div>
+   ${protectionFounder
+     ? '<div class="addon-status addon-status-active">Защита Основателя действует постоянно. Покупка не требуется.</div>'
+     : protectionActive
+       ? '<div class="addon-status addon-status-active">Защита активна до '+formatMskDate(protectionExpires)+'</div>'
+       : '<div class="addon-status">Защита пока не активна</div>'}
+   ${protectionFounder?'':'<button class="primary addon-buy-button" id="buy-command-protection" type="button">'+protectionLabel+'</button>'}
+   <small class="premium-payment-note">Оплата — Telegram Stars. Срок начинается после подтверждения успешного платежа. Продление суммируется с оставшимся временем.</small>
+  </section>
+ </section>
+ <p class="business-note">Платежи подтверждаются Telegram. Доступ открывается только после получения и проверки successful_payment на сервере.</p>`;
+ const tabs=[...host.querySelectorAll('[data-tariff-tab]')];
+ const panels=[...host.querySelectorAll('[data-tariff-panel]')];
+ const showTab=(name)=>{
+   const selected=name==='addons'?'addons':'premium';
+   tabs.forEach(tab=>{
+     const active=tab.dataset.tariffTab===selected;
+     tab.classList.toggle('active',active);
+     tab.setAttribute('aria-selected',String(active));
+   });
+   panels.forEach(panel=>{panel.hidden=panel.dataset.tariffPanel!==selected;});
+ };
+ tabs.forEach(tab=>tab.addEventListener('click',()=>showTab(tab.dataset.tariffTab)));
+ showTab(initialTab);
+
+ const waitForInvoiceClose=(webApp,invoiceLink,onStatus)=>{
+   if(typeof webApp?.openInvoice!=='function'){
+     if(typeof webApp?.openTelegramLink==='function')webApp.openTelegramLink(invoiceLink);
+     else window.open(invoiceLink,'_blank','noopener');
+     return Promise.resolve(false);
+   }
+   return new Promise(resolve=>{
+     webApp.openInvoice(invoiceLink,async status=>{
+       try{await onStatus(status);}catch(error){console.error('Telegram invoice callback:',error);toast('Платёж получен, но статус пока не удалось обновить. Открой тарифы ещё раз.');}
+       finally{resolve(true);}
+     });
+   });
+ };
+
+ const buyButton=host.querySelector('#buy-premium');
+ buyButton?.addEventListener('click',async()=>{
+   buyButton.disabled=true;buyButton.classList.add('is-loading');buyButton.textContent='Подготавливаем оплату…';
+   try{
+     const {data,error}=await supabase.functions.invoke('create-premium-invoice');
+     if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать ссылку на оплату');
+     const webApp=window.Telegram?.WebApp;
+     const opened=await waitForInvoiceClose(webApp,data.invoice_link,async status=>{
+       if(status==='paid'){
+         toast('Оплата принята. Активируем Premium…');
+         let activated=false;
+         for(let attempt=0;attempt<12;attempt++){
+           const {data:subscription,error:subscriptionError}=await supabase.from('user_subscriptions')
+             .select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+           if(subscriptionError)console.warn('Premium status refresh:',subscriptionError.message);
+           if(subscription?.plan==='premium'&&(!subscription.expires_at||new Date(subscription.expires_at).getTime()>Date.now())){
+             state.subscription=subscription;activated=true;break;
+           }
+           await new Promise(resolve=>setTimeout(resolve,700));
+         }
+         updateHeaderProfile();
+         toast(activated?'⭐ Premium успешно активирован!':'Платёж получен. Premium появится после подтверждения Telegram.');
+         await renderTariffs(host,'premium');
+       }else if(status==='cancelled')toast('Оплата отменена. Списания не произошло.');
+       else if(status==='failed')toast('Telegram не смог завершить оплату. Попробуй ещё раз.');
+       else if(status==='pending')toast('Платёж обрабатывается. Premium появится после подтверждения Telegram.');
+     });
+     if(!opened)toast('Открываем счёт Telegram Stars');
+   }catch(error){toast('Оплата не запущена: '+(error?.message||'неизвестная ошибка'));}
+   finally{if(host.contains(buyButton)){buyButton.disabled=false;buyButton.classList.remove('is-loading');buyButton.textContent=buyLabel;}}
+ });
+
+ const addonButton=host.querySelector('#buy-command-protection');
+ addonButton?.addEventListener('click',async()=>{
+   addonButton.disabled=true;addonButton.classList.add('is-loading');addonButton.textContent='Подготавливаем оплату…';
+   try{
+     const {data,error}=await supabase.functions.invoke('create-command-protection-invoice');
+     if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать счёт на защиту');
+     const webApp=window.Telegram?.WebApp;
+     const opened=await waitForInvoiceClose(webApp,data.invoice_link,async status=>{
+       if(status==='paid'){
+         toast('Оплата принята. Включаем защиту…');
+         let activated=false;
+         for(let attempt=0;attempt<15;attempt++){
+           const {data:profile,error:profileError}=await supabase.from('profiles')
+             .select('command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
+           if(profileError)console.warn('Command protection refresh:',profileError.message);
+           const expiry=profile?.command_protection_expires_at||null;
+           if(expiry&&new Date(expiry).getTime()>Date.now()){
+             state.profile={...(state.profile||{}),command_protection_expires_at:expiry};
+             activated=true;break;
+           }
+           await new Promise(resolve=>setTimeout(resolve,700));
+         }
+         updateHeaderProfile();
+         toast(activated?'🛡 Защита от команд активирована на 5 дней!':'Платёж получен. Защита появится после подтверждения Telegram.');
+         await renderTariffs(host,'addons');
+       }else if(status==='cancelled')toast('Оплата отменена. Списания не произошло.');
+       else if(status==='failed')toast('Telegram не смог завершить оплату. Попробуй ещё раз.');
+       else if(status==='pending')toast('Платёж обрабатывается. Защита включится после подтверждения Telegram.');
+     });
+     if(!opened)toast('Открываем счёт Telegram Stars');
+   }catch(error){toast('Не удалось купить защиту: '+(error?.message||'неизвестная ошибка'));}
+   finally{if(host.contains(addonButton)){addonButton.disabled=false;addonButton.classList.remove('is-loading');addonButton.textContent=protectionLabel;}}
+ });
+}
+
+
  const premium=isPremium();
  const lifetime=premium&&!state.subscription?.expires_at;
  const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
@@ -1400,9 +1559,10 @@ async function boot(session) {
   }
   state.blockedReason=null;
   const data=profileResult.data;
-  state.profile={...(data||{username:session.user.email?.split('@')[0]||'Flame user'}),timezone_offset:preferencesResult.data?.timezone_offset??0};
+  state.profile={...(data||{username:session.user.email?.split('@')[0]||'Flame user'}),timezone_offset:preferencesResult.data?.timezone_offset??3};
   state.profileBadges=(badgesResult.data||[]).map(x=>x.badge_code);
-  if(state.profile.telegram_id){
+  if(isFounderProfile(state.profile)&&!state.webhookSetupAttempted){
+    state.webhookSetupAttempted=true;
     supabase.functions.invoke('setup-flamexbot-webhook').then(({error})=>{
       if(error)console.warn('Telegram webhook setup:',error.message);
     });
