@@ -65,7 +65,10 @@ Deno.serve(async (req: Request) => {
     const hasMedia = Boolean(storagePath);
     const antimutMode = body?.antimut_mode === true;
     const settingAction = action === "set_mute" || action === "set_antimute";
-    const commandMode = antimutMode || body?.command_mode === true || settingAction;
+    const commandMatch = text.trim().match(/^[./]([a-z][a-z0-9_]*)(?:@\\w+)?(?:\\s+([\\s\\S]*))?$/i);
+    const commandName = String(body?.command_name || commandMatch?.[1] || (action === "set_mute" ? (body.enabled ? "mute" : "unmute") : action === "set_antimute" ? "antimute" : "")).toLowerCase();
+    const commandArgs = String(commandMatch?.[2] || "").trim().toLowerCase();
+    const commandMode = antimutMode || body?.command_mode === true || settingAction || Boolean(commandMatch);
     if (!["send","refresh_avatar","set_mute","set_antimute"].includes(action)) return reply({ error: "Неизвестное действие Business-чата." }, 400);
     if (antimutMode && hasMedia) return reply({ error: "Антимут поддерживает только одну ручную попытку отправки текста." }, 400);
     if (settingAction && typeof body?.enabled !== "boolean") return reply({ error: "Для настройки укажи enabled: true или false." }, 400);
@@ -182,12 +185,16 @@ Deno.serve(async (req: Request) => {
       return reply({ ok: true, ...(action === "set_mute" ? { is_muted: enabled } : { antimut_enabled: enabled }) });
     }
 
-    if (body?.command_name === "spam") {
+    const commandNeedsPremium =
+      ["mute","spam","afk","timeprofile","bold","dumb","link","time"].includes(commandName)
+      || (["antimute","antimut"].includes(commandName) && commandArgs !== "off" && !settingAction)
+      || (["autoread","autotyping","autovoice","mutestick"].includes(commandName) && commandArgs === "on");
+    if (!settingAction && !antimutMode && commandNeedsPremium) {
       const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
         .select("plan,expires_at").eq("user_id", profileId).maybeSingle();
       if (subscriptionError) throw subscriptionError;
       const premium = subscription?.plan === "premium" && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
-      if (!premium) return reply({ error: "Команда .spam доступна только в Premium." }, 403);
+      if (!premium) return reply({ error: "Эта команда доступна только в Premium." }, 403);
     }
 
     if (antimutMode) {
