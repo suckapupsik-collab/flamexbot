@@ -95,18 +95,12 @@ $$;
 revoke all on function public.admin_list_flamexbot_audit(integer) from public,anon;
 grant execute on function public.admin_list_flamexbot_audit(integer) to authenticated;
 
-create or replace function public.admin_manage_flamexbot_user(
-  p_user_id uuid,
-  p_action text,
-  p_badge_code text default null,
-  p_reason text default null,
-  p_days integer default 30
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = ''
-as $$
+CREATE OR REPLACE FUNCTION public.admin_manage_flamexbot_user(p_user_id uuid, p_action text, p_badge_code text DEFAULT NULL::text, p_reason text DEFAULT NULL::text, p_days integer DEFAULT 30)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
 declare
   v_target public.profiles%rowtype;
   v_owner boolean;
@@ -136,13 +130,18 @@ begin
       if v_owner then raise exception 'The owner verification badge is protected'; end if;
       delete from public.profile_badges where user_id=p_user_id and badge_code='verified';
     when 'premium_grant' then
+      if v_owner then raise exception 'The owner Premium is protected'; end if;
       if v_days<0 or v_days>3650 then raise exception 'Premium duration must be between 0 and 3650 days'; end if;
       insert into public.user_subscriptions as current_subscription(user_id,plan,starts_at,expires_at,granted_by,updated_at)
       values(p_user_id,'premium',now(),case when v_days=0 then null else now()+make_interval(days=>v_days) end,auth.uid(),now())
       on conflict(user_id) do update set
         plan='premium',
         starts_at=now(),
-        expires_at=case when v_days=0 then null else greatest(coalesce(current_subscription.expires_at,now()),now())+make_interval(days=>v_days) end,
+        expires_at=case
+          when v_days=0 then null
+          when current_subscription.plan='premium' and current_subscription.expires_at is null then null
+          else greatest(coalesce(current_subscription.expires_at,now()),now())+make_interval(days=>v_days)
+        end,
         granted_by=auth.uid(),
         updated_at=now();
     when 'premium_revoke' then
@@ -156,7 +155,7 @@ begin
       insert into public.profile_badges(user_id,badge_code,granted_by)
       values(p_user_id,p_badge_code,auth.uid()) on conflict(user_id,badge_code) do nothing;
     when 'badge_revoke' then
-      if v_owner and p_badge_code in ('founder','verified') then raise exception 'The owner badge is protected'; end if;
+      if v_owner then raise exception 'The owner badges are protected'; end if;
       delete from public.profile_badges where user_id=p_user_id and badge_code=p_badge_code and badge_code<>'founder';
     else
       raise exception 'Unsupported moderation action';
@@ -167,9 +166,7 @@ begin
 
   return jsonb_build_object('ok',true,'user_id',p_user_id,'action',p_action,'badge_code',p_badge_code);
 end;
-$$;
-revoke all on function public.admin_manage_flamexbot_user(uuid,text,text,text,integer) from public,anon;
-grant execute on function public.admin_manage_flamexbot_user(uuid,text,text,text,integer) to authenticated;
+$function$
 
 create or replace function public.get_flamexbot_daily_task_progress()
 returns table(task_code text,current_progress integer,target_progress integer,completed boolean)
