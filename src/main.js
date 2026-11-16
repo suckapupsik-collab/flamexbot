@@ -891,7 +891,7 @@ async function openBusinessChat(id) {
         }
         button.disabled=false;form.reset();document.querySelector('#business-reply-preview').hidden=true;toast(`Отправлено ${count} сообщений`);await refreshBusinessMessages(id);return;
       }
-      if(['copyp','qr'].includes(name)){
+      if(['copyp','qr','afk','unafk'].includes(name)){
         if(name==='qr'&&!args){button.disabled=false;toast('Формат: .qr ссылка или текст');return;}
         const {data:utilityData,error:utilityError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text,command_mode:true,command_name:name}});
         button.disabled=false;
@@ -1656,8 +1656,8 @@ async function renderCommands(host) {
     {syntax:'.antimute',title:'Включить антимут',description:'Отправляет новые сообщения от имени бота FLAMEXBOT. Получатель должен открыть бота и нажать Start. Нужен Premium.',access:'premium',group:'Управление чатом'},
     {syntax:'.unantimute',title:'Выключить антимут',description:'Выключает режим антимута. Доступно бесплатно.',access:'free',group:'Управление чатом'},
     {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Отправляет от двух до пяти копий текста с паузой. Используй только когда получатель согласен.',access:'premium',group:'Управление чатом'},
-    {syntax:'.afk причина',title:'Включить автоответ',description:'Включает AFK-режим и задаёт текст автоматического ответа.',access:'premium',group:'Автоматизация'},
-    {syntax:'.unafk',title:'Выключить автоответ',description:'Отключает AFK-режим. Доступно бесплатно.',access:'free',group:'Автоматизация'},
+    {syntax:'.afk причина',title:'Включить автоответ',description:'Включает автоответ только в этом диалоге и задаёт текст ответа.',access:'premium',group:'Автоматизация'},
+    {syntax:'.unafk',title:'Выключить автоответ',description:'Отключает автоответ только в этом диалоге. Доступно бесплатно.',access:'free',group:'Автоматизация'},
     {syntax:'.autoread',title:'Автопрочтение',description:'Автоматически отмечает входящие сообщения прочитанными только в этом диалоге.',access:'premium',group:'Автоматизация'},
     {syntax:'.unautoread',title:'Выключить автопрочтение',description:'Отключает автоматическое прочтение сообщений.',access:'free',group:'Автоматизация'},
     {syntax:'.autotyping',title:'Статус набора',description:'Включает статус «печатает…» только в этом диалоге.',access:'premium',group:'Автоматизация'},
