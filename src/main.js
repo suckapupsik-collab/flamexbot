@@ -401,17 +401,17 @@ function renderBusinessBubble(message, mediaUrl = '') {
   const mediaType = message.message_type || 'text';
   let media = '';
   if (mediaType !== 'text' && !message.deleted_at) {
-    if (mediaUrl && mediaType === 'photo') media = \`<a class="business-media-preview" href="\${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="\${esc(mediaUrl)}" loading="lazy" alt="Фото"/></a>\`;
-    else if (mediaUrl && ['animation','sticker'].includes(mediaType)) media = \`<a class="business-media-preview business-animation-preview" href="\${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="\${esc(mediaUrl)}" loading="lazy" alt="\${mediaType==='sticker'?'Стикер':'GIF-анимация'}"/></a>\`;
-    else if (mediaUrl && ['video','video_note'].includes(mediaType)) media = \`<video class="business-video-preview" controls playsinline preload="metadata" src="\${esc(mediaUrl)}"></video>\`;
-    else if (mediaUrl && ['audio','voice'].includes(mediaType)) media = \`<div class="business-audio-card"><span>\${mediaType==='voice'?'🎙 Голосовое сообщение':'🎵 Аудио'}</span><audio class="business-audio-preview" controls preload="metadata" src="\${esc(mediaUrl)}"></audio></div>\`;
-    else if (mediaUrl) media = \`<a class="business-file-link" href="\${esc(mediaUrl)}" target="_blank" rel="noopener" download="\${esc(mediaName)}"><span>📎</span><span><b>\${esc(mediaName)}</b><small>\${esc(mediaType.toUpperCase())}\${mediaSizeLabel}</small></span><span>↓</span></a>\`;
-    else media = \`<div class="business-media-note">Вложение: \${esc(mediaType)}\${message.media_file_id ? ' · получено от Telegram' : ''}</div>\`;
+    if (mediaUrl && mediaType === 'photo') media = `<a class="business-media-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="Фото"/></a>`;
+    else if (mediaUrl && ['animation','sticker'].includes(mediaType)) media = `<a class="business-media-preview business-animation-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="${mediaType==='sticker'?'Стикер':'GIF-анимация'}"/></a>`;
+    else if (mediaUrl && ['video','video_note'].includes(mediaType)) media = `<video class="business-video-preview" controls playsinline preload="metadata" src="${esc(mediaUrl)}"></video>`;
+    else if (mediaUrl && ['audio','voice'].includes(mediaType)) media = `<div class="business-audio-card"><span>${mediaType==='voice'?'🎙 Голосовое сообщение':'🎵 Аудио'}</span><audio class="business-audio-preview" controls preload="metadata" src="${esc(mediaUrl)}"></audio></div>`;
+    else if (mediaUrl) media = `<a class="business-file-link" href="${esc(mediaUrl)}" target="_blank" rel="noopener" download="${esc(mediaName)}"><span>📎</span><span><b>${esc(mediaName)}</b><small>${esc(mediaType.toUpperCase())}${mediaSizeLabel}</small></span><span>↓</span></a>`;
+    else media = `<div class="business-media-note">Вложение: ${esc(mediaType)}${message.media_file_id ? ' · получено от Telegram' : ''}</div>`;
   }
-  const reply = message.reply_to_message_id ? \`<div class="reply-reference">↪ Ответ на сообщение #\${message.reply_to_message_id}</div>\` : '';
-  const replyButton = !message.deleted_at && message.telegram_message_id ? \`<button type="button" class="reply-message" data-reply-to="\${message.telegram_message_id}">Ответить</button>\` : '';
-  const bubble = \`<div class="bubble \${mine ? 'mine' : ''}">\${reply}\${content ? \`<div>\${esc(content)}</div>\` : ''}\${media}<div class="bubble-footer"><small>\${formatMskTime(message.created_at)}</small>\${replyButton}</div></div>\`;
-  return \`<div class="bubble-row \${mine?'mine':''}">\${contactAvatar}\${bubble}</div>\`;
+  const reply = message.reply_to_message_id ? `<div class="reply-reference">↪ Ответ на сообщение #${message.reply_to_message_id}</div>` : '';
+  const replyButton = !message.deleted_at && message.telegram_message_id ? `<button type="button" class="reply-message" data-reply-to="${message.telegram_message_id}">Ответить</button>` : '';
+  const bubble = `<div class="bubble ${mine ? 'mine' : ''}">${reply}${content ? `<div>${esc(content)}</div>` : ''}${media}<div class="bubble-footer"><small>${formatMskTime(message.created_at)}</small>${replyButton}</div></div>`;
+  return `<div class="bubble-row ${mine?'mine':''}">${contactAvatar}${bubble}</div>`;
 }
 
 async function refreshBusinessMessages(chatId) {
@@ -776,25 +776,25 @@ async function renderAdminUser(host) {
   if(!state.selectedAdminUserId){host.innerHTML='<div class="empty-state">Сначала выбери пользователя в списке.</div><button class="outline" data-go="users">К списку пользователей</button>';return;}
   const {data,error}=await supabase.rpc('admin_get_flamexbot_user',{p_user_id:state.selectedAdminUserId});
   const u=data?.[0];
-  if(error||!u){host.innerHTML=\`<div class="page-heading"><h1>Не удалось открыть карточку</h1><p class="muted">\${esc(error?.message||'Пользователь не найден')}</p></div><button class="outline" data-go="users">← К пользователям</button>\`;return;}
+  if(error||!u){host.innerHTML=`<div class="page-heading"><h1>Не удалось открыть карточку</h1><p class="muted">${esc(error?.message||'Пользователь не найден')}</p></div><button class="outline" data-go="users">← К пользователям</button>`;return;}
   const owner=u.telegram_id===FOUNDER_TELEGRAM_ID;
   const badges=u.badge_codes||[];
   const roleOptions=[['verified','Подтверждён'],['developer','Разработчик'],['administrator','Администратор'],['moderator','Модератор'],['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']];
   const premiumUntil=u.is_premium?(u.premium_expires_at?formatMskDate(u.premium_expires_at):'Бессрочно'):'Не активен';
-  host.innerHTML=\`<div class="page-heading"><button class="text-button" data-go="users">← Все пользователи</button><div class="eyebrow">ADMIN USER CONTROL</div><h1>Управление аккаунтом</h1><p class="muted">Все изменения проходят серверную проверку и попадают в журнал администрации.</p></div>
-    <section class="admin-user-detail-card"><div class="admin-user-detail-top">\${avatar(u.avatar_url||u.telegram_photo_url,u.display_name||u.username,'avatar-xl')}<div><h2>\${esc(u.display_name||u.username||'Пользователь')}</h2><p>@\${esc(u.telegram_username||u.username||'не задан')} · \${u.telegram_id?'Telegram ID '+esc(u.telegram_id):'Telegram не привязан'}</p><div class="profile-badge-row">\${badgeMarkup(badges,false,false)} \${u.is_premium?badgeMarkup(['premium'],false,false):''}</div></div></div>
-      <div class="admin-detail-status"><span class="user-flag \${u.is_banned?'banned':'active'}">\${u.is_banned?'⛔ Заблокирован':'● Активен'}</span><span class="user-flag \${u.is_premium?'premium':'free'}">\${u.is_premium?'✦ Premium':'Free'}</span><span class="user-flag">\${u.is_verified?'🔵 Подтверждён':'Без галочки'}</span></div>
-      <div class="admin-detail-metrics"><div><small>СООБЩЕНИЯ</small><b>\${u.total_messages||0}</b></div><div><small>ДРУЗЬЯ</small><b>\${u.friends_count||0}</b></div><div><small>ЛУЧШАЯ СЕРИЯ</small><b>\${u.best_streak||0} дн.</b></div><div><small>ДОСТИЖЕНИЯ</small><b>\${u.achievements_count||0}</b></div><div><small>ОПЫТ</small><b>\${u.xp||0} XP</b></div><div><small>PREMIUM ДО</small><b>\${premiumUntil}</b></div></div>
+  host.innerHTML=`<div class="page-heading"><button class="text-button" data-go="users">← Все пользователи</button><div class="eyebrow">ADMIN USER CONTROL</div><h1>Управление аккаунтом</h1><p class="muted">Все изменения проходят серверную проверку и попадают в журнал администрации.</p></div>
+    <section class="admin-user-detail-card"><div class="admin-user-detail-top">${avatar(u.avatar_url||u.telegram_photo_url,u.display_name||u.username,'avatar-xl')}<div><h2>${esc(u.display_name||u.username||'Пользователь')}</h2><p>@${esc(u.telegram_username||u.username||'не задан')} · ${u.telegram_id?'Telegram ID '+esc(u.telegram_id):'Telegram не привязан'}</p><div class="profile-badge-row">${badgeMarkup(badges,false,false)} ${u.is_premium?badgeMarkup(['premium'],false,false):''}</div></div></div>
+      <div class="admin-detail-status"><span class="user-flag ${u.is_banned?'banned':'active'}">${u.is_banned?'⛔ Заблокирован':'● Активен'}</span><span class="user-flag ${u.is_premium?'premium':'free'}">${u.is_premium?'✦ Premium':'Free'}</span><span class="user-flag">${u.is_verified?'🔵 Подтверждён':'Без галочки'}</span></div>
+      <div class="admin-detail-metrics"><div><small>СООБЩЕНИЯ</small><b>${u.total_messages||0}</b></div><div><small>ДРУЗЬЯ</small><b>${u.friends_count||0}</b></div><div><small>ЛУЧШАЯ СЕРИЯ</small><b>${u.best_streak||0} дн.</b></div><div><small>ДОСТИЖЕНИЯ</small><b>${u.achievements_count||0}</b></div><div><small>ОПЫТ</small><b>${u.xp||0} XP</b></div><div><small>PREMIUM ДО</small><b>${premiumUntil}</b></div></div>
       <div class="admin-detail-actions"><h3>Действия с аккаунтом</h3><div class="admin-detail-action-grid">
-        <button class="admin-action" data-admin-detail-action="\${u.is_verified?'unverify':'verify'}" \${owner?'disabled':''}>\${u.is_verified?'🔵 Снять подтверждение':'🔵 Подтвердить аккаунт'}</button>
-        <button class="admin-action \${u.is_banned?'safe':''}" data-admin-detail-action="\${u.is_banned?'unban':'ban'}" \${owner?'disabled':''}>\${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
-        <button class="admin-action premium" data-admin-detail-action="premium_grant" \${owner?'disabled':''}>✦ \${u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
-        <button class="admin-action" data-admin-detail-action="premium_revoke" \${!u.is_premium||owner?'disabled':''}>Снять Premium</button>
+        <button class="admin-action" data-admin-detail-action="${u.is_verified?'unverify':'verify'}" ${owner?'disabled':''}>${u.is_verified?'🔵 Снять подтверждение':'🔵 Подтвердить аккаунт'}</button>
+        <button class="admin-action ${u.is_banned?'safe':''}" data-admin-detail-action="${u.is_banned?'unban':'ban'}" ${owner?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
+        <button class="admin-action premium" data-admin-detail-action="premium_grant" ${owner?'disabled':''}>✦ ${u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
+        <button class="admin-action" data-admin-detail-action="premium_revoke" ${!u.is_premium||owner?'disabled':''}>Снять Premium</button>
       </div>
-      <div class="admin-detail-badge-form"><label>Единственный значок аккаунта<select id="admin-detail-badge"><option value="">Выбрать значок…</option>\${roleOptions.map(([code,label])=>\`<option value="\${code}">\${label}</option>\`).join('')}</select></label><button class="primary small" data-admin-detail-action="badge_grant" \${owner?'disabled':''}>Заменить значок</button><button class="outline small" data-admin-detail-action="badge_revoke" \${owner?'disabled':''}>Снять значок</button></div>
+      <div class="admin-detail-badge-form"><label>Единственный значок аккаунта<select id="admin-detail-badge"><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="primary small" data-admin-detail-action="badge_grant" ${owner?'disabled':''}>Заменить значок</button><button class="outline small" data-admin-detail-action="badge_revoke" ${owner?'disabled':''}>Снять значок</button></div>
       <small class="admin-detail-note">На одном аккаунте может быть только один значок роли. Выдача нового заменяет предыдущий. Premium отображается отдельно и не занимает слот значка.</small>
-      \${u.is_banned&&u.ban_reason?'<p class="business-warning">Причина блокировки: '+esc(u.ban_reason)+'</p>':''}
-    </div></section>\`;
+      ${u.is_banned&&u.ban_reason?'<p class="business-warning">Причина блокировки: '+esc(u.ban_reason)+'</p>':''}
+    </div></section>`;
   host.querySelectorAll('[data-admin-detail-action]').forEach(btn=>btn.addEventListener('click',async()=>{
     const action=btn.dataset.adminDetailAction;
     let reason=null,days=30,badgeCode=null;
@@ -813,14 +813,14 @@ async function renderAdminUser(host) {
 async function renderTariffs(host) {
  const premium=isPremium();
  const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
- host.innerHTML=\`<div class="page-heading"><div class="eyebrow">FLAMEXBOT MEMBERSHIP</div><h1>Тарифы и возможности <span>✦</span></h1><p class="muted">Больше контроля над Telegram Business, удобные инструменты и расширенные возможности аккаунта.</p></div>
+ host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT MEMBERSHIP</div><h1>Тарифы и возможности <span>✦</span></h1><p class="muted">Больше контроля над Telegram Business, удобные инструменты и расширенные возможности аккаунта.</p></div>
  <div class="tariff-grid">
-  <section class="business-card tariff-card \${!premium?'tariff-current':''}">
+  <section class="business-card tariff-card ${!premium?'tariff-current':''}">
    <div class="eyebrow">СТАРТ</div><h2>Free</h2><p class="muted">Всё необходимое, чтобы пользоваться FLAMEXBOT и оставаться на связи.</p>
    <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и ежедневные задания</li><li>Достижения, уровни и базовая статистика</li></ul>
-   <span class="business-status \${!premium?'is-connected':''}">\${!premium?'Твой текущий тариф':'Бесплатно'}</span>
+   <span class="business-status ${!premium?'is-connected':''}">${!premium?'Твой текущий тариф':'Бесплатно'}</span>
   </section>
-  <section class="business-card tariff-card premium-card \${premium?'tariff-current':''}">
+  <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}">
    <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2><p class="muted">Дополнительные инструменты для управления Business-диалогами и оформления аккаунта.</p>
    <ul>
     <li><code>.mute</code> / <code>.unmute</code> — управление удалением новых входящих сообщений</li>
@@ -833,13 +833,13 @@ async function renderTariffs(host) {
     <li>Расширенные настройки и управление Business-диалогами</li>
    </ul>
    <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
-   <span class="business-status \${premium?'is-connected':''}">\${premium?'Premium активен · до '+expires:'Подписка не активна'}</span>
-   \${premium?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">⭐ Оплатить 100 Stars</button>'}
+   <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · до '+expires:'Подписка не активна'}</span>
+   ${premium?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">⭐ Оплатить 100 Stars</button>'}
    <small class="premium-payment-note">Оплата проходит внутри Telegram. Подписка действует 30 дней и не продлевается автоматически.</small>
   </section>
  </div>
  <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
- <p class="business-note">Антимут не снимает блокировки и не обходит ограничения Telegram: он выполняет только одну ручную попытку отправки. Если Telegram отказывает, FLAMEXBOT показывает причину и не повторяет отправку автоматически.</p>\`;
+ <p class="business-note">Антимут не снимает блокировки и не обходит ограничения Telegram: он выполняет только одну ручную попытку отправки. Если Telegram отказывает, FLAMEXBOT показывает причину и не повторяет отправку автоматически.</p>`;
  const buyButton=host.querySelector('#buy-premium');
  buyButton?.addEventListener('click',async()=>{
    buyButton.disabled=true;buyButton.classList.add('is-loading');buyButton.textContent='Подготавливаем оплату…';
@@ -1153,11 +1153,11 @@ async function renderStats(host) {
   const bars=week.map(day=>{
     const sent=Number(day.sent)||0,received=Number(day.received)||0,total=sent+received;
     const height=Math.max(5,Math.round(total/maxActivity*100));
-    return \`<div class="activity-day" title="\${formatMskDate(day.date,{day:'numeric',month:'long'})}: \${sent} отправлено, \${received} получено">
-      <div class="activity-bar"><span style="height:\${height}%"></span></div>
-      <small>\${formatMskDate(day.date,{weekday:'short'})}</small>
-      <b>\${total}</b>
-    </div>\`;
+    return `<div class="activity-day" title="${formatMskDate(day.date,{day:'numeric',month:'long'})}: ${sent} отправлено, ${received} получено">
+      <div class="activity-bar"><span style="height:${height}%"></span></div>
+      <small>${formatMskDate(day.date,{weekday:'short'})}</small>
+      <b>${total}</b>
+    </div>`;
   }).join('');
   const cards=[
     ['✦','ТАРИФ',planLabel()],['👥','ДРУЗЬЯ',stats.friends||0],
@@ -1167,14 +1167,14 @@ async function renderStats(host) {
     ['⚡','ОБЩИЙ ОПЫТ',(stats.xp||0)+' XP'],['◈','УРОВЕНЬ',stats.level||1],
     ['📅','СООБЩЕНИЯ ЗА 30 ДНЕЙ',stats.messages_last_30d||0],['🌟','АКТИВНЫХ ДНЕЙ ЗА 30 ДНЕЙ',stats.active_days_30d||0]
   ];
-  host.innerHTML=\`<div class="page-heading"><div class="eyebrow">ТВОЯ АКТИВНОСТЬ · МОСКОВСКОЕ ВРЕМЯ</div><h1>Статистика <span>📊</span></h1><p class="muted">Подробная сводка общения, прогресса и достижений. Все даты и дневные периоды считаются по МСК.</p></div>
-    <div class="stats-grid advanced-stats-grid">\${cards.map(([icon,label,value])=>\`<article class="stat-card"><span class="stat-icon">\${icon}</span><small>\${label}</small><strong>\${value}</strong></article>\`).join('')}</div>
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ТВОЯ АКТИВНОСТЬ · МОСКОВСКОЕ ВРЕМЯ</div><h1>Статистика <span>📊</span></h1><p class="muted">Подробная сводка общения, прогресса и достижений. Все даты и дневные периоды считаются по МСК.</p></div>
+    <div class="stats-grid advanced-stats-grid">${cards.map(([icon,label,value])=>`<article class="stat-card"><span class="stat-icon">${icon}</span><small>${label}</small><strong>${value}</strong></article>`).join('')}</div>
     <section class="activity-panel"><div class="section-heading"><div><div class="eyebrow">ПОСЛЕДНИЕ 7 ДНЕЙ</div><h3>Активность по дням</h3></div><span class="activity-legend"><i></i> Сообщения</span></div>
-      <div class="activity-chart">\${bars||'<div class="empty-state">Данных пока недостаточно.</div>'}</div>
-      <div class="activity-foot"><span>За неделю отправлено: <b>\${week.reduce((sum,d)=>sum+(Number(d.sent)||0),0)}</b></span><span>Получено: <b>\${week.reduce((sum,d)=>sum+(Number(d.received)||0),0)}</b></span></div>
+      <div class="activity-chart">${bars||'<div class="empty-state">Данных пока недостаточно.</div>'}</div>
+      <div class="activity-foot"><span>За неделю отправлено: <b>${week.reduce((sum,d)=>sum+(Number(d.sent)||0),0)}</b></span><span>Получено: <b>${week.reduce((sum,d)=>sum+(Number(d.received)||0),0)}</b></span></div>
     </section>
-    <section class="business-card"><div class="eyebrow">FLAMEX ID</div><div class="flame-id-line"><h2>\${esc(uid.slice(0,8).toUpperCase())}</h2><button class="outline small" type="button" id="copy-flame-id">Скопировать ID</button></div><p class="muted">Уникальный идентификатор твоего пространства FLAMEXBOT.</p><small>В приложении с \${profileResult.data?.created_at?formatMskDate(profileResult.data.created_at):'—'} · Telegram \${profileResult.data?.telegram_id?'привязан':'не привязан'}</small></section>
-    \${statsResult.error?'<p class="business-warning">Не удалось загрузить статистику: '+esc(statsResult.error.message)+'</p>':''}\`;
+    <section class="business-card"><div class="eyebrow">FLAMEX ID</div><div class="flame-id-line"><h2>${esc(uid.slice(0,8).toUpperCase())}</h2><button class="outline small" type="button" id="copy-flame-id">Скопировать ID</button></div><p class="muted">Уникальный идентификатор твоего пространства FLAMEXBOT.</p><small>В приложении с ${profileResult.data?.created_at?formatMskDate(profileResult.data.created_at):'—'} · Telegram ${profileResult.data?.telegram_id?'привязан':'не привязан'}</small></section>
+    ${statsResult.error?'<p class="business-warning">Не удалось загрузить статистику: '+esc(statsResult.error.message)+'</p>':''}`;
   host.querySelector('#copy-flame-id')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(uid);toast('FLAMEX ID скопирован');}catch{toast('Не удалось скопировать ID');}});
 }
 
