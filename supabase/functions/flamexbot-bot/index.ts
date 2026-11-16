@@ -1122,6 +1122,61 @@ async function handleSuccessfulPayment(message: any) {
   );
 }
 
+const TELEGRAM_DELIVERABLE_NOTIFICATION_TYPES = [
+  "weekly_wheel_spins",
+  "referral_reward",
+  "trial_activated",
+  "account_banned",
+  "account_unbanned",
+  "verified",
+  "unverified",
+  "premium_granted",
+  "premium_revoked",
+  "pro_granted",
+  "pro_revoked",
+  "badge_granted",
+  "badge_revoked",
+];
+
+async function deliverPendingTelegramNotifications(telegramUserId: number | string, privateChatId: number | string) {
+  if (!admin) return;
+  const { data: profile, error: profileError } = await admin.from("profiles")
+    .select("id").eq("telegram_id", String(telegramUserId)).maybeSingle();
+  if (profileError) {
+    console.warn("Could not load notification recipient:", profileError.message);
+    return;
+  }
+  if (!profile?.id) return;
+
+  const { data: pending, error: pendingError } = await admin.from("notifications")
+    .select("id,title,body")
+    .eq("user_id", profile.id)
+    .is("telegram_delivered_at", null)
+    .in("type", TELEGRAM_DELIVERABLE_NOTIFICATION_TYPES)
+    .order("created_at", { ascending: true })
+    .limit(8);
+  if (pendingError) {
+    console.warn("Could not load pending bot notifications:", pendingError.message);
+    return;
+  }
+
+  for (const item of pending ?? []) {
+    try {
+      const title = String(item.title ?? "Уведомление FLAMEXBOT");
+      const body = String(item.body ?? "");
+      await sendRichTelegramMessage(privateChatId, "📬 " + title + (body ? "\n\n" + body : ""));
+      const { error: markError } = await admin.from("notifications")
+        .update({ telegram_delivered_at: new Date().toISOString() })
+        .eq("id", item.id)
+        .is("telegram_delivered_at", null);
+      if (markError) console.warn("Could not mark bot notification delivered:", markError.message);
+    } catch (error) {
+      console.warn("Bot notification delivery stopped:", (error as any)?.message ?? error);
+      break;
+    }
+  }
+}
+
 async function processTelegramUpdate(update: any) {
   const startedAt=Date.now();
   try {
@@ -1152,6 +1207,9 @@ async function processTelegramUpdate(update: any) {
         console.warn("Blocked Telegram update from banned FLAMEXBOT user", String(directTelegramUserId));
         return new Response("OK", { status: 200 });
       }
+    }
+    if (update.message?.chat?.type === "private" && update.message.from?.id) {
+      await deliverPendingTelegramNotifications(update.message.from.id, update.message.chat.id);
     }
     if (update.callback_query?.data === "fx:connect_guide") {
       await telegram("answerCallbackQuery",{callback_query_id:update.callback_query.id});
