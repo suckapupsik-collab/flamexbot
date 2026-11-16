@@ -96,8 +96,8 @@ function renderAuth() {
 }
 
 function navItem(page, icon, label) { return `<button class="nav-item ${state.page === page ? 'selected' : ''}" data-page="${page}"><span>${icon}</span>${label}</button>`; }
-function isPremium() { return state.subscription?.plan === 'premium' && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
-function planLabel() { return isPremium() ? 'PREMIUM' : 'FREE'; }
+function isPremium() { return ['premium','pro'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
+function planLabel() { return state.subscription?.plan==='pro'&&isPremium()?'PRO':isPremium()?'PREMIUM':'FREE'; }
 const PAGE_LABELS = {
   home:'Обзор', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
@@ -260,6 +260,17 @@ async function loadPage() {
       const editedCount=editedEvents.count||0;
       state.streaks=(streaks.data||[]).sort((a,b)=>effectiveStreakDays(b)-effectiveStreakDays(a)).slice(0,5);
       const p=state.profile||{};
+      const incomingReferral=new URLSearchParams(window.location.search).get('ref');
+      if(incomingReferral&&p.telegram_id){
+        const {data:refApplied,error:refApplyError}=await supabase.rpc('apply_flamexbot_referral_code',{p_code:incomingReferral});
+        if(refApplyError)toast('Реферальный код: '+refApplyError.message);
+        else if(refApplied)toast('🔥 Реферальная награда начислена пригласившему!');
+        window.history.replaceState({},'',window.location.pathname+window.location.hash);
+      }
+      const [{data:referralCode,error:refCodeError},{count:referralCount,error:refCountError}]=await Promise.all([
+        supabase.rpc('ensure_flamexbot_referral_code'),
+        supabase.from('flamexbot_referrals').select('id',{count:'exact',head:true}).eq('referrer_id',state.session.user.id)
+      ]);
       host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'))} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
@@ -272,9 +283,19 @@ async function loadPage() {
             <span class="home-archive-icon">✎</span><span class="home-archive-copy"><b>Изменённые сообщения</b><small>Предыдущие и текущие версии сообщений</small></span><strong class="home-archive-count">${editedCount}</strong><i>→</i>
           </button>
         </div>
+        <section class="home-referral-card">
+          <div class="home-referral-copy"><span class="eyebrow">ПРИГЛАШАЙ ДРУЗЕЙ</span><h3>1 день Premium за каждого участника</h3><p>Поделись ссылкой. Когда новый участник привяжет Telegram и зарегистрируется, тебе начислится 1 день Premium.</p><small>Приглашено: <b>${referralCount||0}</b></small></div>
+          <div class="home-referral-actions"><code>${esc(referralCode||'Код недоступен')}</code><button class="primary small" id="copy-referral" type="button" ${!referralCode?'disabled':''}>Скопировать ссылку</button></div>
+        </section>
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
         <div class="streak-list">${state.streaks.filter(s=>effectiveStreakDays(s)>0).length?state.streaks.filter(s=>effectiveStreakDays(s)>0).map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${effectiveStreakDays(s)} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Найди друга и начните обмениваться сообщениями каждый день.</div>'}</div>
         <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
+      host.querySelector('#copy-referral')?.addEventListener('click',async()=>{
+        const link=window.location.origin+'/?ref='+encodeURIComponent(referralCode||'');
+        try{await navigator.clipboard.writeText(link);toast('Реферальная ссылка скопирована!');}
+        catch{window.prompt('Скопируй ссылку приглашения',link);}
+      });
+      if(refCodeError||refCountError)console.warn('Referral panel load:',refCodeError?.message||refCountError?.message);
     } else if(state.page==='tariffs') await renderTariffs(host);
     else if(state.page==='messages') await renderBusinessMessages(host);
     else if(state.page==='deleted') await renderBusinessMessageEvents(host,'deleted');
@@ -392,7 +413,7 @@ async function renderBusinessMessageEvents(host,eventType) {
   const deleted=eventType==='deleted';
   const title=deleted?'Удалённые сообщения':'Изменённые сообщения';
   const icon=deleted?'🗑️':'✏️';
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS · ИСТОРИЯ</div><h1>${icon} ${title}</h1><p class="muted">Здесь сохраняются только сообщения собеседников. Твои исходящие сообщения в этот журнал не попадают.</p></div><div class="message-events-list"><div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем историю</strong></div></div>`;
+  host.innerHTML=`<div class="page-heading"><button class="outline small" type="button" data-go="home">← Назад</button><div class="eyebrow">TELEGRAM BUSINESS · ИСТОРИЯ</div><h1>${icon} ${title}</h1><p class="muted">Здесь сохраняются только сообщения собеседников. Твои исходящие сообщения в этот журнал не попадают.</p></div><div class="message-events-list"><div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем историю</strong></div></div>`;
   const list=host.querySelector('.message-events-list');
   const {data:events,error}=await supabase.from('flamexbot_business_message_events')
     .select('id,business_chat_id,telegram_message_id,event_type,original_content,message_type,media_file_id,media_url,original_raw,occurred_at')
@@ -430,9 +451,10 @@ async function renderBusinessMessageEvents(host,eventType) {
     const mediaName=raw.document?.file_name||raw.audio?.file_name||raw.video?.file_name||raw.animation?.file_name||'Вложение';
     let media='';
     if(mediaUrl&&mediaType==='photo')media=`<a class="event-media" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="Фото из сообщения"/></a>`;
-    else if(mediaUrl&&['video','video_note'].includes(mediaType))media=`<video class="event-video" controls preload="metadata" src="${esc(mediaUrl)}"></video>`;
+    else if(mediaUrl&&['video','video_note','animation'].includes(mediaType))media=`<video class="event-video" controls preload="metadata" src="${esc(mediaUrl)}"></video>`;
     else if(mediaUrl&&['voice','audio'].includes(mediaType))media=`<audio class="event-audio" controls preload="metadata" src="${esc(mediaUrl)}"></audio>`;
-    else if(mediaType!=='text')media=`<div class="event-attachment">📎 ${esc(mediaName)} · ${esc(mediaType)}</div>`;
+    else if(mediaUrl&&mediaType==='sticker')media=`<img class="event-sticker" src="${esc(mediaUrl)}" loading="lazy" alt="Стикер из сообщения"/>`;
+    else if(mediaType!=='text')media=`<div class="event-attachment">📎 ${esc(mediaName)} · ${esc(mediaType)}${!mediaUrl?' · файл недоступен':''}</div>`;
     const text=event.original_content||raw.text||raw.caption||'';
     const current=currentMessageMap.get(event.business_chat_id+':'+event.telegram_message_id);
     const currentMarkup=!deleted&&current
@@ -1064,6 +1086,9 @@ async function renderAdminUser(host) {
 
 async function renderTariffs(host, initialTab='premium') {
  const premium=isPremium();
+ const isPro=state.subscription?.plan==='pro'&&premium;
+ const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
+ const trialUsed=Boolean(trialRecord);
  const lifetime=premium&&!state.subscription?.expires_at;
  const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
  const buyLabel=premium?'↻ Продлить Premium за 100 ⭐':'⭐ Оплатить 100 Stars';
@@ -1082,6 +1107,13 @@ async function renderTariffs(host, initialTab='premium') {
     <div class="eyebrow">СТАРТ</div><h2>Free</h2><p class="muted">Всё необходимое, чтобы пользоваться FLAMEXBOT и оставаться на связи.</p>
     <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и ежедневные задания</li><li>Достижения, уровни и базовая статистика</li></ul>
     <span class="business-status ${!premium?'is-connected':''}">${!premium?'Твой текущий тариф':'Бесплатно'}</span>
+   </section>
+   <section class="business-card tariff-card pro-card ${isPro?'tariff-current':''}">
+    <div class="eyebrow">EARLY ACCESS</div><h2>🔥 FLAMEX PRO</h2>
+    <p class="muted">Расширенный уровень для участников, которым нужны новые функции раньше остальных.</p>
+    <ul><li>Всё из Premium</li><li>Ранний доступ к новым функциям и тестовым возможностям</li><li>Эксклюзивный бейдж PRO в профиле</li><li>Дополнительные настройки и расширенные лимиты по мере выхода функций</li></ul>
+    <span class="business-status ${isPro?'is-connected':''}">${isPro?'Твой текущий тариф':'Скоро открытие продаж'}</span>
+    <small class="premium-payment-note">Стоимость и дата запуска будут объявлены отдельно.</small>
    </section>
    <section class="business-card tariff-card premium-card ${premium?'tariff-current':''}">
     <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2><p class="muted">Дополнительные инструменты для управления Business-диалогами и оформления аккаунта.</p>
@@ -1103,6 +1135,18 @@ async function renderTariffs(host, initialTab='premium') {
   </div>
   <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
   <p class="business-note">Антимут сохраняет сообщения владельца в истории FLAMEXBOT. Он не снимает мут собеседника и не может гарантировать уведомления Telegram.</p>
+  <section class="business-card trial-card">
+   <div class="eyebrow">ПОПРОБУЙ FLAMEXBOT</div><h2>🎁 Пробный Premium на 3 дня</h2>
+   <p class="muted">Один раз на аккаунт. Без оплаты и автоматического продления.</p>
+   ${trialUsed?'<span class="business-status">Пробный период уже использован</span>':'<button class="primary" id="claim-trial" type="button">Активировать 3 дня Premium</button>'}
+   ${trialRecordError?'<small class="business-warning">Не удалось проверить историю пробного периода.</small>':''}
+  </section>
+  <section class="business-card wheel-card">
+   <div class="eyebrow">LUCKY SPIN</div><h2>🎡 Колесо фортуны</h2>
+   <p class="muted">Прокрутка стоит 5 ⭐. Возможные награды: 1 день Premium, защита от команд на 5 дней или бесплатная прокрутка.</p>
+   <div class="wheel-odds"><span>15% · Premium 1 день</span><span>25% · Дополнение 5 дней</span><span>60% · Бесплатная прокрутка</span></div>
+   <button class="primary" id="spin-wheel" type="button">Крутить за 5 ⭐</button>
+  </section>
  </section>
  <section class="tariff-tab-panel" data-tariff-panel="addons" hidden>
   <section class="business-card addon-card">
@@ -1187,6 +1231,47 @@ async function renderTariffs(host, initialTab='premium') {
    finally{if(host.contains(buyButton)){buyButton.disabled=false;buyButton.classList.remove('is-loading');buyButton.textContent=buyLabel;}}
  });
 
+ const trialButton=host.querySelector('#claim-trial');
+ trialButton?.addEventListener('click',async()=>{
+   trialButton.disabled=true;trialButton.textContent='Активируем…';
+   try{
+     const {data:expiry,error}=await supabase.rpc('claim_flamexbot_trial');
+     if(error)throw error;
+     const {data:subscription,error:subError}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+     if(subError)throw subError;
+     state.subscription=subscription;updateHeaderProfile();
+     toast('🎁 Premium активирован на 3 дня — до '+formatMskDateTime(expiry,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}));
+     await renderTariffs(host,'premium');
+   }catch(error){toast('Не удалось активировать пробный период: '+(error.message||'ошибка'));trialButton.disabled=false;trialButton.textContent='Активировать 3 дня Premium';}
+ });
+ const wheelButton=host.querySelector('#spin-wheel');
+ wheelButton?.addEventListener('click',async()=>{
+   wheelButton.disabled=true;wheelButton.textContent='Создаём счёт…';
+   try{
+     const {data,error}=await supabase.functions.invoke('create-wheel-invoice');
+     if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать счёт');
+     const webApp=window.Telegram?.WebApp;
+     const opened=await waitForInvoiceClose(webApp,data.invoice_link,async status=>{
+       if(status==='paid'){
+         toast('Оплата принята. Определяем награду…');
+         let result=null;
+         for(let attempt=0;attempt<18;attempt++){
+           const {data:order,error:orderError}=await supabase.from('flamexbot_wheel_orders').select('status,prize_label').eq('id',data.order_id).maybeSingle();
+           if(orderError)console.warn('Wheel status:',orderError.message);
+           if(order?.status==='paid'){result=order;break;}
+           await new Promise(resolve=>setTimeout(resolve,600));
+         }
+         toast(result?'🎉 Выпало: '+result.prize_label:'Платёж принят. Награда появится после подтверждения Telegram.');
+         const {data:profile}=await supabase.from('profiles').select('wheel_free_spins').eq('id',state.session.user.id).maybeSingle();
+         state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0};
+         await renderTariffs(host,'premium');
+       }else if(status==='cancelled')toast('Оплата отменена.');
+       else if(status==='failed')toast('Telegram не смог завершить оплату.');
+     });
+     if(!opened)toast('Счёт открыт в Telegram.');
+   }catch(error){toast('Колесо: '+(error.message||'ошибка'));}
+   finally{if(host.contains(wheelButton)){wheelButton.disabled=false;wheelButton.textContent='Крутить за 5 ⭐';}}
+ });
  const addonButton=host.querySelector('#buy-command-protection');
  addonButton?.addEventListener('click',async()=>{
    addonButton.disabled=true;addonButton.classList.add('is-loading');addonButton.textContent='Подготавливаем оплату…';
