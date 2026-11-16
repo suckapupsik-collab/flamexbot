@@ -1215,6 +1215,7 @@ async function renderTariffs(host, initialTab='premium') {
   <div class="addon-feature-heading"><div class="eyebrow">ВКЛЮЧЕНО В PREMIUM</div><h2>✨ Дополнительные возможности</h2><p class="muted">Эти функции работают отдельно в каждом Business-диалоге.</p></div>
   <div class="addon-feature-grid">
    <article class="addon-feature"><span>👁️</span><b>Автопрочтение</b><small>Отдельное включение для каждого чата.</small><em>В Premium</em></article>
+   <article class="addon-feature"><span>🌙</span><b>AFK-автоответ</b><small>Автоматический ответ включается только в выбранном диалоге.</small><em>В Premium</em></article>
    <article class="addon-feature"><span>⌨️</span><b>Автостатусы</b><small>«Печатает…» и «Записывает голосовое» только в выбранном диалоге.</small><em>В Premium</em></article>
    <article class="addon-feature"><span>🛡️</span><b>Антимут</b><small>Отправка через аккаунт бота, если собеседник открыл FLAMEXBOT.</small><em>В Premium</em></article>
    <article class="addon-feature"><span>🗂️</span><b>Архив изменений</b><small>История удалённых и отредактированных сообщений с момента подключения.</small><em>В Premium</em></article>
