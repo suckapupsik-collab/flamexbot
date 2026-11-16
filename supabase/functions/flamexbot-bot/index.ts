@@ -29,7 +29,7 @@ async function getTelegramBan(telegramUserId: unknown) {
 
 async function telegram(method: string, body: Record<string, unknown>) {
   let payload = body;
-  if (method === "sendMessage" && body.reply_markup && typeof body.reply_markup === "object") {
+  if (body.reply_markup && typeof body.reply_markup === "object") {
     try {
       const available = await getAvailablePremiumEmojiIds();
       const icons: Record<string, keyof typeof PREMIUM_EMOJI> = {
@@ -42,15 +42,15 @@ async function telegram(method: string, body: Record<string, unknown>) {
       const enrich = (rows: unknown) => Array.isArray(rows) ? rows.map((row: any) =>
         Array.isArray(row) ? row.map((button: any) => {
           if (!button || typeof button !== "object" || button.icon_custom_emoji_id) return button;
-          const label = String(button.text ?? "").toLowerCase();
+          const label = (String(button.text ?? "") + " " + String(button.callback_data ?? "")).toLowerCase();
           const key = /отмен|cancel|закрыть/.test(label) ? "cancel"
             : /назад|back/.test(label) ? "back"
             : /обнов|refresh|повтор/.test(label) ? "refresh"
-            : /помощ|help|команд/.test(label) ? "help"
+            : /инструкц|помощ|help|команд|guide/.test(label) ? "help"
             : /экспорт|скач|download/.test(label) ? "download"
             : /настрой|settings/.test(label) ? "settings"
             : /домой|главн|home/.test(label) ? "home"
-            : /подтверд|готово|продолж|открыть|прилож/.test(label) ? "success"
+            : /подтверд|готово|продолж|сохран/.test(label) ? "success"
             : /профил|аккаунт/.test(label) ? "profile"
             : /оплат|stars|звезд/.test(label) ? "star"
             : /premium|pro|тариф/.test(label) ? "diamond"
@@ -58,7 +58,7 @@ async function telegram(method: string, body: Record<string, unknown>) {
             : /загруз|отправ|upload/.test(label) ? "upload"
             : /поиск|найти|search/.test(label) ? "search"
             : /папк|архив/.test(label) ? "folder"
-            : /открыть|запустить|старт/.test(label) ? "open"
+            : /открыть|запустить|старт|подключ|войти|прилож/.test(label) ? "open"
             : null;
           if (!key) return button;
           const emoji = PREMIUM_EMOJI[icons[key] ?? key as keyof typeof PREMIUM_EMOJI];
@@ -80,8 +80,8 @@ async function telegram(method: string, body: Record<string, unknown>) {
   const data = await response.json();
   if (!response.ok || !data.ok) {
     const message = String(data.description ?? `Telegram API ${method} failed`);
-    if (method === "sendMessage" && JSON.stringify(payload) !== JSON.stringify(body)
-        && /icon_custom_emoji_id|custom emoji.*button|button.*emoji/i.test(message)) {
+    if (JSON.stringify(payload) !== JSON.stringify(body)
+        && /icon_custom_emoji_id|custom emoji|BUTTON_TYPE_INVALID|BUTTON_DATA_INVALID|keyboard button|button.*invalid/i.test(message)) {
       const fallbackResponse = await fetch(`${API}/${method}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
@@ -894,9 +894,14 @@ async function handleBusinessActionCallback(query: any) {
 }
 
 const PREMIUM_PRICE_STARS = 100;
+const PRO_PRICE_STARS = 250;
 const PREMIUM_PERIOD_DAYS = 30;
 function parsePremiumPayload(payload: string) {
   const match = /^flamexbot_premium:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(payload);
+  return match?.[1] ?? null;
+}
+function parseProPayload(payload: string) {
+  const match = /^flamexbot_pro:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(payload);
   return match?.[1] ?? null;
 }
 function parseCommandProtectionPayload(payload: string) {
@@ -907,17 +912,33 @@ function parseWheelPayload(payload: string) {
   const match = /^flamexbot_wheel:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(payload);
   return match?.[1] ?? null;
 }
-async function sendPremiumInvoice(chatId: number, telegramUserId: number) {
+async function sendTierInvoice(chatId: number, telegramUserId: number, plan: "premium" | "pro") {
   if (!admin) throw new Error("Database is unavailable");
-  const { data: profile, error } = await admin.from("profiles").select("id,telegram_id").eq("telegram_id", String(telegramUserId)).maybeSingle();
+  const { data: profile, error } = await admin.from("profiles").select("id,telegram_id,is_banned").eq("telegram_id", String(telegramUserId)).maybeSingle();
   if (error) throw error;
   if (!profile?.id) { await sendRichTelegramMessage(chatId, `${tgEmoji("warning")} <b>Сначала привяжи Telegram.</b> Открой профиль FLAMEXBOT и заверши привязку этого аккаунта.`, "HTML"); return; }
-  const { data: current } = await admin.from("user_subscriptions").select("plan,expires_at").eq("user_id", profile.id).maybeSingle();
-  if (["premium","pro","founder"].includes(current?.plan) && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now())) {
-    await sendRichTelegramMessage(chatId, `${tgEmoji("success")} <b>Premium уже активен.</b> Все возможности тарифа доступны до окончания подписки.`, "HTML"); return;
+  if (profile.is_banned) { await sendRichTelegramMessage(chatId, "⛔ Аккаунт заблокирован. Покупка тарифа недоступна.", "HTML"); return; }
+  const { data: current, error: currentError } = await admin.from("user_subscriptions").select("plan,expires_at").eq("user_id", profile.id).maybeSingle();
+  if (currentError) throw currentError;
+  const active = Boolean(current && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now()));
+  if (active && current.plan === "pro") {
+    await sendRichTelegramMessage(chatId, `${tgEmoji("success")} <b>FLAMEX PRO уже активен.</b> Это максимальный тариф. Он действует ${current.expires_at ? "до " + new Date(current.expires_at).toLocaleDateString("ru-RU") : "бессрочно"}.`, "HTML");
+    return;
   }
-  const payload = `flamexbot_premium:${profile.id}:${crypto.randomUUID()}`;
-  await telegram("sendInvoice", { chat_id: chatId, title: "FLAMEXBOT Premium", description: "Полный доступ к Premium-функциям на 30 дней.", payload, currency: "XTR", prices: [{ label: "Premium · 30 дней", amount: PREMIUM_PRICE_STARS }] });
+  if (active && !current.expires_at) {
+    await sendRichTelegramMessage(chatId, `${tgEmoji("success")} <b>У тебя уже бессрочный тариф.</b> Покупка не требуется.`, "HTML");
+    return;
+  }
+  const price = plan === "pro" ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
+  const name = plan === "pro" ? "FLAMEX PRO" : "FLAMEXBOT Premium";
+  const description = plan === "pro"
+    ? "FLAMEX PRO на 30 дней: Premium-функции, 2 еженедельные прокрутки колеса, +10% к относительному шансу редких наград и экспорт переписки."
+    : "FLAMEXBOT Premium на 30 дней: Premium-инструменты и 1 бесплатная прокрутка колеса каждую неделю.";
+  const payload = `flamexbot_${plan}:${profile.id}:${crypto.randomUUID()}`;
+  await telegram("sendInvoice", {
+    chat_id: chatId, title: name, description, payload, currency: "XTR",
+    prices: [{ label: (plan === "pro" ? "PRO" : "Premium") + " · 30 дней", amount: price }],
+  });
 }
 async function handlePreCheckout(query: any) {
   let ok = false;
@@ -925,11 +946,19 @@ async function handlePreCheckout(query: any) {
     if (admin && query.currency === "XTR") {
       const payload = String(query.invoice_payload ?? "");
       const premiumUserId = parsePremiumPayload(payload);
-      if (premiumUserId && query.total_amount === PREMIUM_PRICE_STARS) {
+      const proUserId = parseProPayload(payload);
+      const tierUserId = premiumUserId || proUserId;
+      const expectedTierAmount = proUserId ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
+      if (tierUserId && query.total_amount === expectedTierAmount) {
         const { data: profile, error } = await admin.from("profiles")
-          .select("id,telegram_id,is_banned").eq("id", premiumUserId).maybeSingle();
+          .select("id,telegram_id,is_banned").eq("id", tierUserId).maybeSingle();
         if (error) throw error;
-        ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id));
+        const { data: current, error: currentError } = await admin.from("user_subscriptions")
+          .select("plan,expires_at").eq("user_id", tierUserId).maybeSingle();
+        if (currentError) throw currentError;
+        const currentActive = Boolean(current && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now()));
+        const isForbiddenDowngrade = Boolean(premiumUserId && currentActive && current.plan === "pro");
+        ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id) && !isForbiddenDowngrade);
       } else if (parseCommandProtectionPayload(payload) && query.total_amount === 15) {
         const { data: order, error: orderError } = await admin.from("flamexbot_addon_star_payments")
           .select("user_id,telegram_user_id,addon_code,currency,total_amount,period_days,status,valid_until")
@@ -1055,24 +1084,42 @@ async function handleSuccessfulPayment(message: any) {
     return;
   }
 
-  const userId = parsePremiumPayload(invoicePayload);
-  if (!userId || payment.currency !== "XTR" || payment.total_amount !== PREMIUM_PRICE_STARS || !payment.telegram_payment_charge_id) throw new Error("Successful Telegram Stars payment did not match a Premium invoice");
-  const { data: profile, error: profileError } = await admin.from("profiles").select("id,telegram_id,is_banned,ban_reason").eq("id", userId).maybeSingle();
+  const premiumUserId = parsePremiumPayload(invoicePayload);
+  const proUserId = parseProPayload(invoicePayload);
+  const userId = premiumUserId || proUserId;
+  const plan = proUserId ? "pro" : "premium";
+  const expectedAmount = plan === "pro" ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
+  if (!userId || payment.currency !== "XTR" || payment.total_amount !== expectedAmount || !payment.telegram_payment_charge_id) {
+    throw new Error("Successful Telegram Stars payment did not match a Premium/PRO invoice");
+  }
+  const { data: profile, error: profileError } = await admin.from("profiles")
+    .select("id,telegram_id,is_banned,ban_reason").eq("id", userId).maybeSingle();
   if (profileError) throw profileError;
   if (!profile || profile.telegram_id !== String(message.from.id)) throw new Error("Telegram payment sender does not match the FLAMEXBOT account");
   if (profile.is_banned) {
     await refundTelegramStarsPayment(Number(message.from.id), payment.telegram_payment_charge_id);
-    await sendRichTelegramMessage(message.chat.id, "⛔ Аккаунт заблокирован. Оплата Premium автоматически возвращена.", "HTML");
+    await sendRichTelegramMessage(message.chat.id, "⛔ Аккаунт заблокирован. Оплата тарифа автоматически возвращена.", "HTML");
     return;
   }
-  const { data: applied, error: applyError } = await admin.rpc("apply_flamexbot_star_payment", {
-    p_user_id: userId, p_telegram_user_id: String(message.from.id), p_invoice_payload: payment.invoice_payload,
+  const { data: applied, error: applyError } = await admin.rpc("apply_flamexbot_tier_payment", {
+    p_user_id: userId,
+    p_telegram_user_id: String(message.from.id),
+    p_invoice_payload: payment.invoice_payload,
     p_telegram_payment_charge_id: payment.telegram_payment_charge_id,
     p_provider_payment_charge_id: payment.provider_payment_charge_id ?? null,
-    p_currency: payment.currency, p_total_amount: payment.total_amount, p_period_days: PREMIUM_PERIOD_DAYS,
+    p_currency: payment.currency,
+    p_total_amount: payment.total_amount,
+    p_period_days: PREMIUM_PERIOD_DAYS,
+    p_plan: plan,
   });
   if (applyError) throw applyError;
-  if (applied === true) await sendRichTelegramMessage(message.chat.id, `${tgEmoji("star")} <b>Оплата прошла успешно!</b> FLAMEXBOT Premium активирован на 30 дней. Перезапусти приложение, чтобы обновить статус подписки.`, "HTML");
+  if (applied === true) await sendRichTelegramMessage(
+    message.chat.id,
+    plan === "pro"
+      ? `${tgEmoji("diamond")} <b>Оплата прошла успешно!</b> FLAMEX PRO активирован на 30 дней. Тебе доступны 2 прокрутки каждую неделю и +10% к шансу редких наград.`
+      : `${tgEmoji("star")} <b>Оплата прошла успешно!</b> FLAMEXBOT Premium активирован на 30 дней. Тебе доступна 1 прокрутка каждую неделю.`,
+    "HTML",
+  );
 }
 
 async function processTelegramUpdate(update: any) {
@@ -1113,8 +1160,10 @@ async function processTelegramUpdate(update: any) {
         "HTML",{inline_keyboard:[[{text:"✦ Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
     } else if (update.callback_query) await handleBusinessActionCallback(update.callback_query);
     if (update.message?.successful_payment) await handleSuccessfulPayment(update.message);
-    if (update.message?.chat?.type === "private" && update.message.from?.id && /^\/premium(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim())) {
-      await sendPremiumInvoice(update.message.chat.id, update.message.from.id);
+    if (update.message?.chat?.type === "private" && update.message.from?.id
+        && /^\/(premium|pro)(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim())) {
+      const plan = /^\/pro(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim()) ? "pro" : "premium";
+      await sendTierInvoice(update.message.chat.id, update.message.from.id, plan);
     }
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
         /^\/ping(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
@@ -1165,7 +1214,7 @@ async function processTelegramUpdate(update: any) {
 
 Открой FLAMEXBOT, подключи Telegram Business и выдай необходимые разрешения. Затем отправь <code>.help</code> или <code>/help</code> в нужном диалоге.
 
-Команды без адреса собеседника и без @username — бот определит текущий чат автоматически. Статус подключения можно проверить командой /status.`,
+Команды без адреса собеседника и без @username — бот определит текущий чат автоматически. Статус подключения: /status. Тарифы: /premium и /pro.`,
         "HTML",
         { inline_keyboard: [[{ text: "✦ Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
       );
