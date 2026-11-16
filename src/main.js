@@ -812,7 +812,9 @@ async function renderAdminUser(host) {
 
 async function renderTariffs(host) {
  const premium=isPremium();
+ const lifetime=premium&&!state.subscription?.expires_at;
  const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
+ const buyLabel=premium?'↻ Продлить Premium за 100 ⭐':'⭐ Оплатить 100 Stars';
  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT MEMBERSHIP</div><h1>Тарифы и возможности <span>✦</span></h1><p class="muted">Больше контроля над Telegram Business, удобные инструменты и расширенные возможности аккаунта.</p></div>
  <div class="tariff-grid">
   <section class="business-card tariff-card ${!premium?'tariff-current':''}">
@@ -833,8 +835,8 @@ async function renderTariffs(host) {
     <li>Расширенные настройки и управление Business-диалогами</li>
    </ul>
    <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
-   <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · до '+expires:'Подписка не активна'}</span>
-   ${premium?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">⭐ Оплатить 100 Stars</button>'}
+   <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
+   ${lifetime?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
    <small class="premium-payment-note">Оплата проходит внутри Telegram. Подписка действует 30 дней и не продлевается автоматически.</small>
   </section>
  </div>
@@ -872,7 +874,7 @@ async function renderTariffs(host) {
        else if(status==='pending')toast('Платёж обрабатывается. Premium появится после подтверждения Telegram.');
      });
    }catch(error){toast('Оплата не запущена: '+(error?.message||'неизвестная ошибка'));}
-   finally{if(host.contains(buyButton)){buyButton.disabled=false;buyButton.classList.remove('is-loading');buyButton.textContent='⭐ Оплатить 100 Stars';}}
+   finally{if(host.contains(buyButton)){buyButton.disabled=false;buyButton.classList.remove('is-loading');buyButton.textContent=buyLabel;}}
  });
 }
 
