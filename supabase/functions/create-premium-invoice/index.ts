@@ -5,7 +5,8 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
-const PRICE_STARS = 100;
+const PREMIUM_PRICE_STARS = 100;
+const PRO_PRICE_STARS = 250;
 const PERIOD_DAYS = 30;
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -33,6 +34,9 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return response({ error: "Unauthorized" }, 401);
+  const body = await req.json().catch(() => ({}));
+  const plan = body?.plan === "pro" ? "pro" : "premium";
+  const priceStars = plan === "pro" ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY || !BOT_TOKEN) {
     return response({ error: "Payment service is not configured" }, 503);
   }
@@ -61,28 +65,31 @@ Deno.serve(async (req: Request) => {
     const { data: current, error: subscriptionError } = await admin.from("user_subscriptions")
       .select("plan,expires_at").eq("user_id", authData.user.id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
-    if (current?.plan === "founder" && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now())) {
-      return response({ error: "У тебя активен бессрочный FLAMEX FOUNDER — покупка Premium не требуется." }, 409);
+    const currentIsActive = Boolean(current && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now()));
+    if (currentIsActive && current.plan === "pro") {
+      return response({ error: "У тебя уже активен FLAMEX PRO — продление или повторная покупка не требуются." }, 409);
     }
-    if (current?.plan === "pro" && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now())) {
-      return response({ error: "У тебя активен FLAMEX PRO — покупка Premium не требуется." }, 409);
-    }
-    if (current?.plan === "premium" && !current.expires_at) {
-      return response({ error: "У тебя бессрочный Premium — продление не требуется." }, 409);
+    if (currentIsActive && current.plan === "premium" && !current.expires_at) {
+      return response({ error: "У тебя уже бессрочный Premium — продление не требуется." }, 409);
     }
 
-    const payload = "flamexbot_premium:" + authData.user.id + ":" + crypto.randomUUID();
+    const payload = "flamexbot_" + plan + ":" + authData.user.id + ":" + crypto.randomUUID();
+    const title = plan === "pro" ? "FLAMEXBOT PRO" : "FLAMEXBOT Premium";
+    const description = plan === "pro"
+      ? "FLAMEX PRO на 30 дней: все функции Premium, 2 еженедельные прокрутки колеса и +10% к относительному шансу редких наград."
+      : "FLAMEXBOT Premium на 30 дней: 1 бесплатная прокрутка колеса каждую неделю и Premium-инструменты.";
     const invoiceLink = await telegram("createInvoiceLink", {
-      title: "FLAMEXBOT Premium",
-      description: "Полный доступ к функциям Premium на 30 дней.",
+      title,
+      description,
       payload,
       currency: "XTR",
-      prices: [{ label: "Premium · 30 дней", amount: PRICE_STARS }],
+      prices: [{ label: (plan === "pro" ? "PRO" : "Premium") + " · 30 дней", amount: priceStars }],
     });
     return response({
       ok: true,
+      plan,
       invoice_link: invoiceLink,
-      price_stars: PRICE_STARS,
+      price_stars: priceStars,
       period_days: PERIOD_DAYS,
     });
   } catch (error) {
