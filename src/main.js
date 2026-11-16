@@ -606,13 +606,28 @@ async function renderAdmin(host) {
     host.innerHTML='<div class="page-heading"><div class="eyebrow">ACCESS DENIED</div><h1>Нет доступа</h1><p class="muted">Административные инструменты доступны только уполномоченному владельцу.</p></div>';
     return;
   }
-  const [all,verified,premium,banned]=await Promise.all([
+  const [all,verified,premium,banned,audit]=await Promise.all([
     supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'all',p_banned:'all'}),
     supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'verified',p_premium:'all',p_banned:'all'}),
     supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'premium',p_banned:'all'}),
-    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'all',p_banned:'banned'})
+    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'all',p_banned:'banned'}),
+    supabase.rpc('admin_list_flamexbot_audit_log',{p_limit:10,p_offset:0})
   ]);
   const count=result=>result.data?.[0]?.total_count||0;
+  const actionLabels={
+    ban:'Заблокирован аккаунт',unban:'Снята блокировка',verify:'Выдана синяя галочка',
+    unverify:'Снята синяя галочка',premium_grant:'Выдан или продлён Premium',
+    premium_revoke:'Снят Premium',badge_grant:'Выдан значок роли',badge_revoke:'Снят значок роли'
+  };
+  const auditRows=(audit.data||[]).map(item=>{
+    const detail=item.details||{};
+    const extra=detail.reason||detail.badge_code||(detail.days!=null?'Срок: '+(detail.days===0?'бессрочно':detail.days+' дн.'):'');
+    return `<article class="admin-audit-row">
+      <span class="admin-audit-icon">${item.action==='ban'?'⛔':item.action==='verify'?'🔵':item.action.includes('premium')?'✦':item.action.includes('badge')?'🏷️':'🛡'}</span>
+      <div class="admin-audit-copy"><b>${esc(actionLabels[item.action]||item.action)}</b><small>${esc(item.target_name||'Пользователь')} · ${esc(item.actor_name||'Администратор')}${extra?' · '+esc(extra):''}</small></div>
+      <time>${new Date(item.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</time>
+    </article>`;
+  }).join('');
   host.innerHTML=`<div class="page-heading admin-heading"><div class="eyebrow">FOUNDER CONTROL CENTER</div><h1>Админ-панель <span>⚙</span></h1><p class="muted">Управление участниками, верификацией, подписками и безопасностью проекта.</p></div>
     <section class="admin-welcome-card"><div class="admin-welcome-orb">✦</div><div><span class="admin-live-pill"><i></i> FOUNDER ACCESS</span><h2>Добро пожаловать, владелец</h2><p>Все административные действия проверяются сервером. Значки ролей не дают права доступа к панели — права остаются только у владельца.</p></div><span class="admin-crown">👑</span></section>
     <div class="admin-stat-grid">
@@ -628,7 +643,11 @@ async function renderAdmin(host) {
       <button class="admin-module" data-go="users" data-filter="premium"><span class="admin-module-icon premium">✦</span><b>Premium</b><small>Выдача, продление и снятие подписки</small><i>Управлять →</i></button>
       <button class="admin-module" data-go="users" data-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
     </div>
-    <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки и снятия синей галочки. Назначение ролей другим пользователям не выдаёт им административный доступ.</small></div></div><span class="business-status is-connected">SECURE</span></section>
+    <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки, снятия Premium, синей галочки и значков ролей. Значки администратора и разработчика не выдают доступ к панели.</small></div></div><span class="business-status is-connected">SECURE</span></section>
+    <section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">SECURITY HISTORY</div><h3>Журнал действий</h3></div><span class="admin-secure">Последние 10 событий</span></div>
+      <div class="admin-audit-list">${auditRows||'<div class="empty-state">Административных действий пока нет. Здесь появится история блокировок, галочек и Premium.</div>'}</div>
+      ${audit.error?'<p class="business-warning">Не удалось загрузить журнал действий: '+esc(audit.error.message)+'</p>':''}
+    </section>
     ${all.error||verified.error||premium.error||banned.error?'<p class="business-warning">Не удалось загрузить часть административной статистики.</p>':''}`;
 }
 async function renderUsers(host) {
@@ -672,7 +691,7 @@ async function renderUsers(host) {
           <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${owner?'disabled':''}>✦ ${owner?'Premium владельца':u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
           <button class="admin-action" data-user-action="premium_revoke" data-user-id="${u.id}" ${!u.is_premium||owner?'disabled':''}>Снять Premium</button>
         </div>
-        <div class="admin-role-controls"><label>Значок роли<select data-role-select="${u.id}"><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}">Выдать значок</button><label>Снять значок<select data-role-remove="${u.id}"><option value="">Выбрать значок…</option>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<option value="${code}">${esc(BADGE_META[code]?.label||code)}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}">Снять</button>
+        <div class="admin-role-controls"><label>Значок роли<select data-role-select="${u.id}"><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}">Выдать значок</button><label>Снять значок<select data-role-remove="${u.id}"><option value="">Выбрать значок…</option>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<option value="${code}">${esc(BADGE_META[code]?.label||code)}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}" ${owner?'disabled':''} title="${owner?'Значки владельца защищены':'Снять значок'}">Снять</button>
         </div>
       </article>`;
     }).join('')||'<div class="empty-state">По заданным фильтрам никого не найдено.</div>'}</div>
