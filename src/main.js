@@ -721,7 +721,47 @@ async function openBusinessChat(id) {
   const {error:readError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:readAt},{onConflict:'profile_id,business_chat_id'});
   if(!readError){chat.last_read_at=readAt;chat.unread_count=0;document.querySelector(`[data-business-chat="${id}"] .chat-unread-badge`)?.remove();}
   box.closest('.business-inbox')?.classList.add('chat-open');
-  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div class="chat-head-person">${avatar(chat.photo_url,name,'chat-avatar')}<div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div></div><input class="message-search" id="business-message-search" type="search" placeholder="Поиск по переписке…"/></div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
+  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div class="chat-head-person">${avatar(chat.photo_url,name,'chat-avatar')}<div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div></div><input class="message-search" id="business-message-search" type="search" placeholder="Поиск по переписке…"/> ${(['pro','founder'].includes(state.subscription?.plan)&&premiumAccess)?'<button type="button" class="chat-export-button" id="export-business-chat">↓ Экспорт</button>':''}</div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
+  const exportButton=box.querySelector('#export-business-chat');
+  exportButton?.addEventListener('click',async()=>{
+    if(!['pro','founder'].includes(state.subscription?.plan)||!isPremium()){
+      toast('Экспорт переписки доступен в PRO и FOUNDER.');return;
+    }
+    exportButton.disabled=true;exportButton.textContent='Готовим экспорт…';
+    try{
+      const allMessages=[];
+      const pageSize=1000;
+      for(let offset=0;offset<50000;offset+=pageSize){
+        const {data,error}=await supabase.from('flamexbot_business_messages')
+          .select('telegram_message_id,direction,content,message_type,created_at,edited_at,deleted_at,reply_to_message_id,media_url')
+          .eq('business_chat_id',id)
+          .order('created_at',{ascending:true})
+          .order('telegram_message_id',{ascending:true})
+          .range(offset,offset+pageSize-1);
+        if(error)throw error;
+        allMessages.push(...(data||[]));
+        if(!data||data.length<pageSize)break;
+      }
+      if(!allMessages.length){toast('В этой переписке пока нет сохранённых сообщений.');return;}
+      const exportData={
+        format:'FLAMEXBOT chat export v1',
+        exported_at:new Date().toISOString(),
+        chat:{id,username:chat.username||null,name,telegram_chat_id:chat.telegram_chat_id},
+        messages:allMessages
+      };
+      const blob=new Blob([JSON.stringify(exportData,null,2)],{type:'application/json;charset=utf-8'});
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a');
+      link.href=url;link.download='flamexbot-chat-'+String(id).slice(0,8)+'.json';
+      document.body.appendChild(link);link.click();link.remove();
+      URL.revokeObjectURL(url);
+      toast('Экспортировано сообщений: '+allMessages.length);
+    }catch(error){
+      toast('Не удалось экспортировать переписку: '+(error?.message||'ошибка'));
+    }finally{
+      exportButton.disabled=false;exportButton.textContent='↓ Экспорт';
+    }
+  });
   const controlsHost = box.querySelector('#business-chat-controls');
   const renderBusinessControls = () => {
     if (!controlsHost) return;
@@ -1070,7 +1110,7 @@ async function renderAdminUser(host) {
   const premiumUntil=u.is_premium?(u.premium_expires_at?formatMskDate(u.premium_expires_at):'Бессрочно'):'Не активен';
   host.innerHTML=`<div class="page-heading"><button class="text-button" data-go="users">← Все пользователи</button><div class="eyebrow">ADMIN USER CONTROL</div><h1>Управление аккаунтом</h1><p class="muted">Все изменения проходят серверную проверку и попадают в журнал администрации.</p></div>
     <section class="admin-user-detail-card"><div class="admin-user-detail-top">${avatar(u.avatar_url||u.telegram_photo_url,u.display_name||u.username,'avatar-xl')}<div><h2>${esc(u.display_name||u.username||'Пользователь')}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</h2><p>@${esc(u.telegram_username||u.username||'не задан')} · ${u.telegram_id?'Telegram ID '+esc(u.telegram_id):'Telegram не привязан'}</p><div class="profile-badge-row">${badgeMarkup(badges,false,false)} ${u.is_premium?badgeMarkup(['premium'],false,false):''}</div></div></div>
-      <div class="admin-detail-status"><span class="user-flag ${u.is_banned?'banned':'active'}">${u.is_banned?'⛔ Заблокирован':'● Активен'}</span><span class="user-flag ${u.is_premium?'premium':'free'}">${u.is_premium?'✦ Premium':'Free'}</span><span class="user-flag">${u.is_verified?'🔵 Подтверждён':'Без галочки'}</span></div>
+      <div class="admin-detail-status"><span class="user-flag ${u.is_banned?'banned':'active'}">${u.is_banned?'⛔ Заблокирован':'● Активен'}</span><span class="user-flag ${u.is_premium?'premium':'free'}">${badges.includes('founder')?'👑 FOUNDER':badges.includes('pro')?'🔥 PRO':u.is_premium?'✦ Premium':'Free'}</span><span class="user-flag">${u.is_verified?'🔵 Подтверждён':'Без галочки'}</span></div>
       <div class="admin-detail-metrics"><div><small>СООБЩЕНИЯ</small><b>${u.total_messages||0}</b></div><div><small>ДРУЗЬЯ</small><b>${u.friends_count||0}</b></div><div><small>ЛУЧШАЯ СЕРИЯ</small><b>${u.best_streak||0} дн.</b></div><div><small>ДОСТИЖЕНИЯ</small><b>${u.achievements_count||0}</b></div><div><small>ОПЫТ</small><b>${u.xp||0} XP</b></div><div><small>PREMIUM ДО</small><b>${premiumUntil}</b></div></div>
       <div class="admin-detail-actions"><h3>Действия с аккаунтом</h3><div class="admin-detail-action-grid">
         <button class="admin-action" data-admin-detail-action="${u.is_verified?'unverify':'verify'}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять подтверждение':'🔵 Подтвердить аккаунт'}</button>
