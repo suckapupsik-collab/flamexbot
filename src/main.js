@@ -460,51 +460,141 @@ async function refreshBusinessMessages(chatId) {
   }
 }
 
+function compareBusinessMessages(a,b) {
+  const dateOrder=String(a.created_at||"").localeCompare(String(b.created_at||""));
+  return dateOrder || String(a.id||"").localeCompare(String(b.id||""));
+}
+
 async function refreshBusinessMessagesNow(chatId) {
   if (state.activeBusinessChat !== chatId) return;
-  const list = document.querySelector('#business-message-list');
-  if (!list) return;
-  const { data, error } = await supabase.from('flamexbot_business_messages')
-    .select('id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at,raw')
-    .eq('business_chat_id', chatId).order('created_at', { ascending: false }).limit(100);
-  if (state.activeBusinessChat !== chatId) return;
-  if (error) { list.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; return; }
-  state.businessMessages = (data || []).reverse();
-  const latestInbound=state.businessMessages.filter(m=>m.direction==='inbound').reduce((latest,m)=>!latest||new Date(m.created_at)>new Date(latest)?m.created_at:latest,null);
+  const list=document.querySelector("#business-message-list");
+  if(!list)return;
+  const initialLoad=!state.businessMessagesInitialLoaded;
+  const oldScrollTop=list.scrollTop;
+  const wasNearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<140;
+  const {data,error}=await supabase.from("flamexbot_business_messages")
+    .select("id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at,raw")
+    .eq("business_chat_id",chatId)
+    .order("created_at",{ascending:false}).order("id",{ascending:false}).limit(100);
+  if(state.activeBusinessChat!==chatId)return;
+  if(error){list.innerHTML='<div class="empty-state">'+esc(error.message)+'</div>';return;}
+  const newest=(data||[]).reverse();
+  const byId=new Map();
+  [...(state.businessMessages||[]),...newest].forEach(message=>byId.set(message.id,message));
+  state.businessMessages=[...byId.values()].sort(compareBusinessMessages);
+  if(initialLoad)state.businessMessagesHasMore=(data||[]).length===100;
+  state.businessMessagesOldestAt=state.businessMessages[0]?.created_at||null;
+  state.businessMessagesInitialLoaded=true;
+
+  const latestInbound=state.businessMessages.filter(m=>m.direction==="inbound")
+    .reduce((latest,m)=>!latest||new Date(m.created_at)>new Date(latest)?m.created_at:latest,null);
   const openChat=state.businessChats.find(chat=>chat.id===chatId);
   if(!document.hidden&&latestInbound&&(!openChat?.last_read_at||new Date(latestInbound)>new Date(openChat.last_read_at))){
     const readAt=new Date().toISOString();
-    const {error:readError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:chatId,last_read_at:readAt},{onConflict:'profile_id,business_chat_id'});
-    if(!readError){if(openChat){openChat.last_read_at=readAt;openChat.unread_count=0;}document.querySelector(`[data-business-chat="${chatId}"] .chat-unread-badge`)?.remove();}
+    const {error:readError}=await supabase.from("flamexbot_business_chat_settings")
+      .upsert({profile_id:state.session.user.id,business_chat_id:chatId,last_read_at:readAt},{onConflict:"profile_id,business_chat_id"});
+    if(!readError){
+      if(openChat){openChat.last_read_at=readAt;openChat.unread_count=0;}
+      document.querySelector('[data-business-chat="'+chatId+'"] .chat-unread-badge')?.remove();
+    }
   }
-  const query=(document.querySelector('#business-message-search')?.value||'').trim().toLowerCase();
-  const visible=state.businessMessages.filter(m=>{
-    if(!query)return true;
-    const raw=m.raw||{};
-    const fileName=raw.document?.file_name||raw.audio?.file_name||raw.video?.file_name||raw.animation?.file_name||'';
-    return [m.content,fileName,m.message_type].filter(Boolean).join(' ').toLowerCase().includes(query);
+  await renderBusinessMessagesList(chatId,{
+    scrollToBottom:initialLoad||wasNearBottom,
+    scrollTop:oldScrollTop
   });
-  const mediaUrls = {};
-  const mediaPaths=[...new Set(visible.filter(m=>m.media_url).map(m=>m.media_url))];
-  const missingPaths=mediaPaths.filter(path=>!state.businessMediaUrlCache.has(path));
+}
+
+async function loadOlderBusinessMessages(chatId) {
+  if(state.activeBusinessChat!==chatId||state.businessMessagesLoadingOlder||!state.businessMessagesHasMore)return;
+  const cursor=state.businessMessages[0];
+  const list=document.querySelector("#business-message-list");
+  if(!cursor||!list)return;
+  const scrollHeightBefore=list.scrollHeight;
+  const scrollTopBefore=list.scrollTop;
+  state.businessMessagesLoadingOlder=true;
+  const button=list.querySelector("#business-load-older");
+  if(button){button.disabled=true;button.textContent="Загружаю…";}
+  const cursorFilter="created_at.lt."+cursor.created_at+",and(created_at.eq."+cursor.created_at+",id.lt."+cursor.id+")";
+  const {data,error}=await supabase.from("flamexbot_business_messages")
+    .select("id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at,raw")
+    .eq("business_chat_id",chatId).or(cursorFilter)
+    .order("created_at",{ascending:false}).order("id",{ascending:false}).limit(100);
+  if(state.activeBusinessChat!==chatId){state.businessMessagesLoadingOlder=false;return;}
+  if(error){
+    state.businessMessagesLoadingOlder=false;
+    toast("Не удалось загрузить предыдущие сообщения: "+error.message);
+    if(button){button.disabled=false;button.textContent="Загрузить предыдущие сообщения";}
+    return;
+  }
+  const older=(data||[]).reverse();
+  const byId=new Map();
+  [...older,...state.businessMessages].forEach(message=>byId.set(message.id,message));
+  state.businessMessages=[...byId.values()].sort(compareBusinessMessages);
+  state.businessMessagesHasMore=(data||[]).length===100;
+  state.businessMessagesOldestAt=state.businessMessages[0]?.created_at||null;
+  state.businessMessagesLoadingOlder=false;
+  await renderBusinessMessagesList(chatId,{
+    preserveScroll:true,
+    scrollHeightBefore,
+    scrollTopBefore
+  });
+}
+
+async function renderBusinessMessagesList(chatId,scrollOptions={}) {
+  if(state.activeBusinessChat!==chatId)return;
+  const list=document.querySelector("#business-message-list");
+  if(!list)return;
+  const query=(document.querySelector("#business-message-search")?.value||"").trim().toLowerCase();
+  const visible=state.businessMessages.filter(message=>{
+    if(!query)return true;
+    const raw=message.raw||{};
+    const fileName=raw.document?.file_name||raw.audio?.file_name||raw.video?.file_name||raw.animation?.file_name||"";
+    return [message.content,fileName,message.message_type].filter(Boolean).join(" ").toLowerCase().includes(query);
+  });
+  const mediaUrls={};
+  const mediaPaths=[...new Set(visible.filter(message=>message.media_url).map(message=>message.media_url))];
+  const missingPaths=mediaPaths.filter(path=>{
+    const cached=state.businessMediaUrlCache.get(path);
+    return !cached||typeof cached!=="object"||cached.expiresAt<Date.now()+60000;
+  });
   if(missingPaths.length){
     try{
-      const {data,error}=await supabase.storage.from('flamex-business-media').createSignedUrls(missingPaths,3600);
-      if(!error)for(const item of data||[])if(item.path&&item.signedUrl)state.businessMediaUrlCache.set(item.path,item.signedUrl);
-    }catch(error){console.warn('Business media preview:',error?.message||error);}
+      const {data,error}=await supabase.storage.from("flamex-business-media").createSignedUrls(missingPaths,3600);
+      if(!error)for(const item of data||[])if(item.path&&item.signedUrl){
+        state.businessMediaUrlCache.set(item.path,{url:item.signedUrl,expiresAt:Date.now()+55*60*1000});
+      }
+    }catch(error){console.warn("Business media preview:",error?.message||error);}
   }
-  visible.forEach(message=>{if(message.media_url){const url=state.businessMediaUrlCache.get(message.media_url);if(url)mediaUrls[message.id]=url;}});
-  list.innerHTML = visible.map(m=>renderBusinessBubble(m,mediaUrls[m.id]||'')).join('') || '<div class="chat-placeholder"><b>Сообщений не найдено</b><small>Измени поисковый запрос.</small></div>';
-  list.querySelectorAll('[data-reply-to]').forEach(btn=>btn.addEventListener('click',()=>{
-    const form=document.querySelector('#business-send-form');
-    const preview=document.querySelector('#business-reply-preview');
+  visible.forEach(message=>{
+    if(!message.media_url)return;
+    const cached=state.businessMediaUrlCache.get(message.media_url);
+    const url=typeof cached==="string"?cached:cached?.url;
+    if(url)mediaUrls[message.id]=url;
+  });
+  const loadOlderMarkup=state.businessMessagesHasMore
+    ? '<button type="button" class="load-older-messages" id="business-load-older" '+(state.businessMessagesLoadingOlder?'disabled':'')+'>'+
+      (state.businessMessagesLoadingOlder?'Загружаю…':'Загрузить предыдущие сообщения')+'</button>'
+    : "";
+  const messagesMarkup=visible.map(message=>renderBusinessBubble(message,mediaUrls[message.id]||"")).join("")
+    || '<div class="chat-placeholder"><b>Сообщений не найдено</b><small>Измени поисковый запрос или загрузи более раннюю историю.</small></div>';
+  list.innerHTML=loadOlderMarkup+messagesMarkup;
+  list.querySelector("#business-load-older")?.addEventListener("click",()=>loadOlderBusinessMessages(chatId));
+  list.querySelectorAll("[data-reply-to]").forEach(button=>button.addEventListener("click",()=>{
+    const form=document.querySelector("#business-send-form");
+    const preview=document.querySelector("#business-reply-preview");
     if(!form||!preview)return;
-    form.querySelector('[name=reply_to_message_id]').value=btn.dataset.replyTo;
+    form.querySelector('[name=reply_to_message_id]').value=button.dataset.replyTo;
     preview.hidden=false;
-    preview.querySelector('span').textContent='Ответ на сообщение #'+btn.dataset.replyTo;
+    preview.querySelector("span").textContent="Ответ на сообщение #"+button.dataset.replyTo;
     form.querySelector('input[name=content]').focus();
   }));
-  list.scrollTop = list.scrollHeight;
+  if(scrollOptions.preserveScroll){
+    list.scrollTop=scrollOptions.scrollTopBefore+(list.scrollHeight-scrollOptions.scrollHeightBefore);
+  }else if(scrollOptions.scrollToBottom){
+    list.scrollTop=list.scrollHeight;
+  }else if(Number.isFinite(scrollOptions.scrollTop)){
+    list.scrollTop=scrollOptions.scrollTop;
+  }
 }
 
 async function openBusinessChat(id) {
