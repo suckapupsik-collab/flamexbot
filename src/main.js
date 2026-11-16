@@ -675,7 +675,7 @@ async function openBusinessChat(id) {
   const renderBusinessControls = () => {
     if (!controlsHost) return;
     controlsHost.innerHTML = `<div class="business-control-intro">
-      ${founderChat ? '<div class="business-protection-banner"><span>👑</span><div><b>Защищённый диалог владельца</b><small>Все команды и автоматические действия FLAMEXBOT здесь отключены.</small></div></div>' : '<div class="business-command-hint"><span>⌘</span><div><b>Команды вводятся прямо в этом Telegram-диалоге</b><small>Без @username и ID. Например: <code>.mute</code>, <code>.unmute</code>, <code>.antimute on</code>.</small></div></div>'}
+      ${founderChat ? '<div class="business-protection-banner"><span>👑</span><div><b>Защищённый диалог владельца</b><small>Все команды и автоматические действия FLAMEXBOT здесь отключены.</small></div></div>' : '<div class="business-command-hint"><span>⌘</span><div><b>Команды вводятся прямо в этом Telegram-диалоге</b><small>Без @username и ID. Например: <code>.mute</code>, <code>.unmute</code>, <code>.antimute</code>, <code>.unantimute</code>.</small></div></div>'}
     </div><div class="business-control-grid">
       <section class="business-control-card">
         <div class="business-control-title"><b>🔇 Мут</b><span class="business-control-state ${chatMuted?'active':''}">${chatMuted?'Включён':'Выключен'}</span></div>
@@ -686,11 +686,11 @@ async function openBusinessChat(id) {
       </section>
       <section class="business-control-card">
         <div class="business-control-title"><b>🛡 Антимут</b><span class="business-control-state ${antimutEnabled?'active':''}">${antimutEnabled?'Включён':'Выключен'}</span></div>
-        <p>Позволяет сделать одну ручную попытку отправки через твой Telegram Business. Антимут не снимает блокировки и не обходит запреты Telegram.</p>
+        <p>Сохраняет видимость сообщений владельца в истории FLAMEXBOT. Не снимает мут собеседника и не гарантирует уведомления в Telegram.</p>
         ${!founderChat && !canReplyMessages && !antimutEnabled ? '<small class="business-control-note">Нужно разрешение Telegram Business «Отвечать».</small>' : ''}
         ${!founderChat && !premiumAccess && !antimutEnabled ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
         <button type="button" class="outline small" id="toggle-business-antimut" ${founderChat||(!premiumAccess && !antimutEnabled)||(!canReplyMessages && !antimutEnabled)?'disabled':''}>${antimutEnabled?'Выключить антимут':'Включить антимут'}</button>
-        ${antimutEnabled && !founderChat ? '<small class="business-control-note">Для одной попытки отправь в этом же диалоге: <code>.antimute текст</code>. Повторная отправка не запускается автоматически.</small>' : ''}
+        ${antimutEnabled && !founderChat ? '<small class="business-control-note">Режим можно выключить командой <code>.unantimute</code> или кнопкой выше.</small>' : ''}
       </section>
     </div>`;
     controlsHost.querySelector('#toggle-business-mute')?.addEventListener('click', async e => {
@@ -794,8 +794,8 @@ async function openBusinessChat(id) {
     const command=!file&&text.startsWith('.')?text.trim():'';
     if(command){
       const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
-      if(['help','inf'].includes(name)){toast('.spam 2-5 текст · .mute · .unmute · .antimute on/off · .antimute текст');button.disabled=false;return;}
-      const freeCommand=name==='unmute'||(name==='antimute'&&args==='off')||name==='untime';
+      if(['help','inf'].includes(name)){toast('.mute · .unmute · .antimute · .unantimute · .autoread · .unautoread · .autotyping · .unautotyping · .autovoice · .unautovoice · .mutestick · .unmutestick · .antimat · .unantimat');button.disabled=false;return;}
+      const freeCommand=['unmute','unantimute','unantimut','untime','unafk','unautoread','unautotyping','unautovoice','unmutestick','unantimat'].includes(name);
       if(!isPremium()&&!freeCommand){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
       if(name==='mute'||name==='unmute'){
         const next=name==='mute';
@@ -805,20 +805,27 @@ async function openBusinessChat(id) {
         button.disabled=false;if(settingError||settingData?.error){toast(settingData?.error||settingError?.message||'Не удалось изменить настройку чата');return;}
         chatMuted=next;chat.is_muted=next;renderBusinessControls();toast(next?'Мут включён':'Собеседник размучен');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
       }
-      if(name==='antimute'){
-        if(args!=='off'&&!isPremium()){button.disabled=false;toast('Включение антимута доступно только в Premium.');return;}
-        if(args==='on'||args==='off'){
-          const next=args==='on';
-          if(next && state.businessRights?.can_reply!==true){button.disabled=false;toast('Telegram Business не выдал право «Отвечать» для этого чата.');return;}
-          const {data:antiSettingData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next}});
-          button.disabled=false;if(antiError||antiSettingData?.error){toast(antiSettingData?.error||antiError?.message||'Не удалось изменить антимут');return;}
-          antimutEnabled=next;chat.antimut_enabled=next;renderBusinessControls();toast(next?'Антимут включён: доступна ручная попытка отправки':'Антимут выключен');form.reset();return;
-        }
-        if(!antimutEnabled){button.disabled=false;toast('Сначала включи антимут командой .antimute on или в настройках чата.');return;}
-        if(!args){button.disabled=false;toast('Формат: .antimute on/off или .antimute текст');return;}
-        const {data:antiData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text:args,antimut_mode:true,command_mode:true,command_name:'antimute'}});
-        button.disabled=false;if(antiError||antiData?.error){toast(antiData?.error||antiError?.message||'Telegram отклонил отправку');return;}
-        form.reset();toast('Telegram принял сообщение для отправки');await refreshBusinessMessages(id);return;
+      if(['antimute','unantimute','antimut','unantimut'].includes(name)){
+        const next=name==='antimute'||name==='antimut';
+        if(args){button.disabled=false;toast('Команда не принимает аргументы: .antimute или .unantimute');return;}
+        if(next&&!isPremium()){button.disabled=false;toast('Включение антимута доступно только в Premium.');return;}
+        const {data:antiSettingData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next,command_mode:true,command_name:name}});
+        button.disabled=false;if(antiError||antiSettingData?.error){toast(antiSettingData?.error||antiError?.message||'Не удалось изменить антимут');return;}
+        antimutEnabled=next;chat.antimut_enabled=next;renderBusinessControls();toast(next?'Антимут включён: сообщения владельца будут видны в истории FLAMEXBOT':'Антимут выключен');form.reset();return;
+      }
+      const preferenceCommands={
+        autoread:['autoread',true,'Автопрочтение'],unautoread:['autoread',false,'Автопрочтение'],
+        autotyping:['autotyping',true,'Статус набора'],unautotyping:['autotyping',false,'Статус набора'],
+        autovoice:['autovoice',true,'Статус записи голосового'],unautovoice:['autovoice',false,'Статус записи голосового'],
+        mutestick:['mutestick',true,'Фильтр стикеров'],unmutestick:['mutestick',false,'Фильтр стикеров'],
+        antimat:['antimat',true,'Антимат'],unantimat:['antimat',false,'Антимат']
+      };
+      if(preferenceCommands[name]){
+        const [preference,enabled,label]=preferenceCommands[name];
+        if(args){button.disabled=false;toast('Команда не принимает on/off: .'+name);return;}
+        const {data:prefData,error:prefError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_preference',chat_id:id,preference,enabled,command_mode:true,command_name:name}});
+        button.disabled=false;if(prefError||prefData?.error){toast(prefData?.error||prefError?.message||'Не удалось изменить настройку');return;}
+        form.reset();toast(label+(enabled?' включён':' выключен'));return;
       }
       if(name==='time'||name==='untime'){
         const enabled=name==='time';const {error:timeError}=await supabase.from('profiles').update({show_profile_time:enabled}).eq('id',state.session.user.id);
@@ -1056,8 +1063,8 @@ async function renderTariffs(host, initialTab='premium') {
     <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2><p class="muted">Дополнительные инструменты для управления Business-диалогами и оформления аккаунта.</p>
     <ul>
      <li><code>.mute</code> / <code>.unmute</code> — управление удалением новых входящих сообщений</li>
-     <li><code>.antimute on/off</code> — безопасное включение ручной попытки отправки</li>
-     <li><code>.antimute текст</code> — одна отправка через разрешённый Telegram Business</li>
+     <li><code>.antimute</code> / <code>.unantimute</code> — включение и отключение режима антимута</li>
+     <li><code>.antimat</code> / <code>.unantimat</code> — фильтр ненормативной лексики</li>
      <li>AFK-автоответ и автоматическое прочтение сообщений</li>
      <li>Статусы «печатает…» и «записывает голосовое»</li>
      <li>Фильтр входящих стикеров, время профиля по МСК и оформление текста</li>
@@ -1472,12 +1479,8 @@ async function renderCommands(host) {
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Включить мут',description:'Удаляет новые входящие сообщения в выбранном диалоге. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
     {syntax:'.unmute',title:'Выключить мут',description:'Останавливает автоматическое удаление новых сообщений. Доступно бесплатно.',access:'free',group:'Управление чатом'},
-    {syntax:'.antimute on',title:'Включить антимут',description:'Разрешает одну ручную попытку отправки через Telegram Business. Нужны Premium и право «Отвечать».',access:'premium',group:'Управление чатом'},
-    {syntax:'.antimute off',title:'Выключить антимут',description:'Отключает ручную отправку через антимут. Доступно бесплатно.',access:'free',group:'Управление чатом'},
-    {syntax:'.antimute текст',title:'Ручная отправка',description:'Одна попытка отправить указанный текст через подключённый Telegram Business. Ограничения Telegram не обходятся.',access:'premium',group:'Управление чатом'},
-    {syntax:'.antimut on',title:'Включить антимут (короткий алиас)',description:'Включает антимут. Нужны Premium и право Telegram Business «Отвечать».',access:'premium',group:'Управление чатом'},
-    {syntax:'.antimut off',title:'Выключить антимут (короткий алиас)',description:'Отключает антимут бесплатно.',access:'free',group:'Управление чатом'},
-    {syntax:'.antimut текст',title:'Ручная отправка (алиас)',description:'Одна ручная попытка отправки через Telegram Business.',access:'premium',group:'Управление чатом'},
+    {syntax:'.antimute',title:'Включить антимут',description:'Включает режим видимости сообщений владельца в истории FLAMEXBOT. Нужен Premium.',access:'premium',group:'Управление чатом'},
+    {syntax:'.unantimute',title:'Выключить антимут',description:'Выключает режим антимута. Доступно бесплатно.',access:'free',group:'Управление чатом'},
     {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Отправляет от двух до пяти копий текста с паузой. Используй только когда получатель согласен.',access:'premium',group:'Управление чатом'},
     {syntax:'.afk причина',title:'Включить автоответ',description:'Включает AFK-режим и задаёт текст автоматического ответа.',access:'premium',group:'Автоматизация'},
     {syntax:'.unafk',title:'Выключить автоответ',description:'Отключает AFK-режим. Доступно бесплатно.',access:'free',group:'Автоматизация'},
@@ -1489,6 +1492,16 @@ async function renderCommands(host) {
     {syntax:'.autovoice off',title:'Отключить статус записи',description:'Выключает статус записи бесплатно.',access:'free',group:'Автоматизация'},
     {syntax:'.mutestick on',title:'Фильтр стикеров',description:'Включает фильтрацию входящих стикеров. Нужен Premium.',access:'premium',group:'Автоматизация'},
     {syntax:'.mutestick off',title:'Отключить фильтр стикеров',description:'Выключает фильтрацию бесплатно.',access:'free',group:'Автоматизация'},
+    {syntax:'.autoread',title:'Автопрочтение',description:'Автоматически отмечает входящие Business-сообщения прочитанными.',access:'premium',group:'Автоматизация'},
+    {syntax:'.unautoread',title:'Выключить автопрочтение',description:'Отключает автоматическое прочтение сообщений.',access:'free',group:'Автоматизация'},
+    {syntax:'.autotyping',title:'Статус набора',description:'Включает статус «печатает…» в чате.',access:'premium',group:'Автоматизация'},
+    {syntax:'.unautotyping',title:'Отключить статус набора',description:'Выключает статус «печатает…».',access:'free',group:'Автоматизация'},
+    {syntax:'.autovoice',title:'Статус записи голосового',description:'Включает статус записи голосового сообщения.',access:'premium',group:'Автоматизация'},
+    {syntax:'.unautovoice',title:'Отключить статус записи',description:'Выключает статус записи голосового.',access:'free',group:'Автоматизация'},
+    {syntax:'.mutestick',title:'Фильтр стикеров',description:'Автоматически удаляет входящие стикеры в Business-чатах.',access:'premium',group:'Фильтры'},
+    {syntax:'.unmutestick',title:'Отключить фильтр стикеров',description:'Отключает фильтр входящих стикеров.',access:'free',group:'Фильтры'},
+    {syntax:'.antimat',title:'Антимат',description:'Фильтрует часть распространённой ненормативной лексики во входящих текстовых сообщениях.',access:'premium',group:'Фильтры'},
+    {syntax:'.unantimat',title:'Отключить антимат',description:'Отключает фильтр ненормативной лексики.',access:'free',group:'Фильтры'},
     {syntax:'.timeprofile',title:'Московское время',description:'Закрепляет часовой пояс FLAMEXBOT: Москва, UTC+3.',access:'premium',group:'Профиль'},
     {syntax:'.time',title:'Показывать время',description:'Включает отображение времени в профиле.',access:'premium',group:'Профиль'},
     {syntax:'.untime',title:'Скрыть время',description:'Выключает отображение времени в профиле. Доступно бесплатно.',access:'free',group:'Профиль'},
