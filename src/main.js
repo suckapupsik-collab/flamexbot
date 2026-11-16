@@ -101,8 +101,8 @@ const BADGE_META = {
   partner:{label:'Партнёр',icon:'🤝',className:'partner'},
   premium:{label:'Premium',icon:'✧',className:'premium'}
 };
-function badgeMarkup(codes=[],compact=false) {
-  const unique=[...new Set([...(codes||[]),...(isPremium()?['premium']:[])])];
+function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
+  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&isPremium()?['premium']:[])])];
   return unique.filter(code=>BADGE_META[code]).map(code=>{
     const b=BADGE_META[code];
     return `<span class="role-badge badge-${b.className} ${compact?'compact':''}" title="${esc(b.label)}"><i>${b.icon}</i>${compact?'':`<span>${esc(b.label)}</span>`}</span>`;
@@ -586,28 +586,105 @@ async function openBusinessChat(id) {
 }
 
 async function renderAdmin(host) {
-  const { data: allowed, error: accessError } = await supabase.rpc('is_flamexbot_admin');
-  if (accessError || allowed !== true || !state.isAdmin) {
-    host.innerHTML = '<div class="page-heading"><div class="eyebrow">ACCESS DENIED</div><h1>Нет доступа</h1><p class="muted">Админ-панель доступна только владельцу @Racer_Video.</p></div>';
+  const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
+  if(accessError||allowed!==true||!state.isAdmin){
+    host.innerHTML='<div class="page-heading"><div class="eyebrow">ACCESS DENIED</div><h1>Нет доступа</h1><p class="muted">Административные инструменты доступны только уполномоченному владельцу.</p></div>';
     return;
   }
-  const [connections, chats, messages, users, recentChats] = await Promise.all([
-    supabase.from('flamexbot_business_connections').select('is_enabled,connected_at,rights').eq('profile_id',state.session.user.id).maybeSingle(),
-    supabase.from('flamexbot_business_chats').select('id',{count:'exact',head:true}).eq('profile_id',state.session.user.id),
-    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}),
-    supabase.from('profiles').select('id,username,display_name,telegram_username,telegram_id,created_at').order('created_at',{ascending:false}).limit(8),
-    supabase.from('flamexbot_business_chats').select('id,username,first_name,last_name,last_message_at').eq('profile_id',state.session.user.id).order('last_message_at',{ascending:false}).limit(8)
+  const [all,verified,premium,banned]=await Promise.all([
+    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'all',p_banned:'all'}),
+    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'verified',p_premium:'all',p_banned:'all'}),
+    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'premium',p_banned:'all'}),
+    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'all',p_banned:'banned'})
   ]);
-  const connection = connections.data;
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">FOUNDER CONTROL</div><h1>Админ-панель</h1><p class="muted">Закрытая панель владельца FLAMEXBOT.</p></div>
-    <div class="admin-owner-card"><span class="admin-crown">✦</span><div><b>@Racer_Video</b><small>Единственный администратор · Founder</small></div><span class="business-status is-connected">Доступ подтверждён</span></div>
-    <div class="stats-grid"><div class="stat-card"><small>BUSINESS BOT</small><strong>${connection?.is_enabled ? 'ON' : 'OFF'}</strong><span class="stat-foot">Подключение Telegram</span></div><div class="stat-card"><small>BUSINESS-ЧАТЫ</small><strong>${chats.count || 0}</strong><span class="stat-foot">Полученные переписки</span></div><div class="stat-card"><small>СООБЩЕНИЯ</small><strong>${messages.count || 0}</strong><span class="stat-foot">Сохранённые сообщения</span></div></div>
-    <section class="business-card"><div class="business-card-head"><div><div class="eyebrow">SECURITY</div><h2>Права доступа</h2><p class="muted">Обычные личные чаты отключены. В приложении используются только переписки Telegram Business.</p></div><span class="business-status is-connected">Founder only</span></div></section>
-    <div class="section-heading"><div><div class="eyebrow">COMMUNITY</div><h3>Последние пользователи</h3></div></div>
-    <div class="people-list">${(users.data||[]).map(u=>`<div class="person-row"><div class="person-info"><b>${esc(u.display_name||u.username)}</b><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${new Date(u.created_at).toLocaleDateString('ru-RU')}</small></div><span class="business-status">${u.telegram_id?'Telegram':'Web ID'}</span></div>`).join('')||'<div class="empty-state">Пользователей пока нет.</div>'}</div>
-    <div class="section-heading"><div><div class="eyebrow">BUSINESS INBOX</div><h3>Последние переписки</h3></div></div>
-    <div class="people-list">${(recentChats.data||[]).map(ch=>`<div class="person-row"><div class="person-info"><b>${esc([ch.first_name,ch.last_name].filter(Boolean).join(' ')||ch.username||'Telegram-пользователь')}</b><small>${ch.username?'@'+esc(ch.username)+' · ':''}${ch.last_message_at?new Date(ch.last_message_at).toLocaleString('ru-RU'):'Нет сообщений'}</small></div><span class="business-only-tag">Business</span></div>`).join('')||'<div class="empty-state">Business-чатов пока нет.</div>'}</div>`;
-
+  const count=result=>result.data?.[0]?.total_count||0;
+  host.innerHTML=`<div class="page-heading admin-heading"><div class="eyebrow">FOUNDER CONTROL CENTER</div><h1>Админ-панель <span>⚙</span></h1><p class="muted">Управление участниками, верификацией, подписками и безопасностью проекта.</p></div>
+    <section class="admin-welcome-card"><div class="admin-welcome-orb">✦</div><div><span class="admin-live-pill"><i></i> FOUNDER ACCESS</span><h2>Добро пожаловать, владелец</h2><p>Все административные действия проверяются сервером. Значки ролей не дают права доступа к панели — права остаются только у владельца.</p></div><span class="admin-crown">👑</span></section>
+    <div class="admin-stat-grid">
+      <article class="admin-stat"><span>👥</span><small>ВСЕ УЧАСТНИКИ</small><b>${count(all)}</b><em>Зарегистрировано</em></article>
+      <article class="admin-stat"><span>🔵</span><small>ВЕРИФИЦИРОВАНЫ</small><b>${count(verified)}</b><em>С синей галочкой</em></article>
+      <article class="admin-stat"><span>✦</span><small>PREMIUM</small><b>${count(premium)}</b><em>Активные подписки</em></article>
+      <article class="admin-stat"><span>⛔</span><small>ЗАБЛОКИРОВАНЫ</small><b>${count(banned)}</b><em>Модерация</em></article>
+    </div>
+    <div class="admin-section-title"><div><div class="eyebrow">CONTROL MODULES</div><h3>Инструменты управления</h3></div><span class="admin-secure">🔐 Защищённый доступ</span></div>
+    <div class="admin-module-grid">
+      <button class="admin-module" data-go="users"><span class="admin-module-icon users">👥</span><b>Все пользователи</b><small>Поиск, сортировка, фильтры и карточки участников</small><i>Открыть →</i></button>
+      <button class="admin-module" data-go="users" data-filter="verified"><span class="admin-module-icon verify">🔵</span><b>Верификация</b><small>Синие галочки и официальные значки ролей</small><i>Управлять →</i></button>
+      <button class="admin-module" data-go="users" data-filter="premium"><span class="admin-module-icon premium">✦</span><b>Premium</b><small>Выдача, продление и снятие подписки</small><i>Управлять →</i></button>
+      <button class="admin-module" data-go="users" data-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
+    </div>
+    <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки и снятия синей галочки. Назначение ролей другим пользователям не выдаёт им административный доступ.</small></div></div><span class="business-status is-connected">SECURE</span></section>
+    ${all.error||verified.error||premium.error||banned.error?'<p class="business-warning">Не удалось загрузить часть административной статистики.</p>':''}`;
+}
+async function renderUsers(host) {
+  const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
+  if(accessError||allowed!==true||!state.isAdmin){
+    host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Раздел доступен только владельцу FLAMEXBOT.</p></div>';
+    return;
+  }
+  const filters=state.userFilters;
+  const {data,error}=await supabase.rpc('admin_list_flamexbot_users',{
+    p_search:filters.search||null,p_verified:filters.verified,p_premium:filters.premium,p_banned:filters.banned,p_limit:50,p_offset:0
+  });
+  const users=data||[];
+  const total=users[0]?.total_count||0;
+  const roleOptions=[
+    ['developer','Разработчик'],['administrator','Администратор'],['moderator','Модератор'],
+    ['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],
+    ['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']
+  ];
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">COMMUNITY DIRECTORY</div><h1>Все пользователи <span>👥</span></h1><p class="muted">Участники отсортированы от новых к старым. Здесь можно управлять галочками, ролями, Premium и блокировками.</p></div>
+    <section class="users-toolbar-card">
+      <form id="users-filter-form" class="users-filter-form">
+        <label class="users-search-field"><span>⌕</span><input name="search" value="${esc(filters.search)}" placeholder="Имя, никнейм или Telegram ID"/></label>
+        <select name="verified"><option value="all" ${filters.verified==='all'?'selected':''}>Все галочки</option><option value="verified" ${filters.verified==='verified'?'selected':''}>🔵 С галочкой</option><option value="unverified" ${filters.verified==='unverified'?'selected':''}>Без галочки</option></select>
+        <select name="premium"><option value="all" ${filters.premium==='all'?'selected':''}>Все тарифы</option><option value="premium" ${filters.premium==='premium'?'selected':''}>✦ Premium</option><option value="free" ${filters.premium==='free'?'selected':''}>Free</option></select>
+        <select name="banned"><option value="all" ${filters.banned==='all'?'selected':''}>Все статусы</option><option value="active" ${filters.banned==='active'?'selected':''}>Активные</option><option value="banned" ${filters.banned==='banned'?'selected':''}>Заблокированные</option></select>
+        <button class="primary small" type="submit">Применить фильтры</button>
+      </form>
+      <div class="users-toolbar-foot"><span>Найдено участников: <b>${total}</b></span><span>Сортировка: <b>сначала новые ↓</b></span></div>
+    </section>
+    <div class="admin-user-list">${users.map(u=>{
+      const owner=u.telegram_id===FOUNDER_TELEGRAM_ID;
+      const badges=[...(u.badge_codes||[])];
+      if(u.is_premium&&!badges.includes('premium'))badges.push('premium');
+      const display=u.display_name||u.username||'Пользователь';
+      return `<article class="admin-user-card" data-user-card="${u.id}">
+        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${new Date(u.created_at).toLocaleDateString('ru-RU')}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
+        <div class="admin-user-actions">
+          <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${owner&&u.is_verified?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
+          <button class="admin-action ${u.is_banned?'safe':''}" data-user-action="${u.is_banned?'unban':'ban'}" data-user-id="${u.id}" ${owner?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
+          <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}">✦ ${u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
+          <button class="admin-action" data-user-action="premium_revoke" data-user-id="${u.id}" ${!u.is_premium||owner?'disabled':''}>Снять Premium</button>
+        </div>
+        <div class="admin-role-controls"><label>Значок роли<select data-role-select="${u.id}"><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}">Выдать значок</button><label>Снять значок<select data-role-remove="${u.id}"><option value="">Выбрать значок…</option>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<option value="${code}">${esc(BADGE_META[code]?.label||code)}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}">Снять</button>
+        </div>
+      </article>`;
+    }).join('')||'<div class="empty-state">По заданным фильтрам никого не найдено.</div>'}</div>
+    ${error?'<p class="business-warning">Не удалось загрузить пользователей: '+esc(error.message)+'</p>':''}`;
+  host.querySelector('#users-filter-form')?.addEventListener('submit',event=>{
+    event.preventDefault();const fd=new FormData(event.currentTarget);
+    state.userFilters={search:String(fd.get('search')||'').trim(),verified:String(fd.get('verified')||'all'),premium:String(fd.get('premium')||'all'),banned:String(fd.get('banned')||'all')};
+    renderUsers(host);
+  });
+  host.querySelectorAll('[data-user-action]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const action=btn.dataset.userAction,userId=btn.dataset.userId;
+    const card=btn.closest('[data-user-card]');
+    let reason=null,days=30,badgeCode=null;
+    if(action==='ban'){reason=prompt('Причина блокировки (будет сохранена в карточке пользователя):','Нарушение правил сообщества');if(reason===null)return;}
+    if(action==='premium_grant'){const raw=prompt('На сколько дней выдать или продлить Premium? Введи 0 для бессрочной подписки.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}}
+    if(action==='badge_grant')badgeCode=card?.querySelector('[data-role-select]')?.value||null;
+    if(action==='badge_revoke')badgeCode=card?.querySelector('[data-role-remove]')?.value||null;
+    if(['badge_grant','badge_revoke'].includes(action)&&!badgeCode){toast('Сначала выбери значок');return;}
+    if(['unban','premium_revoke','unverify','badge_revoke'].includes(action)&&!confirm('Подтвердить это действие?'))return;
+    btn.disabled=true;
+    const {data, error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{
+      p_user_id:userId,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days
+    });
+    if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
+    toast(({ban:'Пользователь заблокирован',unban:'Блокировка снята',verify:'Синяя галочка выдана',unverify:'Галочка снята',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',badge_grant:'Значок выдан',badge_revoke:'Значок снят'})[action]||'Изменения сохранены');
+    await renderUsers(host);
+  }));
 }
 
 async function renderTariffs(host) {
@@ -709,30 +786,69 @@ async function renderProfile(host) {
 
 async function renderDailyMissions(host) {
   const uid=state.session.user.id;
-  const now=new Date();const dayStart=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));const dayEnd=new Date(dayStart.getTime()+86400000);
-  const start=dayStart.toISOString();const end=dayEnd.toISOString();const today=dayStart.toISOString().slice(0,10);
-  const [sent,received,streaks,claims]=await Promise.all([
+  const now=new Date();
+  const dayStart=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));
+  const dayEnd=new Date(dayStart.getTime()+86400000);
+  const start=dayStart.toISOString(),end=dayEnd.toISOString(),today=dayStart.toISOString().slice(0,10);
+  const [catalog,sent,received,sentChats,streaks,friends,claims]=await Promise.all([
+    supabase.rpc('get_flamexbot_daily_tasks'),
     supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}).eq('direction','outbound').gte('created_at',start).lt('created_at',end),
     supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}).eq('direction','inbound').gte('created_at',start).lt('created_at',end),
+    supabase.from('flamexbot_business_messages').select('business_chat_id').eq('direction','outbound').gte('created_at',start).lt('created_at',end).limit(1000),
     supabase.from('streaks').select('id',{count:'exact',head:true}).or(`user_low.eq.${uid},user_high.eq.${uid}`).eq('last_activity_date',today),
+    supabase.from('friendships').select('id',{count:'exact',head:true}).or(`user_low.eq.${uid},user_high.eq.${uid}`).gte('created_at',start).lt('created_at',end),
     supabase.from('flamexbot_daily_task_claims').select('task_code,xp_reward').eq('user_id',uid).eq('task_date',today)
   ]);
+  const sentCount=sent.count||0,receivedCount=received.count||0;
+  const chatCount=new Set((sentChats.data||[]).map(x=>x.business_chat_id)).size;
+  const streakCount=streaks.count||0,friendCount=friends.count||0;
+  const progressByCode={
+    send_message:[sentCount,1],
+    receive_message:[receivedCount,1],
+    keep_streak:[streakCount,1],
+    add_friend:[friendCount,1],
+    send_three_messages:[sentCount,3],
+    message_two_chats:[chatCount,2],
+    receive_three_messages:[receivedCount,3],
+    send_five_messages:[sentCount,5],
+    keep_two_streaks:[streakCount,2],
+    message_three_chats:[chatCount,3]
+  };
   const completed=new Set((claims.data||[]).map(x=>x.task_code));
-  const tasks=[
-    {code:'send_message',title:'Зажечь диалог',desc:'Отправь хотя бы одно сообщение через Business',reward:10,done:(sent.count||0)>0,progress:Math.min(1,sent.count||0)},
-    {code:'receive_message',title:'Быть на связи',desc:'Получи хотя бы одно входящее сообщение',reward:5,done:(received.count||0)>0,progress:Math.min(1,received.count||0)},
-    {code:'keep_streak',title:'Сохранить огонёк',desc:'Поддержи совместную серию сегодня',reward:10,done:(streaks.count||0)>0,progress:Math.min(1,streaks.count||0)}
-  ];
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ЕЖЕДНЕВНЫЕ ЗАДАНИЯ</div><h1>Ежедневные задания ⚡</h1><p class="muted">Выполняй небольшие ежедневные задания, получай XP и открывай новые достижения. Прогресс обновляется каждый день.</p></div><div class="daily-task-list">${tasks.map(t=>{const claimed=completed.has(t.code);return `<article class="daily-task ${claimed?'claimed':t.done?'ready':''}"><div class="daily-task-icon">${t.code==='send_message'?'💬':t.code==='receive_message'?'📩':'🔥'}</div><div class="daily-task-copy"><b>${t.title}</b><p>${t.desc}</p><small>${claimed?'Награда получена':t.done?'Задание выполнено':'Прогресс: '+(t.progress?'1':'0')+'/1'} · +${t.reward} XP</small></div><button class="${t.done&&!claimed?'primary':'outline'} small" data-claim-task="${t.code}" ${!t.done||claimed?'disabled':''}>${claimed?'Получено':t.done?'Забрать':'В процессе'}</button></article>`;}).join('')}</div>${sent.error||received.error||streaks.error||claims.error?'<p class="business-warning">Часть прогресса не удалось загрузить. Попробуй обновить страницу.</p>':''}`;
+  const tasks=catalog.data||[];
+  const totalXp=(claims.data||[]).reduce((sum,x)=>sum+(x.xp_reward||0),0);
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">НОВЫЙ ЦИКЛ КАЖДЫЙ ДЕНЬ</div><h1>Ежедневные задания <span>⚡</span></h1><p class="muted">Каждый день система выбирает три новых испытания. Выполняй их, забирай XP и прокачивай свой уровень.</p></div>
+    <section class="daily-mission-hero"><div><span class="mission-live-dot"></span><b>Сегодняшний набор</b><small>Обновление в 00:00 UTC · ${new Date(today+'T00:00:00Z').toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</small></div><strong>+ ${totalXp} XP <small>сегодня</small></strong></section>
+    <div class="daily-task-list">${tasks.map(t=>{
+      const [current,target]=progressByCode[t.task_code]||[0,1];
+      const claimed=completed.has(t.task_code);
+      const done=current>=target;
+      const percent=Math.min(100,Math.round(current/target*100));
+      return `<article class="daily-task task-v2 ${claimed?'claimed':done?'ready':''}">
+        <div class="daily-task-icon">${esc(t.icon||'⚡')}</div>
+        <div class="daily-task-copy"><div class="task-title-line"><b>${esc(t.title)}</b><span class="task-reward">+${t.xp_reward} XP</span></div><p>${esc(t.description||'')}</p>
+          <div class="task-progress-track"><span style="width:${percent}%"></span></div>
+          <small>${claimed?'Награда уже у тебя':done?'Выполнено — забери награду':`Прогресс: ${Math.min(current,target)}/${target}`}</small>
+        </div>
+        <button class="${done&&!claimed?'primary':'outline'} small" data-claim-task="${esc(t.task_code)}" ${!done||claimed?'disabled':''}>${claimed?'Получено':done?'Забрать XP':'В процессе'}</button>
+      </article>`;
+    }).join('')||'<div class="empty-state">Новый набор заданий скоро появится.</div>'}</div>
+    <div class="daily-task-footer"><span>🎯</span><div><b>Задания меняются автоматически</b><small>Условия честно проверяются сервером. Повторно забрать награду за одно задание в тот же день нельзя.</small></div></div>
+    ${catalog.error||sent.error||received.error||sentChats.error||streaks.error||friends.error||claims.error?'<p class="business-warning">Не удалось загрузить часть прогресса. Попробуй открыть задания ещё раз.</p>':''}`;
   host.querySelectorAll('[data-claim-task]').forEach(btn=>btn.addEventListener('click',async()=>{
-    btn.disabled=true;const {data,error}=await supabase.rpc('claim_flamexbot_daily_task',{p_task_code:btn.dataset.claimTask});
-    if(error){toast(error.message.includes('already claimed')?'Награда уже получена сегодня':'Не удалось забрать награду: '+error.message);btn.disabled=false;return;}
-    toast('Получено +'+(data?.xp_reward||0)+' XP');renderDailyMissions(host);
+    const taskCode=btn.dataset.claimTask;
+    btn.disabled=true;btn.classList.add('is-loading');
+    const {data,error}=await supabase.rpc('claim_flamexbot_daily_task',{p_task_code:taskCode});
+    if(error){toast(error.message.includes('already claimed')?'Награда уже получена сегодня':error.message.includes('not active today')?'Набор заданий обновился. Открой страницу ещё раз.':'Не удалось забрать награду: '+error.message);btn.disabled=false;btn.classList.remove('is-loading');return;}
+    await supabase.rpc('sync_flamexbot_achievements');
+    toast('Получено +'+(data?.xp_reward||0)+' XP');
+    renderDailyMissions(host);
   }));
 }
 
 async function renderAchievements(host) {
   const uid=state.session.user.id;
+  await supabase.rpc('sync_flamexbot_achievements');
   const [all,earned,taskClaims,leaderboard]=await Promise.all([
     supabase.from('achievements').select('id,code,title,description,icon,points').order('points'),
     supabase.from('user_achievements').select('achievement_id,earned_at').eq('user_id',uid),
@@ -742,11 +858,29 @@ async function renderAchievements(host) {
   const got=new Map((earned.data||[]).map(x=>[x.achievement_id,x]));
   const achievementXp=(all.data||[]).filter(a=>got.has(a.id)).reduce((sum,a)=>sum+(a.points||0),0);
   const totalXp=achievementXp+(taskClaims.data||[]).reduce((sum,x)=>sum+(x.xp_reward||0),0);
-  const level=Math.floor(totalXp/100)+1;
-  const nextXp=level*100;
-  const progress=totalXp%100;
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ТВОЯ КОЛЛЕКЦИЯ</div><h1>Достижения 🏆</h1><p class="muted">Каждое достижение связано с активностью внутри FLAMEXBOT.</p></div><section class="business-card level-card"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ</small><h2>Уровень ${level}</h2></div><strong>${totalXp} XP</strong></div><div class="xp-track"><span style="width:${progress}%"></span></div><small>${progress}/100 XP до следующего уровня</small></section><div class="achievement-grid">${(all.data||[]).map(a=>{const e=got.get(a.id);return `<article class="achievement-card ${e?'earned':'locked'}"><div class="achievement-icon">${esc(a.icon||'✦')}</div><div><b>${esc(a.title)}</b><p>${esc(a.description||'')}</p><small>${e?'Получено '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Пока не получено'} · ${a.points} XP</small></div></article>`;}).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div><section class="leaderboard-panel"><div class="section-heading"><div><div class="eyebrow">РЕЙТИНГ СООБЩЕСТВА</div><h3>Таблица лидеров</h3></div></div><div class="leaderboard-list">${(leaderboard.data||[]).map((u,i)=>`<div class="leaderboard-row"><strong>#${i+1}</strong><span><b>${esc(u.display_name||u.username)}</b><small>Уровень ${u.level}</small></span><em>${u.xp} XP</em></div>`).join('')||'<div class="empty-state">Рейтинг появится, когда участники начнут получать XP.</div>'}</div></section>${all.error||earned.error||taskClaims.error||leaderboard.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию или рейтинг.</p>':''}`;
+  const level=Math.floor(totalXp/100)+1,progress=totalXp%100;
+  const items=all.data||[];
+  const rarity=points=>points>=200?['Легендарное','legendary']:points>=100?['Эпическое','epic']:points>=50?['Редкое','rare']:['Обычное','common'];
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ТВОЯ КОЛЛЕКЦИЯ</div><h1>Достижения <span>🏆</span></h1><p class="muted">Не ежедневные поручения, а настоящие вехи твоего пути в FLAMEXBOT. Каждая награда открывается за конкретное достижение.</p></div>
+    <section class="business-card level-card level-card-v2"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ</small><h2>Уровень ${level}</h2><div class="level-badges">${badgeMarkup(state.profileBadges)}</div></div><strong>${totalXp} XP</strong></div><div class="xp-track"><span style="width:${progress}%"></span></div><div class="level-foot"><small>${progress}/100 XP до следующего уровня</small><b>${got.size} / ${items.length} открыто</b></div></section>
+    <div class="achievement-filter-row"><button class="achievement-filter active" data-achievement-filter="all">Все <span>${items.length}</span></button><button class="achievement-filter" data-achievement-filter="earned">Полученные <span>${got.size}</span></button><button class="achievement-filter" data-achievement-filter="locked">Закрытые <span>${items.length-got.size}</span></button></div>
+    <div class="achievement-grid achievement-grid-v2">${items.map(a=>{
+      const e=got.get(a.id),r=rarity(a.points||0);
+      return `<article class="achievement-card achievement-v2 ${e?'earned':'locked'} rarity-${r[1]}" data-achievement-state="${e?'earned':'locked'}">
+        <div class="achievement-icon-wrap"><div class="achievement-icon">${esc(a.icon||'✦')}</div><span class="achievement-glint"></span></div>
+        <div class="achievement-copy"><div class="achievement-card-top"><b>${esc(a.title)}</b><span class="achievement-rarity">${r[0]}</span></div><p>${esc(a.description||'')}</p><small>${e?'Открыто '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Ещё впереди'} · +${a.points} XP</small></div>
+        <span class="achievement-state-mark">${e?'✓':'🔒'}</span>
+      </article>`;
+    }).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div>
+    <section class="leaderboard-panel leaderboard-v2"><div class="section-heading"><div><div class="eyebrow">РЕЙТИНГ СООБЩЕСТВА</div><h3>Таблица лидеров</h3></div><span class="leaderboard-live">● LIVE</span></div><div class="leaderboard-list">${(leaderboard.data||[]).map((u,i)=>`<div class="leaderboard-row"><strong>#${i+1}</strong><span><b>${esc(u.display_name||u.username)}</b><small>Уровень ${u.level}</small></span><em>${u.xp} XP</em></div>`).join('')||'<div class="empty-state">Рейтинг появится, когда участники начнут получать XP.</div>'}</div></section>
+    ${all.error||earned.error||taskClaims.error||leaderboard.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию или рейтинг.</p>':''}`;
+  host.querySelectorAll('[data-achievement-filter]').forEach(btn=>btn.addEventListener('click',()=>{
+    host.querySelectorAll('[data-achievement-filter]').forEach(x=>x.classList.toggle('active',x===btn));
+    const filter=btn.dataset.achievementFilter;
+    host.querySelectorAll('[data-achievement-state]').forEach(card=>card.hidden=filter!=='all'&&card.dataset.achievementState!==filter);
+  }));
 }
+
 async function renderNotifications(host) {
   const uid=state.session.user.id;
   const {data,error}=await supabase.from('notifications').select('id,type,title,body,data,created_at,read_at').eq('user_id',uid).order('created_at',{ascending:false}).limit(50);
