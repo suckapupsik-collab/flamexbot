@@ -96,8 +96,26 @@ function renderAuth() {
 }
 
 function navItem(page, icon, label) { return `<button class="nav-item ${state.page === page ? 'selected' : ''}" data-page="${page}"><span>${icon}</span>${label}</button>`; }
-function isPremium() { return ['premium','pro','founder'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
-function planLabel() { return state.subscription?.plan==='founder'&&isPremium()?'FOUNDER':state.subscription?.plan==='pro'&&isPremium()?'PRO':isPremium()?'PREMIUM':'FREE'; }
+function isPremium() { return ['premium','pro'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
+function planLabel() { return state.subscription?.plan==='pro'&&isPremium()?'PRO':isPremium()?'PREMIUM':'FREE'; }
+async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=null) {
+  try {
+    const {data,error}=await supabase.functions.invoke('flamexbot-user-notify',{
+      body:{target_user_id:targetUserId,action,badge_code:badgeCode}
+    });
+    if(error) {
+      console.warn('Telegram admin notification:',error.message);
+      toast('Изменение сохранено, но уведомление в Telegram не отправлено.');
+      return;
+    }
+    if(data?.delivered===false) {
+      toast('Изменение сохранено. Бот не смог написать пользователю — он должен хотя бы раз запустить FLAMEXBOT.');
+    }
+  } catch(error) {
+    console.warn('Telegram admin notification:',error?.message||error);
+    toast('Изменение сохранено, но уведомление в Telegram не отправлено.');
+  }
+}
 const PAGE_LABELS = {
   home:'Обзор', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
@@ -126,7 +144,7 @@ function verifiedMarkMarkup(verified=false) {
 }
 function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
   const ownPlan=state.subscription?.plan;
-  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&ownPlan==='premium'&&isPremium()?['premium']:[]),...(includeOwnPremium&&ownPlan==='pro'&&isPremium()?['pro']:[]),...(includeOwnPremium&&ownPlan==='founder'&&isPremium()?['founder']:[])])];
+  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&ownPlan==='premium'&&isPremium()?['premium']:[]),...(includeOwnPremium&&ownPlan==='pro'&&isPremium()?['pro']:[])])];
   return unique.filter(code=>code!=='verified'&&BADGE_META[code]).map(code=>{
     const b=BADGE_META[code];
     return `<span class="role-badge badge-${b.className} ${compact?'compact':''}" title="${esc(b.label)}"><i>${b.icon}</i>${compact?'':`<span>${esc(b.label)}</span>`}</span>`;
@@ -500,11 +518,10 @@ async function renderBusinessMessages(host) {
   state.businessRights = connection?.rights || {};
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">ПЕРЕПИСКИ TELEGRAM BUSINESS</div><h1>Переписки</h1><p class="muted">Все диалоги синхронизируются через Telegram Business. Сообщения отправляются от имени подключённого аккаунта — только в пределах выданных Telegram разрешений.</p></div>
     <div class="business-inbox-status ${connected ? 'online' : ''}"><span></span><div><b>${connected ? 'Telegram Business подключён' : 'Telegram Business не подключён'}</b><small>${connected ? 'Список диалогов обновляется автоматически.' : 'Подключи FLAMEXBOT в Telegram → Настройки → Telegram Business → Чат-боты.'}</small></div></div>
-    <div class="business-inbox-tools"><input id="business-chat-search" type="search" placeholder="Найти диалог по имени"/><div class="quick-replies"><button type="button" data-quick-reply="Привет! Чем могу помочь?">Привет</button><button type="button" data-quick-reply="Спасибо за сообщение!">Спасибо</button><button type="button" data-quick-reply="Сейчас уточню и вернусь с ответом.">Уточню</button></div></div><div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
+    <div class="business-inbox-tools"><input id="business-chat-search" type="search" placeholder="Найти диалог по имени"/></div><div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
     <section class="chat-window" id="business-chat-window"><div class="chat-placeholder"><span>✈</span><b>Твои переписки</b><small>Выбери диалог, чтобы открыть историю сообщений и настройки.</small></div></section></div>`;
   bindBusinessChatChoices(host);bindBusinessChatPreferences(host);bindBusinessSearch(host);
   refreshMissingBusinessAvatars(host);
-  host.querySelectorAll('[data-quick-reply]').forEach(btn=>btn.addEventListener('click',()=>{const input=document.querySelector('#business-send-form input[name=content]');if(input){input.value=btn.dataset.quickReply;input.focus();}}));
   state.businessListChannel = supabase.channel(`business-chat-list-${uid}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'flamexbot_business_chats', filter: `profile_id=eq.${uid}` }, () => scheduleBusinessChatListRefresh(host))
     .subscribe(status => {
@@ -977,7 +994,8 @@ async function renderAdmin(host) {
   const actionLabels={
     ban:'Заблокирован аккаунт',unban:'Снята блокировка',verify:'Выдана синяя галочка',
     unverify:'Снята синяя галочка',premium_grant:'Выдан или продлён Premium',
-    premium_revoke:'Снят Premium',badge_grant:'Выдан значок роли',badge_revoke:'Снят значок роли'
+    premium_revoke:'Снят Premium',pro_grant:'Выдан или продлён PRO',pro_revoke:'Снят PRO',
+    badge_grant:'Выдан значок роли',badge_revoke:'Снят значок роли'
   };
   const auditRows=(audit.data||[]).map(item=>{
     const extra=item.reason||item.badge_code||(item.duration_days!=null?'Срок: '+(item.duration_days===0?'бессрочно':item.duration_days+' дн.'):'');
@@ -1039,7 +1057,7 @@ async function renderUsers(host) {
       <form id="users-filter-form" class="users-filter-form">
         <label class="users-search-field"><span>⌕</span><input name="search" value="${esc(filters.search)}" placeholder="Имя, никнейм или Telegram ID"/></label>
         <select name="verified"><option value="all" ${filters.verified==='all'?'selected':''}>Все галочки</option><option value="verified" ${filters.verified==='verified'?'selected':''}>🔵 С галочкой</option><option value="unverified" ${filters.verified==='unverified'?'selected':''}>Без галочки</option></select>
-        <select name="premium"><option value="all" ${filters.premium==='all'?'selected':''}>Все тарифы</option><option value="premium" ${filters.premium==='premium'?'selected':''}>✦ Premium</option><option value="free" ${filters.premium==='free'?'selected':''}>Free</option></select>
+        <select name="premium"><option value="all" ${filters.premium==='all'?'selected':''}>Все тарифы</option><option value="premium" ${filters.premium==='premium'?'selected':''}>✦ Premium и PRO</option><option value="free" ${filters.premium==='free'?'selected':''}>Free</option></select>
         <select name="banned"><option value="all" ${filters.banned==='all'?'selected':''}>Все статусы</option><option value="active" ${filters.banned==='active'?'selected':''}>Активные</option><option value="banned" ${filters.banned==='banned'?'selected':''}>Заблокированные</option></select>
         <button class="primary small" type="submit">Применить фильтры</button>
       </form>
@@ -1054,13 +1072,15 @@ async function renderUsers(host) {
       const currentRole=badges.find(code=>code!=='premium')||'';
       const display=u.display_name||u.username||'Пользователь';
       return `<article class="admin-user-card" data-user-card="${u.id}">
-        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
+        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">'+((u.badge_codes||[]).includes('pro')?'🔥 PRO':'✦ Premium')+'</span>':'<span class="user-flag free">Free</span>'}</div></div>
         <div class="admin-user-actions">
           <button class="admin-action" data-admin-open="${u.id}">Открыть управление →</button>
           <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
           <button class="admin-action ${u.is_banned?'safe':''}" data-user-action="${u.is_banned?'unban':'ban'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
-          <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${locked?'disabled':''}>✦ ${owner?'Premium владельца':u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
-          <button class="admin-action" data-user-action="premium_revoke" data-user-id="${u.id}" ${!u.is_premium||locked?'disabled':''}>Снять Premium</button>
+          <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${locked?'disabled':''}>✦ ${u.is_premium&&!((u.badge_codes||[]).includes('pro'))?'Продлить Premium':'Выдать Premium'}</button>
+          <button class="admin-action" data-user-action="premium_revoke" data-user-id="${u.id}" ${!u.is_premium||((u.badge_codes||[]).includes('pro'))||locked?'disabled':''}>Снять Premium</button>
+          <button class="admin-action pro" data-user-action="pro_grant" data-user-id="${u.id}" ${locked?'disabled':''}>🔥 ${((u.badge_codes||[]).includes('pro'))?'Продлить PRO':'Выдать PRO'}</button>
+          <button class="admin-action" data-user-action="pro_revoke" data-user-id="${u.id}" ${!((u.badge_codes||[]).includes('pro'))||locked?'disabled':''}>Снять PRO</button>
         </div>
         <div class="admin-role-controls"><label>Заменить значок<select data-role-select="${u.id}" ${locked?'disabled':''}><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}" ${currentRole===code?'selected':''}>${label}${currentRole===code?' · текущий':''}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}">Заменить значок</button><label>Снять значок<select data-role-remove="${u.id}" ${locked?'disabled':''}><option value="">Выбрать значок…</option>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<option value="${code}">${esc(BADGE_META[code]?.label||code)}</option>`).join('')}</select></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}" ${locked?'disabled':''} title="${locked?'Аккаунт администрации защищён от других администраторов':'Снять значок'}">Снять</button>
         </div>
@@ -1081,17 +1101,18 @@ async function renderUsers(host) {
     const card=btn.closest('[data-user-card]');
     let reason=null,days=30,badgeCode=null;
     if(action==='ban'){reason=prompt('Причина блокировки (будет сохранена в карточке пользователя):','Нарушение правил сообщества');if(reason===null)return;}
-    if(action==='premium_grant'){const raw=prompt('На сколько дней выдать или продлить Premium? Введи 0 для бессрочной подписки.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}}
+    if(action==='premium_grant'||action==='pro_grant'){const label=action==='pro_grant'?'PRO':'Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? Введи 0 для бессрочной подписки.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}}
     if(action==='badge_grant')badgeCode=card?.querySelector('[data-role-select]')?.value||null;
     if(action==='badge_revoke')badgeCode=card?.querySelector('[data-role-remove]')?.value||null;
     if(['badge_grant','badge_revoke'].includes(action)&&!badgeCode){toast('Сначала выбери значок');return;}
-    if(['unban','premium_revoke','unverify','badge_revoke'].includes(action)&&!confirm('Подтвердить это действие?'))return;
+    if(['unban','premium_revoke','pro_revoke','unverify','badge_revoke'].includes(action)&&!confirm('Подтвердить это действие?'))return;
     btn.disabled=true;
     const {data, error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{
       p_user_id:userId,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days
     });
     if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
-    toast(({ban:'Пользователь заблокирован',unban:'Блокировка снята',verify:'Синяя галочка выдана',unverify:'Галочка снята',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',badge_grant:'Значок выдан',badge_revoke:'Значок снят'})[action]||'Изменения сохранены');
+    toast(({ban:'Пользователь заблокирован',unban:'Блокировка снята',verify:'Синяя галочка выдана',unverify:'Галочка снята',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',pro_grant:'PRO выдан или продлён',pro_revoke:'PRO снят',badge_grant:'Значок выдан',badge_revoke:'Значок снят'})[action]||'Изменения сохранены');
+    await notifyTelegramAboutAdminAction(userId,action,badgeCode);
     await renderUsers(host);
   }));
 }
@@ -1110,7 +1131,7 @@ async function renderAdminUser(host) {
   const premiumUntil=u.is_premium?(u.premium_expires_at?formatMskDate(u.premium_expires_at):'Бессрочно'):'Не активен';
   host.innerHTML=`<div class="page-heading"><button class="text-button" data-go="users">← Все пользователи</button><div class="eyebrow">ADMIN USER CONTROL</div><h1>Управление аккаунтом</h1><p class="muted">Все изменения проходят серверную проверку и попадают в журнал администрации.</p></div>
     <section class="admin-user-detail-card"><div class="admin-user-detail-top">${avatar(u.avatar_url||u.telegram_photo_url,u.display_name||u.username,'avatar-xl')}<div><h2>${esc(u.display_name||u.username||'Пользователь')}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</h2><p>@${esc(u.telegram_username||u.username||'не задан')} · ${u.telegram_id?'Telegram ID '+esc(u.telegram_id):'Telegram не привязан'}</p><div class="profile-badge-row">${badgeMarkup(badges,false,false)} ${u.is_premium?badgeMarkup(['premium'],false,false):''}</div></div></div>
-      <div class="admin-detail-status"><span class="user-flag ${u.is_banned?'banned':'active'}">${u.is_banned?'⛔ Заблокирован':'● Активен'}</span><span class="user-flag ${u.is_premium?'premium':'free'}">${badges.includes('founder')?'👑 FOUNDER':badges.includes('pro')?'🔥 PRO':u.is_premium?'✦ Premium':'Free'}</span><span class="user-flag">${u.is_verified?'🔵 Подтверждён':'Без галочки'}</span></div>
+      <div class="admin-detail-status"><span class="user-flag ${u.is_banned?'banned':'active'}">${u.is_banned?'⛔ Заблокирован':'● Активен'}</span><span class="user-flag ${u.is_premium?'premium':'free'}">${badges.includes('pro')?'🔥 PRO':badges.includes('founder')?'👑 Основатель':u.is_premium?'✦ Premium':'Free'}</span><span class="user-flag">${u.is_verified?'🔵 Подтверждён':'Без галочки'}</span></div>
       <div class="admin-detail-metrics"><div><small>СООБЩЕНИЯ</small><b>${u.total_messages||0}</b></div><div><small>ДРУЗЬЯ</small><b>${u.friends_count||0}</b></div><div><small>ЛУЧШАЯ СЕРИЯ</small><b>${u.best_streak||0} дн.</b></div><div><small>ДОСТИЖЕНИЯ</small><b>${u.achievements_count||0}</b></div><div><small>ОПЫТ</small><b>${u.xp||0} XP</b></div><div><small>PREMIUM ДО</small><b>${premiumUntil}</b></div></div>
       <div class="admin-detail-actions"><h3>Действия с аккаунтом</h3><div class="admin-detail-action-grid">
         <button class="admin-action" data-admin-detail-action="${u.is_verified?'unverify':'verify'}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять подтверждение':'🔵 Подтвердить аккаунт'}</button>
@@ -1136,6 +1157,7 @@ async function renderAdminUser(host) {
     const {error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{p_user_id:u.id,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days});
     if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
     toast(({ban:'Аккаунт заблокирован',unban:'Блокировка снята',verify:'Аккаунт подтверждён',unverify:'Подтверждение снято',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',pro_grant:'PRO выдан или продлён',pro_revoke:'PRO снят',badge_grant:'Значок заменён',badge_revoke:'Значок снят'})[action]||'Готово');
+    await notifyTelegramAboutAdminAction(u.id,action,badgeCode);
     await renderAdminUser(host);
   }));
 }
@@ -1166,9 +1188,8 @@ function animateFortuneWheel(prizeType) {
 async function renderTariffs(host, initialTab='premium') {
  const premium=isPremium();
  const isPro=state.subscription?.plan==='pro'&&premium;
- const isFounder=state.subscription?.plan==='founder'&&premium;
- const weeklySpins=isFounder?3:isPro?2:premium?1:0;
- const rareLuck=isFounder?15:isPro?10:0;
+ const weeklySpins=isPro?2:premium?1:0;
+ const rareLuck=isPro?10:0;
  const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
  const trialUsed=Boolean(trialRecord);
  const lifetime=premium&&!state.subscription?.expires_at;
@@ -1186,35 +1207,42 @@ async function renderTariffs(host, initialTab='premium') {
  <section class="tariff-tab-panel" data-tariff-panel="premium">
   <div class="tariff-grid">
    <section class="business-card tariff-card ${!premium?'tariff-current':''}">
-    <div class="eyebrow">СТАРТ</div><h2>Free</h2><p class="muted">Всё необходимое, чтобы пользоваться FLAMEXBOT и оставаться на связи.</p>
-    <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и ежедневные задания</li><li>Достижения, уровни и базовая статистика</li></ul>
+    <div class="eyebrow">СТАРТ</div><h2>Free</h2>
+    <p class="muted">Базовые возможности FLAMEXBOT для обычного использования.</p>
+    <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и ежедневные задания</li><li>Достижения и базовая статистика</li></ul>
     <span class="business-status ${!premium?'is-connected':''}">${!premium?'Твой текущий тариф':'Бесплатно'}</span>
    </section>
-   <section class="business-card tariff-card pro-card ${isPro?'tariff-current':''}">
-    <div class="eyebrow">POWER TIER</div><h2>🔥 FLAMEX PRO</h2>
-    <p class="muted">Расширенные инструменты, больше автоматизации и повышенный шанс редких наград.</p>
-    <ul><li>Всё из Premium</li><li><b>+2 бесплатные прокрутки колеса каждую неделю</b></li><li><b>+10% к относительному шансу редких наград</b></li><li>Бейдж PRO и ранний доступ к новым функциям</li><li>Экспорт истории Business-переписки в JSON</li></ul>
-    <span class="business-status ${isPro?'is-connected':''}">${isPro?'Твой текущий тариф · '+(lifetime?'бессрочно':'до '+expires):'Выдаётся администрацией FLAMEXBOT'}</span>
-    <small class="premium-payment-note">Срок выдачи настраивается владельцем или администратором в карточке пользователя.</small>
-   </section>
-   ${isFounder?'<section class="business-card tariff-card founder-card tariff-current"><div class="eyebrow">OWNER EXCLUSIVE</div><h2>👑 FLAMEX FOUNDER</h2><p class="muted">Главный бессрочный тариф владельца проекта.</p><ul><li>Все возможности Premium и PRO</li><li>3 бесплатные прокрутки колеса каждую неделю</li><li>+15% к относительному шансу редких наград</li><li>Защита тарифа на уровне базы данных</li><li>Владелец не может потерять этот тариф из-за продления или награды</li></ul><span class="business-status is-connected">Твой главный тариф · бессрочно</span></section>':''}
-   <section class="business-card tariff-card premium-card ${premium&&!isPro&&!isFounder?'tariff-current':''}">
-    <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2><p class="muted">Дополнительные инструменты для управления Business-диалогами и оформления аккаунта.</p>
+   <section class="business-card tariff-card premium-card ${premium&&state.subscription?.plan==='premium'?'tariff-current':''}">
+    <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2>
+    <p class="muted">Дополнительные инструменты для управления Telegram Business-переписками.</p>
     <ul>
-     <li><code>.mute</code> / <code>.unmute</code> — управление удалением новых входящих сообщений</li>
-     <li><code>.antimute</code> / <code>.unantimute</code> — отправка новых сообщений от имени FLAMEXBOT</li>
+     <li><code>.mute</code> / <code>.unmute</code> — управление новыми входящими сообщениями</li>
+     <li><code>.antimute</code> / <code>.unantimute</code> — альтернативная отправка от имени FLAMEXBOT, когда это разрешает Telegram</li>
      <li><code>.antimat</code> / <code>.unantimat</code> — фильтр ненормативной лексики</li>
-     <li>AFK-автоответ и автоматическое прочтение сообщений</li>
+     <li>Персональный AFK-автоответ и автоматическое прочтение</li>
      <li>Статусы «печатает…» и «записывает голосовое»</li>
-     <li>Фильтр входящих стикеров, время профиля по МСК и оформление текста</li>
-     <li>Эмодзи-оформление Premium-разделов, команд и уведомлений</li>
-     <li>Расширенные настройки и управление Business-диалогами</li>
+     <li>Фильтр стикеров, время профиля по МСК и оформление текста</li>
      <li><b>+1 бесплатная прокрутка колеса каждую неделю</b></li>
     </ul>
     <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
-    <span class="business-status ${premium?'is-connected':''}">${premium?(isFounder?'Доступ из FOUNDER':isPro?'Включён в PRO':'Premium активен · '+(lifetime?'бессрочно':'до '+expires)):'Подписка не активна'}</span>
-    ${lifetime||isPro||isFounder?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
-    <small class="premium-payment-note">Оплата проходит внутри Telegram. Подписка действует 30 дней и не продлевается автоматически.</small>
+    <span class="business-status ${premium?'is-connected':''}">${isPro?'Включён в PRO':premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
+    ${isPro?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
+    <small class="premium-payment-note">Оплата проходит через Telegram Stars. Срок — 30 дней, продление суммирует оставшееся время.</small>
+   </section>
+   <section class="business-card tariff-card pro-card ${isPro?'tariff-current':''}">
+    <div class="eyebrow">POWER TIER</div><h2>🔥 FLAMEX PRO</h2>
+    <p class="muted">Максимальный публичный тариф — больше прокруток, более редкие призы и расширенные возможности.</p>
+    <ul>
+     <li>Всё из Premium</li>
+     <li><b>+2 бесплатные прокрутки колеса каждую неделю</b></li>
+     <li><b>+10% к относительному шансу выпадения редких наград</b></li>
+     <li>Эксклюзивный бейдж PRO и ранний доступ к новым функциям</li>
+     <li>Экспорт выбранной Business-переписки в JSON</li>
+    </ul>
+    <div class="premium-price-line"><b>250 ⭐</b><span>30 дней · разовая оплата</span></div>
+    <span class="business-status ${isPro?'is-connected':''}">${isPro?'Твой текущий тариф · '+(lifetime?'бессрочно':'до '+expires):'Доступен для всех пользователей'}</span>
+    ${isPro?'':'<button class="primary pro-buy-button" id="buy-pro" type="button">'+(premium?'Перейти на PRO · 250 ⭐':'Оплатить PRO · 250 ⭐')+'</button>'}
+    <small class="premium-payment-note">При переходе с Premium оставшееся время сохраняется и добавляется к PRO.</small>
    </section>
   </div>
   <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
@@ -1267,17 +1295,8 @@ async function renderTariffs(host, initialTab='premium') {
    ${protectionFounder?'':'<button class="primary addon-buy-button" id="buy-command-protection" type="button">'+protectionLabel+'</button>'}
    <small class="premium-payment-note">Оплата — Telegram Stars. Срок начинается после подтверждения успешного платежа. Продление суммируется с оставшимся временем.</small>
   </section>
-  <div class="addon-feature-heading"><div class="eyebrow">ОТДЕЛЬНЫЕ ИНСТРУМЕНТЫ</div><h2>✨ Дополнительные функции</h2><p class="muted">Каждая возможность включается отдельно в нужном Business-диалоге.</p></div>
-  <div class="addon-feature-grid">
-   <article class="addon-feature"><span>👁️</span><b>Автопрочтение</b><small>Помечает входящие Business-сообщения прочитанными только в выбранном диалоге.</small><em>Команда .autoread</em></article>
-   <article class="addon-feature"><span>🌙</span><b>Персональный AFK</b><small>Свой текст автоответа и отдельная настройка для каждого контакта.</small><em>Команда .afk</em></article>
-   <article class="addon-feature"><span>⌨️</span><b>Умные статусы</b><small>Показывает набор текста или запись голосового только при работе в этом чате.</small><em>.autotyping / .autovoice</em></article>
-   <article class="addon-feature"><span>🛡️</span><b>Антимут</b><small>Альтернативная отправка от имени FLAMEXBOT, когда Telegram разрешает написать получателю.</small><em>Команда .antimute</em></article>
-   <article class="addon-feature"><span>🗂️</span><b>История изменений</b><small>Показывает редакции и события удаления, полученные после начала архивирования.</small><em>Архив переписки</em></article>
-   <article class="addon-feature"><span>📦</span><b>Экспорт переписки</b><small>Скачивание истории выбранного чата в JSON вместе с датами, направлениями и типами вложений.</small><em>PRO и FOUNDER</em></article>
-   <article class="addon-feature"><span>🧩</span><b>Фильтр стикеров</b><small>Убирает входящие стикеры в том чате, где включена настройка.</small><em>Команда .mutestick</em></article>
-   <article class="addon-feature"><span>✍️</span><b>Антимат-фильтр</b><small>Фильтрует сообщения с распознанной ненормативной лексикой в выбранном диалоге.</small><em>Команда .antimat</em></article>
-  </div>
+  <div class="addon-feature-heading"><div class="eyebrow">ТОЛЬКО ОТДЕЛЬНЫЕ ПОКУПКИ</div><h2>🧩 Дополнения</h2><p class="muted">Здесь только независимые модули, которые покупаются отдельно. Возможности Premium и PRO здесь не дублируются.</p></div>
+  <p class="business-note">Сейчас доступно отдельное дополнение «Защита от команд» на 5 дней. Новые модули появятся здесь отдельными карточками и не будут смешиваться с тарифами.</p>
  </section>
  <p class="business-note">Платежи подтверждаются Telegram. Доступ открывается только после получения и проверки successful_payment на сервере.</p>`;
  const tabs=[...host.querySelectorAll('[data-tariff-tab]')];
@@ -1309,37 +1328,45 @@ async function renderTariffs(host, initialTab='premium') {
    });
  };
 
- const buyButton=host.querySelector('#buy-premium');
- buyButton?.addEventListener('click',async()=>{
-   buyButton.disabled=true;buyButton.classList.add('is-loading');buyButton.textContent='Подготавливаем оплату…';
+ const startTierPurchase=async(button,plan)=>{
+   if(!button)return;
+   const label=plan==='pro'?'PRO':'Premium';
+   button.disabled=true;button.classList.add('is-loading');button.textContent='Подготавливаем оплату…';
    try{
-     const {data,error}=await supabase.functions.invoke('create-premium-invoice');
+     const {data,error}=await supabase.functions.invoke('create-premium-invoice',{body:{plan}});
      if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать ссылку на оплату');
      const webApp=window.Telegram?.WebApp;
      const opened=await waitForInvoiceClose(webApp,data.invoice_link,async status=>{
        if(status==='paid'){
-         toast('Оплата принята. Активируем Premium…');
+         toast('Оплата принята. Активируем '+label+'…');
          let activated=false;
-         for(let attempt=0;attempt<12;attempt++){
+         for(let attempt=0;attempt<15;attempt++){
            const {data:subscription,error:subscriptionError}=await supabase.from('user_subscriptions')
              .select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
-           if(subscriptionError)console.warn('Premium status refresh:',subscriptionError.message);
-           if(subscription?.plan==='premium'&&(!subscription.expires_at||new Date(subscription.expires_at).getTime()>Date.now())){
+           if(subscriptionError)console.warn(label+' status refresh:',subscriptionError.message);
+           if(subscription&&subscription.plan===plan&&(!subscription.expires_at||new Date(subscription.expires_at).getTime()>Date.now())){
              state.subscription=subscription;activated=true;break;
            }
            await new Promise(resolve=>setTimeout(resolve,700));
          }
          updateHeaderProfile();
-         toast(activated?'⭐ Premium успешно активирован!':'Платёж получен. Premium появится после подтверждения Telegram.');
+         toast(activated?(plan==='pro'?'🔥 FLAMEX PRO успешно активирован!':'⭐ Premium успешно активирован!'):'Платёж получен. Тариф появится после подтверждения Telegram.');
          await renderTariffs(host,'premium');
        }else if(status==='cancelled')toast('Оплата отменена. Списания не произошло.');
        else if(status==='failed')toast('Telegram не смог завершить оплату. Попробуй ещё раз.');
-       else if(status==='pending')toast('Платёж обрабатывается. Premium появится после подтверждения Telegram.');
+       else if(status==='pending')toast('Платёж обрабатывается. Тариф появится после подтверждения Telegram.');
      });
      if(!opened)toast('Открываем счёт Telegram Stars');
    }catch(error){toast('Оплата не запущена: '+(error?.message||'неизвестная ошибка'));}
-   finally{if(host.contains(buyButton)){buyButton.disabled=false;buyButton.classList.remove('is-loading');buyButton.textContent=buyLabel;}}
- });
+   finally{
+     if(host.contains(button)){
+       button.disabled=false;button.classList.remove('is-loading');
+       button.textContent=plan==='pro'?(premium?'Перейти на PRO · 250 ⭐':'Оплатить PRO · 250 ⭐'):buyLabel;
+     }
+   }
+ };
+ host.querySelector('#buy-premium')?.addEventListener('click',event=>startTierPurchase(event.currentTarget,'premium'));
+ host.querySelector('#buy-pro')?.addEventListener('click',event=>startTierPurchase(event.currentTarget,'pro'));
 
  const trialButton=host.querySelector('#claim-trial');
  trialButton?.addEventListener('click',async()=>{
