@@ -413,7 +413,7 @@ function renderBusinessBubble(message, mediaUrl = '') {
   const mine = message.direction === 'outbound';
   const chat=state.businessChats.find(item=>item.id===state.activeBusinessChat);
   const chatName=[chat?.first_name,chat?.last_name].filter(Boolean).join(' ')||chat?.username||'Telegram-пользователь';
-  const contactAvatar=!mine?avatar(chat?.photo_url,chatName,'message-avatar'):'';
+  const senderAvatar=mine?avatar(state.profile?.avatar_url||state.profile?.telegram_photo_url,state.profile?.display_name||state.profile?.username||'Ты','message-avatar mine-avatar'):avatar(chat?.photo_url,chatName,'message-avatar');
   const content = message.deleted_at ? 'Сообщение удалено в Telegram' : (message.content || '');
   const raw = message.raw || {};
   const mediaName = raw.document?.file_name || raw.audio?.file_name || raw.video?.file_name || 'Вложение';
@@ -432,7 +432,7 @@ function renderBusinessBubble(message, mediaUrl = '') {
   const reply = message.reply_to_message_id ? `<div class="reply-reference">↪ Ответ на сообщение #${message.reply_to_message_id}</div>` : '';
   const replyButton = !message.deleted_at && message.telegram_message_id ? `<button type="button" class="reply-message" data-reply-to="${message.telegram_message_id}">Ответить</button>` : '';
   const bubble = `<div class="bubble ${mine ? 'mine' : ''}">${reply}${content ? `<div>${esc(content)}</div>` : ''}${media}<div class="bubble-footer"><small>${formatMskTime(message.created_at)}</small>${replyButton}</div></div>`;
-  return `<div class="bubble-row ${mine?'mine':''}">${contactAvatar}${bubble}</div>`;
+  return mine?`<div class="bubble-row mine">${bubble}${senderAvatar}</div>`:`<div class="bubble-row">${senderAvatar}${bubble}</div>`;
 }
 
 
@@ -1210,16 +1210,20 @@ async function renderCommands(host) {
     {syntax:'.antimute on',title:'Включить антимут',description:'Разрешает одну ручную попытку отправки через Telegram Business. Нужны Premium и право «Отвечать».',access:'premium',group:'Управление чатом'},
     {syntax:'.antimute off',title:'Выключить антимут',description:'Отключает ручную отправку через антимут. Доступно бесплатно.',access:'free',group:'Управление чатом'},
     {syntax:'.antimute текст',title:'Ручная отправка',description:'Одна попытка отправить указанный текст через подключённый Telegram Business. Ограничения Telegram не обходятся.',access:'premium',group:'Управление чатом'},
-    {syntax:'.antimut on/off',title:'Короткий алиас антимута',description:'Альтернативная команда для включения и выключения антимута.',access:'premium',group:'Управление чатом'},
+    {syntax:'.antimut on',title:'Включить антимут (короткий алиас)',description:'Включает антимут. Нужны Premium и право Telegram Business «Отвечать».',access:'premium',group:'Управление чатом'},
+    {syntax:'.antimut off',title:'Выключить антимут (короткий алиас)',description:'Отключает антимут бесплатно.',access:'free',group:'Управление чатом'},
     {syntax:'.antimut текст',title:'Ручная отправка (алиас)',description:'Одна ручная попытка отправки через Telegram Business.',access:'premium',group:'Управление чатом'},
     {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Отправляет от двух до пяти копий текста с паузой. Используй только когда получатель согласен.',access:'premium',group:'Управление чатом'},
     {syntax:'.afk причина',title:'Включить автоответ',description:'Включает AFK-режим и задаёт текст автоматического ответа.',access:'premium',group:'Автоматизация'},
     {syntax:'.unafk',title:'Выключить автоответ',description:'Отключает AFK-режим. Доступно бесплатно.',access:'free',group:'Автоматизация'},
     {syntax:'.autoread on',title:'Автопрочтение',description:'Автоматически отмечает входящие Business-сообщения прочитанными.',access:'premium',group:'Автоматизация'},
     {syntax:'.autoread off',title:'Отключить автопрочтение',description:'Выключает автоматическое прочтение. Доступно бесплатно.',access:'free',group:'Автоматизация'},
-    {syntax:'.autotyping on/off',title:'Статус «печатает…»',description:'Включает или выключает статус набора текста. Для включения нужен Premium.',access:'premium',group:'Автоматизация'},
-    {syntax:'.autovoice on/off',title:'Статус записи голосового',description:'Включает или выключает статус записи голосового. Для включения нужен Premium.',access:'premium',group:'Автоматизация'},
-    {syntax:'.mutestick on/off',title:'Фильтр стикеров',description:'Фильтрует входящие стикеры. Для включения нужен Premium.',access:'premium',group:'Автоматизация'},
+    {syntax:'.autotyping on',title:'Статус «печатает…»',description:'Включает статус набора текста. Нужен Premium.',access:'premium',group:'Автоматизация'},
+    {syntax:'.autotyping off',title:'Отключить статус набора',description:'Выключает статус набора бесплатно.',access:'free',group:'Автоматизация'},
+    {syntax:'.autovoice on',title:'Статус записи голосового',description:'Включает статус записи голосового. Нужен Premium.',access:'premium',group:'Автоматизация'},
+    {syntax:'.autovoice off',title:'Отключить статус записи',description:'Выключает статус записи бесплатно.',access:'free',group:'Автоматизация'},
+    {syntax:'.mutestick on',title:'Фильтр стикеров',description:'Включает фильтрацию входящих стикеров. Нужен Premium.',access:'premium',group:'Автоматизация'},
+    {syntax:'.mutestick off',title:'Отключить фильтр стикеров',description:'Выключает фильтрацию бесплатно.',access:'free',group:'Автоматизация'},
     {syntax:'.timeprofile',title:'Московское время',description:'Закрепляет часовой пояс FLAMEXBOT: Москва, UTC+3.',access:'premium',group:'Профиль'},
     {syntax:'.time',title:'Показывать время',description:'Включает отображение времени в профиле.',access:'premium',group:'Профиль'},
     {syntax:'.untime',title:'Скрыть время',description:'Выключает отображение времени в профиле. Доступно бесплатно.',access:'free',group:'Профиль'},
