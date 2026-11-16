@@ -8,13 +8,18 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
+const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', selectedAdminUserId: null, avatarRefreshAttempted: new Set(), userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
 const toast = message => { const el = document.querySelector('.toast'); if (!el) return; el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3000); };
 const applyTheme = theme => { document.documentElement.dataset.theme = ['orange','blue','green','red','violet'].includes(theme) ? theme : 'orange'; };
-const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" />` : `<span class="avatar avatar-fallback ${size}">${esc(initials(name))}</span>`;
+const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" />` : `<span class="avatar avatar-fallback ${size}">${esc(initials(name))}</span>`;
+const mskDateObject = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value+'T12:00:00Z') : new Date(value);
+const moscowDateKey = (value = new Date()) => { const p=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value)); const v=Object.fromEntries(p.map(x=>[x.type,x.value])); return `${v.year}-${v.month}-${v.day}`; };
+const formatMskDate = (value,options={day:'numeric',month:'long'}) => new Intl.DateTimeFormat('ru-RU',{...options,timeZone:'Europe/Moscow'}).format(mskDateObject(value));
+const formatMskTime = (value = new Date()) => new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'}).format(new Date(value));
+const formatMskDateTime = (value,options={day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) => new Intl.DateTimeFormat('ru-RU',{...options,timeZone:'Europe/Moscow'}).format(new Date(value));
 
 async function telegramAuthFlow({ linkCurrent = false } = {}) {
   const webApp = window.Telegram?.WebApp;
@@ -95,7 +100,7 @@ function planLabel() { return isPremium() ? 'PREMIUM' : 'FREE'; }
 const PAGE_LABELS = {
   home:'Обзор', messages:'Переписки', friends:'Друзья', tariffs:'Premium', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
-  stats:'Статистика', users:'Все пользователи', admin:'Админ-панель'
+  stats:'Статистика', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
 const BADGE_META = {
   verified:{label:'Подтверждён',icon:'✓',className:'verified'},
@@ -172,7 +177,7 @@ function renderApp() {
     ['stats','▥','Статистика','Твоя активность'],
     ['tariffs','✧','Premium','Подписка и возможности'],
     ['profile','◉','Профиль','Настройки аккаунта'],
-    ...(state.isAdmin?[['users','👥','Все пользователи','Поиск, галочки и Premium'],['admin','⚙','Админ-панель','Управление проектом']]:[])
+    ...(state.isAdmin?[['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
   ];
   app.innerHTML=`
     <div class="app-layout">
@@ -239,7 +244,7 @@ async function loadPage() {
       ]);
       state.streaks=(streaks.data||[]).sort((a,b)=>effectiveStreakDays(b)-effectiveStreakDays(a)).slice(0,5);
       const p=state.profile||{};
-      host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'long'})}</div></div>
+      host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
@@ -254,6 +259,7 @@ async function loadPage() {
     else if(state.page==='achievements') await renderAchievements(host);
     else if(state.page==='stats') await renderStats(host);
     else if(state.page==='users') await renderUsers(host);
+    else if(state.page==='admin_user') await renderAdminUser(host);
     else if(state.page==='admin') await renderAdmin(host);
     host.querySelectorAll('[data-go]').forEach(btn=>btn.addEventListener('click',()=>{
       if(btn.dataset.filter==='verified')state.userFilters.verified='verified';
@@ -275,7 +281,7 @@ function renderBusinessChatChoices(chats) {
   return filtered.length ? filtered.map(c => {
     const name = [c.first_name,c.last_name].filter(Boolean).join(' ') || (c.username ? '@'+c.username : 'Telegram-пользователь');
     const active = state.activeBusinessChat === c.id;
-    return `<div class="business-chat-item"><button class="chat-choice ${active ? 'active' : ''}" data-business-chat="${c.id}">${avatar(c.photo_url,name)}<span class="chat-choice-copy"><b>${c.is_pinned?'📌 ':''}${c.is_favorite?'★ ':''}${c.is_muted?'🔕 ':''}${c.antimut_enabled?'🛡 ':''}${String(c.telegram_chat_id)===FOUNDER_TELEGRAM_ID?'👑 ':''}${esc(name)}</b><small>${c.username ? '@'+esc(c.username)+' · ' : ''}${c.last_message_at ? new Date(c.last_message_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Новый чат'}</small></span>${c.unread_count?'<i class="chat-unread-badge">'+(c.unread_count>99?'99+':c.unread_count)+'</i>':''}</button><button class="chat-pref" data-favorite="${c.id}" title="Избранное">${c.is_favorite?'★':'☆'}</button><button class="chat-pref" data-pin="${c.id}" title="Закрепить">${c.is_pinned?'📌':'⌖'}</button></div>`;
+    return `<div class="business-chat-item"><button class="chat-choice ${active ? 'active' : ''}" data-business-chat="${c.id}">${avatar(c.photo_url,name)}<span class="chat-choice-copy"><b>${c.is_pinned?'📌 ':''}${c.is_favorite?'★ ':''}${c.is_muted?'🔕 ':''}${c.antimut_enabled?'🛡 ':''}${String(c.telegram_chat_id)===FOUNDER_TELEGRAM_ID?'👑 ':''}${esc(name)}</b><small>${c.username ? '@'+esc(c.username)+' · ' : ''}${c.last_message_at ? formatMskDateTime(c.last_message_at,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Новый чат'}</small></span>${c.unread_count?'<i class="chat-unread-badge">'+(c.unread_count>99?'99+':c.unread_count)+'</i>':''}</button><button class="chat-pref" data-favorite="${c.id}" title="Избранное">${c.is_favorite?'★':'☆'}</button><button class="chat-pref" data-pin="${c.id}" title="Закрепить">${c.is_pinned?'📌':'⌖'}</button></div>`;
   }).join('') : '<div class="empty-state">Чаты не найдены.</div>';
 }
 
@@ -374,7 +380,7 @@ function renderBusinessBubble(message, mediaUrl = '') {
   }
   const reply = message.reply_to_message_id ? `<div class="reply-reference">↪ Ответ на сообщение #${message.reply_to_message_id}</div>` : '';
   const replyButton = !message.deleted_at && message.telegram_message_id ? `<button type="button" class="reply-message" data-reply-to="${message.telegram_message_id}">Ответить</button>` : '';
-  return `<div class="bubble ${mine ? 'mine' : ''}">${reply}${content ? `<div>${esc(content)}</div>` : ''}${media}<div class="bubble-footer"><small>${new Date(message.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small>${replyButton}</div></div>`;
+  return `<div class="bubble ${mine ? 'mine' : ''}">${reply}${content ? `<div>${esc(content)}</div>` : ''}${media}<div class="bubble-footer"><small>${formatMskTime(message.created_at)}</small>${replyButton}</div></div>`;
 }
 
 async function refreshBusinessMessages(chatId) {
@@ -627,7 +633,7 @@ async function renderAdmin(host) {
     return `<article class="admin-audit-row">
       <span class="admin-audit-icon">${icon}</span>
       <div class="admin-audit-copy"><b>${esc(actionLabels[item.action]||item.action)}</b><small>${esc(item.target_name||'Пользователь')} · ${esc(item.actor_name||'Администратор')}${extra?' · '+esc(extra):''}</small></div>
-      <time>${new Date(item.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</time>
+      <time>${formatMskDateTime(item.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</time>
     </article>`;
   }).join('');
   host.innerHTML=`<div class="page-heading admin-heading"><div class="eyebrow">FOUNDER CONTROL CENTER</div><h1>Админ-панель <span>⚙</span></h1><p class="muted">Управление участниками, верификацией, подписками и безопасностью проекта.</p></div>
@@ -675,7 +681,7 @@ async function renderUsers(host) {
     ['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],
     ['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']
   ];
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">COMMUNITY DIRECTORY</div><h1>Все пользователи <span>👥</span></h1><p class="muted">Участники отсортированы от новых к старым. Здесь можно управлять галочками, ролями, Premium и блокировками.</p></div>
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">COMMUNITY DIRECTORY</div><h1>Управление пользователями <span>👥</span></h1><p class="muted">Открой карточку участника для отдельного управления. На каждом аккаунте может быть только один значок роли; новый заменяет предыдущий.</p></div>
     <section class="users-toolbar-card">
       <form id="users-filter-form" class="users-filter-form">
         <label class="users-search-field"><span>⌕</span><input name="search" value="${esc(filters.search)}" placeholder="Имя, никнейм или Telegram ID"/></label>
@@ -692,8 +698,9 @@ async function renderUsers(host) {
       if(u.is_premium&&!badges.includes('premium'))badges.push('premium');
       const display=u.display_name||u.username||'Пользователь';
       return `<article class="admin-user-card" data-user-card="${u.id}">
-        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${new Date(u.created_at).toLocaleDateString('ru-RU')}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
+        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
         <div class="admin-user-actions">
+          <button class="admin-action" data-admin-open="${u.id}">Открыть управление →</button>
           <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${owner&&u.is_verified?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
           <button class="admin-action ${u.is_banned?'safe':''}" data-user-action="${u.is_banned?'unban':'ban'}" data-user-id="${u.id}" ${owner?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
           <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${owner?'disabled':''}>✦ ${owner?'Premium владельца':u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
@@ -705,6 +712,7 @@ async function renderUsers(host) {
     }).join('')||'<div class="empty-state">По заданным фильтрам никого не найдено.</div>'}</div>
     <div class="users-pagination"><button class="outline small" id="users-prev" ${(filters.offset||0)<=0?'disabled':''}>← Назад</button><span>Страница ${Math.floor((filters.offset||0)/50)+1} из ${Math.max(1,Math.ceil(total/50))}</span><button class="outline small" id="users-next" ${(filters.offset||0)+50>=total?'disabled':''}>Дальше →</button></div>
     ${error?'<p class="business-warning">Не удалось загрузить пользователей: '+esc(error.message)+'</p>':''}`;
+  host.querySelectorAll('[data-admin-open]').forEach(btn=>btn.addEventListener('click',()=>{state.selectedAdminUserId=btn.dataset.adminOpen;navigateTo('admin_user');}));
   host.querySelector('#users-prev')?.addEventListener('click',()=>{state.userFilters.offset=Math.max(0,(filters.offset||0)-50);renderUsers(host);});
   host.querySelector('#users-next')?.addEventListener('click',()=>{state.userFilters.offset=(filters.offset||0)+50;renderUsers(host);});
   host.querySelector('#users-filter-form')?.addEventListener('submit',event=>{
@@ -729,6 +737,44 @@ async function renderUsers(host) {
     if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
     toast(({ban:'Пользователь заблокирован',unban:'Блокировка снята',verify:'Синяя галочка выдана',unverify:'Галочка снята',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',badge_grant:'Значок выдан',badge_revoke:'Значок снят'})[action]||'Изменения сохранены');
     await renderUsers(host);
+  }));
+}
+
+async function renderAdminUser(host) {
+  if(!state.selectedAdminUserId){host.innerHTML='<div class="empty-state">Сначала выбери пользователя в списке.</div><button class="outline" data-go="users">К списку пользователей</button>';return;}
+  const {data,error}=await supabase.rpc('admin_get_flamexbot_user',{p_user_id:state.selectedAdminUserId});
+  const u=data?.[0];
+  if(error||!u){host.innerHTML=\`<div class="page-heading"><h1>Не удалось открыть карточку</h1><p class="muted">\${esc(error?.message||'Пользователь не найден')}</p></div><button class="outline" data-go="users">← К пользователям</button>\`;return;}
+  const owner=u.telegram_id===FOUNDER_TELEGRAM_ID;
+  const badges=u.badge_codes||[];
+  const roleOptions=[['verified','Подтверждён'],['developer','Разработчик'],['administrator','Администратор'],['moderator','Модератор'],['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']];
+  const premiumUntil=u.is_premium?(u.premium_expires_at?formatMskDate(u.premium_expires_at):'Бессрочно'):'Не активен';
+  host.innerHTML=\`<div class="page-heading"><button class="text-button" data-go="users">← Все пользователи</button><div class="eyebrow">ADMIN USER CONTROL</div><h1>Управление аккаунтом</h1><p class="muted">Все изменения проходят серверную проверку и попадают в журнал администрации.</p></div>
+    <section class="admin-user-detail-card"><div class="admin-user-detail-top">\${avatar(u.avatar_url||u.telegram_photo_url,u.display_name||u.username,'avatar-xl')}<div><h2>\${esc(u.display_name||u.username||'Пользователь')}</h2><p>@\${esc(u.telegram_username||u.username||'не задан')} · \${u.telegram_id?'Telegram ID '+esc(u.telegram_id):'Telegram не привязан'}</p><div class="profile-badge-row">\${badgeMarkup(badges,false,false)} \${u.is_premium?badgeMarkup(['premium'],false,false):''}</div></div></div>
+      <div class="admin-detail-status"><span class="user-flag \${u.is_banned?'banned':'active'}">\${u.is_banned?'⛔ Заблокирован':'● Активен'}</span><span class="user-flag \${u.is_premium?'premium':'free'}">\${u.is_premium?'✦ Premium':'Free'}</span><span class="user-flag">\${u.is_verified?'🔵 Подтверждён':'Без галочки'}</span></div>
+      <div class="admin-detail-metrics"><div><small>СООБЩЕНИЯ</small><b>\${u.total_messages||0}</b></div><div><small>ДРУЗЬЯ</small><b>\${u.friends_count||0}</b></div><div><small>ЛУЧШАЯ СЕРИЯ</small><b>\${u.best_streak||0} дн.</b></div><div><small>ДОСТИЖЕНИЯ</small><b>\${u.achievements_count||0}</b></div><div><small>ОПЫТ</small><b>\${u.xp||0} XP</b></div><div><small>PREMIUM ДО</small><b>\${premiumUntil}</b></div></div>
+      <div class="admin-detail-actions"><h3>Действия с аккаунтом</h3><div class="admin-detail-action-grid">
+        <button class="admin-action" data-admin-detail-action="\${u.is_verified?'unverify':'verify'}" \${owner?'disabled':''}>\${u.is_verified?'🔵 Снять подтверждение':'🔵 Подтвердить аккаунт'}</button>
+        <button class="admin-action \${u.is_banned?'safe':''}" data-admin-detail-action="\${u.is_banned?'unban':'ban'}" \${owner?'disabled':''}>\${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
+        <button class="admin-action premium" data-admin-detail-action="premium_grant" \${owner?'disabled':''}>✦ \${u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
+        <button class="admin-action" data-admin-detail-action="premium_revoke" \${!u.is_premium||owner?'disabled':''}>Снять Premium</button>
+      </div>
+      <div class="admin-detail-badge-form"><label>Единственный значок аккаунта<select id="admin-detail-badge"><option value="">Выбрать значок…</option>\${roleOptions.map(([code,label])=>\`<option value="\${code}">\${label}</option>\`).join('')}</select></label><button class="primary small" data-admin-detail-action="badge_grant" \${owner?'disabled':''}>Заменить значок</button><button class="outline small" data-admin-detail-action="badge_revoke" \${owner?'disabled':''}>Снять значок</button></div>
+      <small class="admin-detail-note">На одном аккаунте может быть только один значок роли. Выдача нового заменяет предыдущий. Premium отображается отдельно и не занимает слот значка.</small>
+      \${u.is_banned&&u.ban_reason?'<p class="business-warning">Причина блокировки: '+esc(u.ban_reason)+'</p>':''}
+    </div></section>\`;
+  host.querySelectorAll('[data-admin-detail-action]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const action=btn.dataset.adminDetailAction;
+    let reason=null,days=30,badgeCode=null;
+    if(action==='ban'){reason=prompt('Причина блокировки:','Нарушение правил сообщества');if(reason===null)return;}
+    if(action==='premium_grant'){const raw=prompt('На сколько дней выдать или продлить Premium? 0 — бессрочно.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}}
+    if(action==='badge_grant'||action==='badge_revoke'){badgeCode=host.querySelector('#admin-detail-badge')?.value||badges[0]||null;if(!badgeCode){toast('Выбери значок');return;}}
+    if(['ban','unban','unverify','premium_revoke','badge_revoke'].includes(action)&&!confirm('Подтвердить действие?'))return;
+    btn.disabled=true;
+    const {error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{p_user_id:u.id,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days});
+    if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
+    toast(({ban:'Аккаунт заблокирован',unban:'Блокировка снята',verify:'Аккаунт подтверждён',unverify:'Подтверждение снято',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',badge_grant:'Значок заменён',badge_revoke:'Значок снят'})[action]||'Готово');
+    await renderAdminUser(host);
   }));
 }
 
@@ -776,8 +822,8 @@ function effectiveStreakDays(streak) {
   if(!days)return 0;
   if(streak.expires_at)return new Date(streak.expires_at).getTime()>Date.now()?days:0;
   if(!streak.last_activity_date)return 0;
-  const today=new Date().toISOString().slice(0,10);
-  const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const today=moscowDateKey();
+  const yesterday=moscowDateKey(new Date(Date.now()-86400000));
   return streak.last_activity_date===today||streak.last_activity_date===yesterday?days:0;
 }
 
@@ -819,7 +865,7 @@ async function renderFriends(host) {
   }).join('');
   const incomingCards=(incoming.data||[]).map(r=>{
     const p=profileMap.get(r.sender_id);if(!p)return '';
-    return profileCard(p,`Заявка · ${new Date(r.created_at).toLocaleDateString('ru-RU')}`,
+    return profileCard(p,`Заявка · ${formatMskDate(r.created_at)}`,
       `<button class="primary small" data-friend-response="accepted" data-request-id="${r.id}">Принять</button><button class="outline small" data-friend-response="rejected" data-request-id="${r.id}">Отклонить</button>`,
       badgeMap.get(r.sender_id)||[]);
   }).join('');
@@ -897,7 +943,7 @@ async function renderStreaks(host) {
       const id=s.user_low===uid?s.user_high:s.user_low,p=profileMap.get(id),days=effectiveStreakDays(s),name=p?.display_name||p?.username||'Друг';
       const waiting=!s.last_activity_date;
       const status=days>0?'СЕРИЯ ГОРИТ':waiting?'ОЖИДАЕМ ПЕРВЫЙ ОБМЕН':'СЕРИЯ ПОГАСЛА';
-      return `<div class="streak-card ${days>0?'streak-active':'streak-expired'}"><div class="streak-symbol">${days>0?'🔥':waiting?'✨':'🕯️'}</div><div class="streak-card-main"><div class="eyebrow">${status}</div><h3>${esc(name)} · ${days} ${days===1?'день':'дн.'}</h3><p class="muted">Личный рекорд: ${s.best_days||0} дн. · ${s.last_activity_date?'Последний общий день: '+new Date(s.last_activity_date+'T00:00:00Z').toLocaleDateString('ru-RU'):'Один из вас уже начал общение — нужен ответ друга'}</p></div><div class="streak-days-badge">${days>0?'🔥 '+days:'—'}</div></div>`;
+      return `<div class="streak-card ${days>0?'streak-active':'streak-expired'}"><div class="streak-symbol">${days>0?'🔥':waiting?'✨':'🕯️'}</div><div class="streak-card-main"><div class="eyebrow">${status}</div><h3>${esc(name)} · ${days} ${days===1?'день':'дн.'}</h3><p class="muted">Личный рекорд: ${s.best_days||0} дн. · ${s.last_activity_date?'Последний общий день: '+formatMskDate(s.last_activity_date):'Один из вас уже начал общение — нужен ответ друга'}</p></div><div class="streak-days-badge">${days>0?'🔥 '+days:'—'}</div></div>`;
     }).join(''):'<div class="empty-state">Огоньков пока нет. Добавь друга и начните переписываться каждый день.</div>'}</div>
     <button class="outline" data-go="friends">Найти друзей <b>→</b></button>
     ${profiles.error||badges.error?'<p class="business-warning">Не удалось загрузить имена или значки участников.</p>':''}`;
@@ -919,7 +965,7 @@ async function renderProfile(host) {
       <label>О себе<textarea name="bio" maxlength="180" placeholder="Расскажи немного о себе">${esc(p.bio || '')}</textarea></label>
       <label>Цветовая тема<select name="theme"><option value="orange" ${(p.theme||'orange')==='orange'?'selected':''}>Огненная</option><option value="blue" ${p.theme==='blue'?'selected':''}>Синяя</option><option value="green" ${p.theme==='green'?'selected':''}>Зелёная</option><option value="red" ${p.theme==='red'?'selected':''}>Красная</option><option value="violet" ${p.theme==='violet'?'selected':''}>Фиолетовая</option></select></label>
       <label>Ссылка на аватар<input name="avatar_url" type="url" value="${esc(p.avatar_url || '')}" placeholder="https://…"/></label>
-      <div class="profile-time-display">${p.show_profile_time === false ? 'Время в профиле выключено' : 'Сейчас: '+new Date(Date.now()+(Number(p.timezone_offset)||0)*3600000).toISOString().slice(11,16)+' · UTC'+((Number(p.timezone_offset)||0)>=0?'+':'')+(Number(p.timezone_offset)||0)}</div>
+      <div class="profile-time-display">${p.show_profile_time === false ? 'Время в профиле выключено' : 'Сейчас: '+formatMskTime()+' · МСК'}</div>
       <div class="profile-id">ID аккаунта <code>${esc(state.session.user.id)}</code></div>
       <div class="telegram-profile"><div><b>Telegram</b><small>${p.telegram_id ? (p.telegram_username ? '@' + esc(p.telegram_username) : 'Аккаунт привязан') : 'Не привязан'}</small></div><button class="outline small" type="button" data-telegram-link>${p.telegram_id ? 'Обновить связь' : 'Привязать Telegram'}</button></div>
       <button class="primary">Сохранить изменения <b>→</b></button>
@@ -932,7 +978,7 @@ async function renderProfile(host) {
         <div><b>3.</b><span>Добавь FLAMEXBOT и самостоятельно выбери, к каким диалогам и данным открыть доступ.</span></div>
       </div>
       <div class="business-connection-info">
-        ${businessConnected ? `<b>Бизнес-аккаунт связан</b><small>Подключено: ${businessConnection.connected_at ? new Date(businessConnection.connected_at).toLocaleString('ru-RU') : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
+        ${businessConnected ? `<b>Бизнес-аккаунт связан</b><small>Подключено: ${businessConnection.connected_at ? formatMskDateTime(businessConnection.connected_at,{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
       </div>
       ${businessError ? '<p class="business-warning">Не удалось получить статус подключения. Проверь Telegram Business и попробуй ещё раз.</p>' : ''}
       <button class="outline small" type="button" id="refresh-business">↻ Проверить подключение</button>
@@ -958,18 +1004,21 @@ async function renderProfile(host) {
 
 async function renderDailyMissions(host) {
   const uid=state.session.user.id;
+  const today=moscowDateKey();
   const [catalog,progress,claims]=await Promise.all([
     supabase.rpc('get_flamexbot_daily_tasks'),
     supabase.rpc('get_flamexbot_daily_task_progress'),
-    supabase.from('flamexbot_daily_task_claims').select('task_code,xp_reward').eq('user_id',uid).eq('task_date',new Date().toISOString().slice(0,10))
+    supabase.from('flamexbot_daily_task_claims').select('task_code,xp_reward').eq('user_id',uid).eq('task_date',today)
   ]);
   const progressByCode=new Map((progress.data||[]).map(item=>[item.task_code,item]));
   const completed=new Set((claims.data||[]).map(item=>item.task_code));
   const tasks=catalog.data||[];
   const totalXp=(claims.data||[]).reduce((sum,item)=>sum+(item.xp_reward||0),0);
-  const today=new Date().toISOString().slice(0,10);
+  const claimedCount=completed.size;
+  const doneCount=tasks.filter(t=>progressByCode.get(t.task_code)?.completed===true).length;
+  const maxXp=tasks.reduce((sum,t)=>sum+(Number(t.xp_reward)||0),0);
   host.innerHTML=`<div class="page-heading"><div class="eyebrow">НОВЫЙ ЦИКЛ КАЖДЫЙ ДЕНЬ</div><h1>Ежедневные задания <span>⚡</span></h1><p class="muted">Каждый день система выбирает три новых испытания. Выполняй их, забирай XP и прокачивай свой уровень.</p></div>
-    <section class="daily-mission-hero"><div><span class="mission-live-dot"></span><b>Сегодняшний набор</b><small>Обновление в 00:00 UTC · ${new Date(today+'T00:00:00Z').toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</small></div><strong>+ ${totalXp} XP <small>сегодня</small></strong></section>
+    <section class="daily-mission-hero"><div><span class="mission-live-dot"></span><b>Сегодняшний набор</b><small>Обновление ежедневно в 00:00 МСК · ${formatMskDate(today,{day:'numeric',month:'long'})}</small></div><strong>+ ${totalXp} / ${maxXp} XP <small>забрано ${claimedCount} из ${tasks.length} · готово ${doneCount} из ${tasks.length}</small></strong></section>
     <div class="daily-task-list">${tasks.map(t=>{
       const stat=progressByCode.get(t.task_code)||{current_progress:0,target_progress:1,completed:false};
       const current=Number(stat.current_progress)||0,target=Math.max(1,Number(stat.target_progress)||1);
@@ -990,7 +1039,7 @@ async function renderDailyMissions(host) {
     const taskCode=btn.dataset.claimTask;
     btn.disabled=true;btn.classList.add('is-loading');
     const {data,error}=await supabase.rpc('claim_flamexbot_daily_task',{p_task_code:taskCode});
-    if(error){toast(error.message.includes('already claimed')?'Награда уже получена сегодня':error.message.includes('not active today')?'Набор заданий обновился. Открой страницу ещё раз.':'Не удалось забрать награду: '+error.message);btn.disabled=false;btn.classList.remove('is-loading');return;}
+    if(error){const raw=error.message||'';toast(raw.includes('already claimed')?'Награда уже получена сегодня':raw.includes('not active today')?'Набор заданий обновился. Открой страницу ещё раз.':raw.includes('task_code_check')?'Награда временно недоступна. Обнови страницу и попробуй ещё раз.':'Не удалось забрать награду: '+raw);btn.disabled=false;btn.classList.remove('is-loading');return;}
     await supabase.rpc('sync_flamexbot_achievements');
     toast('Получено +'+(data?.xp_reward||0)+' XP');
     await renderDailyMissions(host);
@@ -1019,7 +1068,7 @@ async function renderAchievements(host) {
       const e=got.get(a.id),r=rarity(a.points||0);
       return `<article class="achievement-card achievement-v2 ${e?'earned':'locked'} rarity-${r[1]}" data-achievement-state="${e?'earned':'locked'}">
         <div class="achievement-icon-wrap"><div class="achievement-icon">${esc(a.icon||'✦')}</div><span class="achievement-glint"></span></div>
-        <div class="achievement-copy"><div class="achievement-card-top"><b>${esc(a.title)}</b><span class="achievement-rarity">${r[0]}</span></div><p>${esc(a.description||'')}</p><small>${e?'Открыто '+new Date(e.earned_at).toLocaleDateString('ru-RU'):'Ещё впереди'} · +${a.points} XP</small></div>
+        <div class="achievement-copy"><div class="achievement-card-top"><b>${esc(a.title)}</b><span class="achievement-rarity">${r[0]}</span></div><p>${esc(a.description||'')}</p><small>${e?'Открыто '+formatMskDate(e.earned_at):'Ещё впереди'} · +${a.points} XP</small></div>
         <span class="achievement-state-mark">${e?'✓':'🔒'}</span>
       </article>`;
     }).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div>
@@ -1034,17 +1083,38 @@ async function renderAchievements(host) {
 
 async function renderStats(host) {
   const uid=state.session.user.id;
-  const [streaks,chats,messages,earned,profile,friends]=await Promise.all([
-    supabase.from('streaks').select('current_days,best_days,expires_at,last_activity_date').or(`user_low.eq.${uid},user_high.eq.${uid}`),
-    supabase.from('flamexbot_business_chats').select('id',{count:'exact',head:true}).eq('profile_id',uid),
-    supabase.from('flamexbot_business_messages').select('id',{count:'exact',head:true}),
-    supabase.from('user_achievements').select('achievement_id',{count:'exact',head:true}).eq('user_id',uid),
-    supabase.from('profiles').select('created_at,telegram_id').eq('id',uid).maybeSingle(),
-    supabase.from('friendships').select('user_low,user_high',{count:'exact',head:true}).or(`user_low.eq.${uid},user_high.eq.${uid}`)
+  const [statsResult,profileResult]=await Promise.all([
+    supabase.rpc('get_flamexbot_user_stats'),
+    supabase.from('profiles').select('created_at,telegram_id').eq('id',uid).maybeSingle()
   ]);
-  const best=Math.max(0,...(streaks.data||[]).map(s=>s.best_days||0));
-  const current=Math.max(0,...(streaks.data||[]).map(effectiveStreakDays));
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ТВОЯ АКТИВНОСТЬ</div><h1>Статистика</h1><p class="muted">Краткая сводка твоих переписок, серий и достижений.</p></div><div class="stats-grid"><div class="stat-card"><small>ТАРИФ</small><strong>${planLabel()}</strong></div><div class="stat-card"><small>ДРУЗЬЯ</small><strong>${friends.count||0}</strong></div><div class="stat-card"><small>BUSINESS-ЧАТЫ</small><strong>${chats.count||0}</strong></div><div class="stat-card"><small>СООБЩЕНИЯ</small><strong>${messages.count||0}</strong></div><div class="stat-card"><small>ТЕКУЩАЯ СЕРИЯ</small><strong>${current} дн.</strong></div><div class="stat-card"><small>ЛУЧШАЯ СЕРИЯ</small><strong>${best} дн.</strong></div><div class="stat-card"><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong></div></div><section class="business-card"><div class="eyebrow">FLAMEX ID</div><div class="flame-id-line"><h2>${esc(uid.slice(0,8).toUpperCase())}</h2><button class="outline small" type="button" id="copy-flame-id">Скопировать ID</button></div><p class="muted">Уникальный идентификатор твоего пространства FLAMEXBOT.</p><small>В приложении с ${profile.data?.created_at?new Date(profile.data.created_at).toLocaleDateString('ru-RU'):'—'} · Telegram ${profile.data?.telegram_id?'привязан':'не привязан'}</small></section>`;
+  const stats=statsResult.data?.[0]||{};
+  const week=Array.isArray(stats.weekly_activity)?stats.weekly_activity:[];
+  const maxActivity=Math.max(1,...week.map(day=>(Number(day.sent)||0)+(Number(day.received)||0)));
+  const bars=week.map(day=>{
+    const sent=Number(day.sent)||0,received=Number(day.received)||0,total=sent+received;
+    const height=Math.max(5,Math.round(total/maxActivity*100));
+    return \`<div class="activity-day" title="\${formatMskDate(day.date,{day:'numeric',month:'long'})}: \${sent} отправлено, \${received} получено">
+      <div class="activity-bar"><span style="height:\${height}%"></span></div>
+      <small>\${formatMskDate(day.date,{weekday:'short'})}</small>
+      <b>\${total}</b>
+    </div>\`;
+  }).join('');
+  const cards=[
+    ['✦','ТАРИФ',planLabel()],['👥','ДРУЗЬЯ',stats.friends||0],
+    ['✉','BUSINESS-ДИАЛОГИ',stats.business_chats||0],['↗','ОТПРАВЛЕНО',stats.messages_sent||0],
+    ['↙','ПОЛУЧЕНО',stats.messages_received||0],['🔥','АКТИВНЫЕ ОГОНЬКИ',stats.current_streaks||0],
+    ['🏅','ЛУЧШАЯ СЕРИЯ',(stats.best_streak||0)+' дн.'],['🏆','ДОСТИЖЕНИЯ',stats.achievements||0],
+    ['⚡','ОБЩИЙ ОПЫТ',(stats.xp||0)+' XP'],['◈','УРОВЕНЬ',stats.level||1],
+    ['📅','СООБЩЕНИЯ ЗА 30 ДНЕЙ',stats.messages_last_30d||0],['🌟','АКТИВНЫХ ДНЕЙ ЗА 30 ДНЕЙ',stats.active_days_30d||0]
+  ];
+  host.innerHTML=\`<div class="page-heading"><div class="eyebrow">ТВОЯ АКТИВНОСТЬ · МОСКОВСКОЕ ВРЕМЯ</div><h1>Статистика <span>📊</span></h1><p class="muted">Подробная сводка общения, прогресса и достижений. Все даты и дневные периоды считаются по МСК.</p></div>
+    <div class="stats-grid advanced-stats-grid">\${cards.map(([icon,label,value])=>\`<article class="stat-card"><span class="stat-icon">\${icon}</span><small>\${label}</small><strong>\${value}</strong></article>\`).join('')}</div>
+    <section class="activity-panel"><div class="section-heading"><div><div class="eyebrow">ПОСЛЕДНИЕ 7 ДНЕЙ</div><h3>Активность по дням</h3></div><span class="activity-legend"><i></i> Сообщения</span></div>
+      <div class="activity-chart">\${bars||'<div class="empty-state">Данных пока недостаточно.</div>'}</div>
+      <div class="activity-foot"><span>За неделю отправлено: <b>\${week.reduce((sum,d)=>sum+(Number(d.sent)||0),0)}</b></span><span>Получено: <b>\${week.reduce((sum,d)=>sum+(Number(d.received)||0),0)}</b></span></div>
+    </section>
+    <section class="business-card"><div class="eyebrow">FLAMEX ID</div><div class="flame-id-line"><h2>\${esc(uid.slice(0,8).toUpperCase())}</h2><button class="outline small" type="button" id="copy-flame-id">Скопировать ID</button></div><p class="muted">Уникальный идентификатор твоего пространства FLAMEXBOT.</p><small>В приложении с \${profileResult.data?.created_at?formatMskDate(profileResult.data.created_at):'—'} · Telegram \${profileResult.data?.telegram_id?'привязан':'не привязан'}</small></section>
+    \${statsResult.error?'<p class="business-warning">Не удалось загрузить статистику: '+esc(statsResult.error.message)+'</p>':''}\`;
   host.querySelector('#copy-flame-id')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(uid);toast('FLAMEX ID скопирован');}catch{toast('Не удалось скопировать ID');}});
 }
 
