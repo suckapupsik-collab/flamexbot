@@ -844,8 +844,8 @@ async function openBusinessChat(id) {
     const command=!file&&text.startsWith('.')?text.trim():'';
     if(command){
       const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
-      if(['help','inf'].includes(name)){toast('.mute · .unmute · .antimute · .unantimute · .autoread · .unautoread · .autotyping · .unautotyping · .autovoice · .unautovoice · .mutestick · .unmutestick · .antimat · .unantimat');button.disabled=false;return;}
-      const freeCommand=['unmute','unantimute','unantimut','untime','unafk','unautoread','unautotyping','unautovoice','unmutestick','unantimat'].includes(name);
+      if(['help','inf'].includes(name)){toast('.mute · .unmute · .antimute · .unantimute · .autoread · .unautoread · .autotyping · .unautotyping · .autovoice · .unautovoice · .mutestick · .unmutestick · .antimat · .unantimat · .copyp · .qr текст');button.disabled=false;return;}
+      const freeCommand=['unmute','unantimute','unantimut','untime','unafk','unautoread','unautotyping','unautovoice','unmutestick','unantimat','qr'].includes(name);
       if(!isPremium()&&!freeCommand){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
       if(name==='mute'||name==='unmute'){
         const next=name==='mute';
@@ -890,6 +890,13 @@ async function openBusinessChat(id) {
           if(i<count-1)await new Promise(resolve=>setTimeout(resolve,1200));
         }
         button.disabled=false;form.reset();document.querySelector('#business-reply-preview').hidden=true;toast(`Отправлено ${count} сообщений`);await refreshBusinessMessages(id);return;
+      }
+      if(['copyp','qr'].includes(name)){
+        if(name==='qr'&&!args){button.disabled=false;toast('Формат: .qr ссылка или текст');return;}
+        const {data:utilityData,error:utilityError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text,command_mode:true,command_name:name}});
+        button.disabled=false;
+        if(utilityError||utilityData?.error){toast(utilityData?.error||utilityError?.message||'Не удалось выполнить команду');return;}
+        form.reset();toast(name==='copyp'?'Запрос профиля отправлен FLAMEXBOT':'Создаём QR-код…');await refreshBusinessMessages(id);return;
       }
       button.disabled=false;toast('Неизвестная команда. Напиши .help');return;
     }
