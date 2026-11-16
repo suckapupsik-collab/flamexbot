@@ -8,7 +8,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0 };
+const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessChatChannel: null, businessListChannel: null, presenceChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all' } };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -82,48 +82,173 @@ function renderAuth() {
 function navItem(page, icon, label) { return `<button class="nav-item ${state.page === page ? 'selected' : ''}" data-page="${page}"><span>${icon}</span>${label}</button>`; }
 function isPremium() { return state.subscription?.plan === 'premium' && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
 function planLabel() { return isPremium() ? 'PREMIUM' : 'FREE'; }
+const PAGE_LABELS = {
+  home:'Обзор', messages:'Переписки', tariffs:'Premium', streaks:'Огоньки',
+  missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
+  stats:'Статистика', users:'Все пользователи', admin:'Админ-панель'
+};
+const BADGE_META = {
+  verified:{label:'Подтверждён',icon:'✓',className:'verified'},
+  founder:{label:'Основатель',icon:'👑',className:'founder'},
+  developer:{label:'Разработчик',icon:'⌘',className:'developer'},
+  administrator:{label:'Администратор',icon:'🛡',className:'administrator'},
+  moderator:{label:'Модератор',icon:'⚔',className:'moderator'},
+  designer:{label:'Дизайнер',icon:'🎨',className:'designer'},
+  creator:{label:'Создатель',icon:'✦',className:'creator'},
+  supporter:{label:'Поддержка',icon:'💎',className:'supporter'},
+  beta_tester:{label:'Бета-тестер',icon:'🧪',className:'beta'},
+  community_manager:{label:'Комьюнити',icon:'🌐',className:'community'},
+  partner:{label:'Партнёр',icon:'🤝',className:'partner'},
+  premium:{label:'Premium',icon:'✧',className:'premium'}
+};
+function badgeMarkup(codes=[],compact=false) {
+  const unique=[...new Set([...(codes||[]),...(isPremium()?['premium']:[])])];
+  return unique.filter(code=>BADGE_META[code]).map(code=>{
+    const b=BADGE_META[code];
+    return `<span class="role-badge badge-${b.className} ${compact?'compact':''}" title="${esc(b.label)}"><i>${b.icon}</i>${compact?'':`<span>${esc(b.label)}</span>`}</span>`;
+  }).join('');
+}
+function updateHeaderProfile() {
+  const p=state.profile||{};
+  const url=p.avatar_url||p.telegram_photo_url;
+  const top=document.querySelector('#top-avatar');
+  const menu=document.querySelector('#menu-avatar');
+  if(top)top.innerHTML=avatar(url,p.display_name||p.username);
+  if(menu)menu.innerHTML=avatar(url,p.display_name||p.username,'avatar-lg');
+  const name=document.querySelector('#menu-display-name');
+  if(name)name.textContent=p.display_name||p.username||'Пользователь';
+  const badges=document.querySelector('#menu-profile-badges');
+  if(badges)badges.innerHTML=badgeMarkup(state.profileBadges);
+  const triggerBadges=document.querySelector('#top-profile-badges');
+  if(triggerBadges)triggerBadges.innerHTML=badgeMarkup(state.profileBadges,true);
+}
+function closeProfileMenu() {
+  const menu=document.querySelector('#profile-menu');
+  const trigger=document.querySelector('#profile-menu-trigger');
+  if(menu)menu.classList.remove('open');
+  if(trigger)trigger.setAttribute('aria-expanded','false');
+}
+function navigateTo(page) {
+  if(!PAGE_LABELS[page] || (['users','admin'].includes(page)&&!state.isAdmin))return;
+  if(state.page==='messages'&&page!=='messages'){
+    if(state.businessChatChannel){supabase.removeChannel(state.businessChatChannel);state.businessChatChannel=null;}
+    if(state.businessListChannel){supabase.removeChannel(state.businessListChannel);state.businessListChannel=null;}
+    state.activeBusinessChat=null;
+  }
+  state.page=page;
+  closeProfileMenu();
+  const title=document.querySelector('#page-title');
+  if(title)title.textContent=PAGE_LABELS[page];
+  document.querySelectorAll('[data-page]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.page===page));
+  const current=document.querySelector('#page-content');
+  if(current){
+    const next=document.createElement('section');
+    next.id='page-content';
+    next.className='page-content page-view page-enter';
+    current.replaceWith(next);
+  }
+  loadPage();
+}
 function renderApp() {
-  const p = state.profile || {}; const profileAvatar = p.avatar_url || p.telegram_photo_url;
-  app.innerHTML = `
-    <div class="app-layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="side-label">МЕНЮ</div><nav>${navItem('home','⌂','Обзор')}${navItem('messages','◌','Переписки')}${navItem('tariffs','✦','Premium')}${navItem('streaks','🔥','Огоньки')}${navItem('missions','⚡','Задания')}${navItem('profile','◉','Профиль')}${navItem('achievements','🏆','Награды')}${`<button class="nav-item ${state.page === 'notifications' ? 'selected' : ''}" data-page="notifications"><span>♧</span>Уведомления${state.notificationCount ? `<i class="nav-unread-count">${state.notificationCount > 99 ? '99+' : state.notificationCount}</i>` : ''}</button>`}${navItem('stats','▥','Статистика')}${state.isAdmin ? navItem('admin','⚙','Админ-панель') : ''}</nav><div class="sidebar-bottom"><div class="user-mini">${avatar(profileAvatar, p.username)}<div><b>${esc(p.username || 'Пользователь')}</b><small>Участник FLAMEXBOT</small></div></div><button class="logout" id="logout">↗ Выйти</button></div></aside>
-    <main class="main-area"><header class="topbar"><div><span class="top-kicker">FLAMEXBOT /</span> <b>${({home:'Обзор',messages:'Переписки',tariffs:'Premium',streaks:'Огоньки',missions:'Задания',profile:'Профиль',admin:'Админ-панель',achievements:'Достижения',notifications:'Уведомления',stats:'Статистика'})[state.page]}</b></div><div class="top-right"><span class="status-dot"></span> На связи <span class="top-avatar">${avatar(profileAvatar,p.username)}</span></div></header>
-    <section class="page-content" id="page-content"></section></main></div><div class="toast"></div>`;
-  document.querySelectorAll('[data-page]').forEach(btn => btn.addEventListener('click', () => {
-    if (state.page === 'messages' && btn.dataset.page !== 'messages') {
-      if (state.businessChatChannel) { supabase.removeChannel(state.businessChatChannel); state.businessChatChannel = null; }
-      if (state.businessListChannel) { supabase.removeChannel(state.businessListChannel); state.businessListChannel = null; }
-      state.activeBusinessChat = null;
-    }
-    state.page = btn.dataset.page; renderApp(); loadPage();
-  }));
-  document.querySelector('#logout').addEventListener('click', async () => { if (confirm('Выйти из аккаунта?')) await supabase.auth.signOut(); });
+  const p=state.profile||{};
+  const profileAvatar=p.avatar_url||p.telegram_photo_url;
+  const items=[
+    ['home','⌂','Обзор','Главная'],
+    ['messages','✉','Переписки','Telegram Business'],
+    ['streaks','🔥','Огоньки','Общие серии'],
+    ['missions','⚡','Ежедневные задания','Новые задания каждый день'],
+    ['achievements','🏆','Достижения','Коллекция наград'],
+    ['stats','▥','Статистика','Твоя активность'],
+    ['tariffs','✧','Premium','Подписка и возможности'],
+    ['profile','◉','Профиль','Настройки аккаунта'],
+    ...(state.isAdmin?[['users','👥','Все пользователи','Поиск, галочки и Premium'],['admin','⚙','Админ-панель','Управление проектом']]:[])
+  ];
+  app.innerHTML=`
+    <div class="app-layout">
+      <main class="main-area">
+        <header class="topbar">
+          <div class="topbar-brand"><span class="brand-mark">✦</span><span>FLAMEXBOT</span><i class="topbar-divider"></i><span class="topbar-section" id="page-title">${PAGE_LABELS[state.page]||'Обзор'}</span></div>
+          <div class="top-right"><span class="top-status"><i></i> Система активна</span>
+            <div class="profile-menu-wrap">
+              <button type="button" class="profile-menu-trigger" id="profile-menu-trigger" aria-expanded="false" aria-label="Открыть меню профиля">
+                <span id="top-avatar">${avatar(profileAvatar,p.display_name||p.username)}</span>
+                <span class="profile-trigger-name">${esc(p.display_name||p.username||'Пользователь')}</span>
+                <span id="top-profile-badges">${badgeMarkup(state.profileBadges,true)}</span>
+                <span class="profile-chevron">⌄</span>
+              </button>
+              <div class="profile-menu" id="profile-menu">
+                <div class="profile-menu-head">
+                  <span id="menu-avatar">${avatar(profileAvatar,p.display_name||p.username,'avatar-lg')}</span>
+                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${isPremium()?'✦ PREMIUM MEMBER':'FREE MEMBER'}</small></div>
+                </div>
+                <div class="profile-menu-label">РАЗДЕЛЫ</div>
+                <nav class="profile-menu-nav">${items.map(([key,icon,label,sub])=>`<button type="button" class="profile-menu-item ${state.page===key?'selected':''}" data-page="${key}"><span class="menu-item-icon">${icon}</span><span><b>${label}</b><small>${sub}</small></span><i>›</i></button>`).join('')}</nav>
+                <div class="profile-menu-footer"><button type="button" class="logout" id="logout"><span>↗</span> Выйти из аккаунта</button><small>FLAMEXBOT · ${new Date().getFullYear()}</small></div>
+              </div>
+            </div>
+          </div>
+        </header>
+        <section class="page-content page-view" id="page-content"></section>
+      </main>
+    </div>
+    <div class="toast"></div>
+  `;
+  const trigger=document.querySelector('#profile-menu-trigger');
+  const menu=document.querySelector('#profile-menu');
+  trigger?.addEventListener('click',()=>{
+    const opened=menu.classList.toggle('open');
+    trigger.setAttribute('aria-expanded',String(opened));
+  });
+  menu?.querySelectorAll('[data-page]').forEach(btn=>btn.addEventListener('click',()=>navigateTo(btn.dataset.page)));
+  document.querySelector('#logout')?.addEventListener('click',async()=>{
+    closeProfileMenu();
+    if(confirm('Выйти из аккаунта FLAMEXBOT?'))await supabase.auth.signOut();
+  });
+  if(!state.menuListenersBound){
+    document.addEventListener('click',event=>{
+      const wrap=document.querySelector('.profile-menu-wrap');
+      if(wrap&&!wrap.contains(event.target))closeProfileMenu();
+    });
+    document.addEventListener('keydown',event=>{if(event.key==='Escape')closeProfileMenu();});
+    state.menuListenersBound=true;
+  }
   loadPage();
 }
 
 async function loadPage() {
-  const host = document.querySelector('#page-content'); if (!host) return;
-  const p = state.profile || {};
-  if (state.page === 'home') {
-    const [streaks, unread] = await Promise.all([
-      supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false}).limit(5),
-      supabase.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',state.session.user.id).is('read_at',null)
-    ]);
-    state.streaks = streaks.data || [];
-    host.innerHTML = `<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.username || 'друг')} <span>✦</span></h1><p class="muted">Твои переписки, общие огоньки и важные события — в одном месте.</p></div><div class="date-chip">${new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'long'})}</div></div>
-      <div class="hero-card"><div class="hero-copy"><div class="eyebrow">НЕ ДАЙ ОГОНЬКУ ПОГАСНУТЬ</div><h2>Один день.<br/><em>Одно сообщение.</em></h2><p>Поддерживай связь с близкими, возвращайся к важным диалогам и не давай общим огонькам гаснуть.</p><button class="primary" data-go="messages">Перейти к перепискам <b>→</b></button></div><div class="hero-fire">🔥<span class="fire-glow"></span></div><div class="hero-watermark">FLAME</div></div>
-      <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✦</span><small>ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">✉</span><small>УВЕДОМЛЕНИЯ</small><strong>${unread.count || 0}</strong><span class="stat-foot">Непрочитанные</span></div></div>
-      <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Твои огоньки</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
-      <div class="streak-list">${state.streaks.length ? state.streaks.map(s => `<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${s.current_days || 0} <small>дн.</small></strong></div>`).join('') : '<div class="empty-state">Здесь появятся ваши общие серии. Начни с ежедневного сообщения в Telegram Business.</div>'}</div>`;
-  } else if (state.page === 'tariffs') await renderTariffs(host);
-  else if (state.page === 'messages') await renderBusinessMessages(host);
-  else if (state.page === 'streaks') await renderStreaks(host);
-  else if (state.page === 'missions') await renderDailyMissions(host);
-  else if (state.page === 'profile') await renderProfile(host);
-  else if (state.page === 'achievements') await renderAchievements(host);
-  else if (state.page === 'notifications') await renderNotifications(host);
-  else if (state.page === 'stats') await renderStats(host);
-  else if (state.page === 'admin') await renderAdmin(host);
-  host.querySelectorAll('[data-go]').forEach(btn => btn.addEventListener('click', () => { state.page = btn.dataset.go; renderApp(); }));
+  const host=document.querySelector('#page-content');
+  if(!host)return;
+  const p=state.profile||{};
+  host.innerHTML=`<div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем FLAMEXBOT</strong><small>Подготавливаем твоё пространство…</small></div>`;
+  try {
+    if(state.page==='home'){
+      const [streaks,earned]=await Promise.all([
+        supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false}).limit(5),
+        supabase.from('user_achievements').select('achievement_id',{count:'exact',head:true}).eq('user_id',state.session.user.id)
+      ]);
+      state.streaks=streaks.data||[];
+      const p=state.profile||{};
+      host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'long'})}</div></div>
+        <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
+        <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
+        <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
+        <div class="streak-list">${state.streaks.length?state.streaks.map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${s.current_days||0} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Начни общаться — и здесь появятся ваши огоньки.</div>'}</div>
+        <div class="home-feature-grid"><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button><button class="home-feature-card" data-go="users"><span>👥</span><b>Сообщество</b><small>Знакомься с участниками FLAMEXBOT</small><i>→</i></button></div>`;
+    } else if(state.page==='tariffs') await renderTariffs(host);
+    else if(state.page==='messages') await renderBusinessMessages(host);
+    else if(state.page==='streaks') await renderStreaks(host);
+    else if(state.page==='missions') await renderDailyMissions(host);
+    else if(state.page==='profile') await renderProfile(host);
+    else if(state.page==='achievements') await renderAchievements(host);
+    else if(state.page==='stats') await renderStats(host);
+    else if(state.page==='users') await renderUsers(host);
+    else if(state.page==='admin') await renderAdmin(host);
+    host.querySelectorAll('[data-go]').forEach(btn=>btn.addEventListener('click',()=>navigateTo(btn.dataset.go)));
+  } catch(error) {
+    console.error('FLAMEXBOT page load failed:',error);
+    host.innerHTML=`<section class="load-error"><span>⚠</span><h2>Не удалось загрузить раздел</h2><p>${esc(error?.message||'Проверь соединение и попробуй ещё раз.')}</p><button class="primary" id="retry-page">Повторить загрузку</button></section>`;
+    host.querySelector('#retry-page')?.addEventListener('click',()=>navigateTo(state.page));
+  }
 }
 
 function renderBusinessChatChoices(chats) {
