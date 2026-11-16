@@ -115,7 +115,8 @@ const BADGE_META = {
   beta_tester:{label:'Бета-тестер',icon:'🧪',className:'beta'},
   community_manager:{label:'Комьюнити',icon:'🌐',className:'community'},
   partner:{label:'Партнёр',icon:'🤝',className:'partner'},
-  premium:{label:'Premium',icon:'✧',className:'premium'}
+  premium:{label:'Premium',icon:'✧',className:'premium'},
+  pro:{label:'FLAMEX PRO',icon:'🔥',className:'pro'}
 };
 function isFounderProfile(profile=state.profile) {
   return String(profile?.telegram_id||'')===FOUNDER_TELEGRAM_ID || String(profile?.id||'')===FOUNDER_PROFILE_ID;
@@ -124,7 +125,8 @@ function verifiedMarkMarkup(verified=false) {
   return verified ? '<span class="verified-mark" title="Подтверждённый аккаунт" aria-label="Подтверждённый аккаунт">✓</span>' : '';
 }
 function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
-  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&isPremium()?['premium']:[])])];
+  const ownPlan=state.subscription?.plan;
+  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&ownPlan==='premium'&&isPremium()?['premium']:[]),...(includeOwnPremium&&ownPlan==='pro'&&isPremium()?['pro']:[])])];
   return unique.filter(code=>code!=='verified'&&BADGE_META[code]).map(code=>{
     const b=BADGE_META[code];
     return `<span class="role-badge badge-${b.className} ${compact?'compact':''}" title="${esc(b.label)}"><i>${b.icon}</i>${compact?'':`<span>${esc(b.label)}</span>`}</span>`;
