@@ -280,7 +280,7 @@ async function loadPage() {
         <div class="section-heading archive-section-heading"><div><div class="eyebrow">TELEGRAM BUSINESS</div><h3>История сообщений</h3></div><span class="archive-section-note">Архив переписок</span></div>
         <div class="home-archive-grid">
           <button class="home-archive-card deleted" data-go="deleted" type="button">
-            <span class="home-archive-icon">▤</span><span class="home-archive-copy"><b>Удалённые сообщения</b><small>Сообщения собеседников, удалённые в Telegram</small></span><strong class="home-archive-count">${deletedCount}</strong><i>→</i>
+            <span class="home-archive-icon">▤</span><span class="home-archive-copy"><b>Удалённые сообщения</b><small>Сообщения, удалённые в Telegram</small></span><strong class="home-archive-count">${deletedCount}</strong><i>→</i>
           </button>
           <button class="home-archive-card edited" data-go="edited" type="button">
             <span class="home-archive-icon">✎</span><span class="home-archive-copy"><b>Изменённые сообщения</b><small>Предыдущие и текущие версии сообщений</small></span><strong class="home-archive-count">${editedCount}</strong><i>→</i>
@@ -417,7 +417,7 @@ async function renderBusinessMessageEvents(host,eventType) {
   const deleted=eventType==='deleted';
   const title=deleted?'Удалённые сообщения':'Изменённые сообщения';
   const icon=deleted?'🗑️':'✏️';
-  host.innerHTML=`<div class="page-heading"><button class="outline small" type="button" data-go="home">← Назад</button><div class="eyebrow">TELEGRAM BUSINESS · ИСТОРИЯ</div><h1>${icon} ${title}</h1><p class="muted">Здесь сохраняются только сообщения собеседников. Твои исходящие сообщения в этот журнал не попадают.</p></div><div class="message-events-list"><div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем историю</strong></div></div>`;
+  host.innerHTML=`<div class="page-heading"><button class="outline small" type="button" data-go="home">← Назад</button><div class="eyebrow">TELEGRAM BUSINESS · ИСТОРИЯ</div><h1>${icon} ${title}</h1><p class="muted">Здесь сохраняются удалённые и изменённые сообщения обеих сторон диалога.</p></div><div class="message-events-list"><div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем историю</strong></div></div>`;
   const list=host.querySelector('.message-events-list');
   const {data:events,error}=await supabase.from('flamexbot_business_message_events')
     .select('id,business_chat_id,telegram_message_id,event_type,original_content,message_type,media_file_id,media_url,original_raw,occurred_at')
