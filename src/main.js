@@ -1077,7 +1077,7 @@ async function renderAdminUser(host) {
     if(action==='ban'){reason=prompt('Причина блокировки:','Нарушение правил сообщества');if(reason===null)return;}
     if(action==='premium_grant'||action==='pro_grant'){const label=action==='pro_grant'?'PRO':'Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? 0 — бессрочно.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}reason=prompt('Комментарий к выдаче (необязательно):','')||null;}
     if(action==='badge_grant'||action==='badge_revoke'){badgeCode=host.querySelector('#admin-detail-badge')?.value||badges[0]||null;if(!badgeCode){toast('Выбери значок');return;}}
-    if(['ban','unban','unverify','premium_revoke','badge_revoke'].includes(action)&&!confirm('Подтвердить действие?'))return;
+    if(['ban','unban','unverify','premium_revoke','pro_revoke','badge_revoke'].includes(action)&&!confirm('Подтвердить действие?'))return;
     btn.disabled=true;
     const {error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{p_user_id:u.id,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days});
     if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
@@ -1133,7 +1133,7 @@ async function renderTariffs(host, initialTab='premium') {
     </ul>
     <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
     <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
-    ${lifetime?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
+    ${lifetime||isPro?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
     <small class="premium-payment-note">Оплата проходит внутри Telegram. Подписка действует 30 дней и не продлевается автоматически.</small>
    </section>
   </div>
