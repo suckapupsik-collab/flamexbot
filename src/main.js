@@ -1207,6 +1207,12 @@ async function renderCommands(host) {
     {syntax:'.ping',title:'Проверка связи',description:'Проверяет, что FLAMEXBOT отвечает в текущем Business-диалоге.',access:'free',group:'Основные'},
     {syntax:'.help',title:'Справка',description:'Показывает список команд прямо в переписке.',access:'free',group:'Основные'},
     {syntax:'.inf',title:'Справка (короткий алиас)',description:'То же самое, что .help.',access:'free',group:'Основные'},
+    {syntax:'/start',title:'Запустить бота',description:'Показывает приветствие и кнопку открытия FLAMEXBOT.',access:'free',group:'Личный чат с ботом'},
+    {syntax:'/app',title:'Открыть Mini App',description:'Показывает кнопку запуска приложения и включает кнопку меню Telegram.',access:'free',group:'Личный чат с ботом'},
+    {syntax:'/ping',title:'Проверка бота',description:'Проверяет, что бот отвечает в личном чате.',access:'free',group:'Личный чат с ботом'},
+    {syntax:'/status',title:'Статус Telegram Business',description:'Показывает, подключён ли Business и какие права выданы.',access:'free',group:'Личный чат с ботом'},
+    {syntax:'/help',title:'Помощь в личном чате',description:'Объясняет, что команды управления нужно отправлять в переписке с человеком.',access:'free',group:'Личный чат с ботом'},
+    {syntax:'/commands',title:'Справка по командам',description:'Открывает ту же справку, что и /help.',access:'free',group:'Личный чат с ботом'}
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Включить мут',description:'Удаляет новые входящие сообщения в выбранном диалоге. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
     {syntax:'.unmute',title:'Выключить мут',description:'Останавливает автоматическое удаление новых сообщений. Доступно бесплатно.',access:'free',group:'Управление чатом'},
