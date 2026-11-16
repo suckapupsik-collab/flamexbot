@@ -269,10 +269,11 @@ async function loadPage() {
         else if(refApplied)toast('🔥 Реферальная награда начислена пригласившему!');
         window.history.replaceState({},'',window.location.pathname+window.location.hash);
       }
-      const [{data:referralCode,error:refCodeError},{count:referralCount,error:refCountError}]=await Promise.all([
-        supabase.rpc('ensure_flamexbot_referral_code'),
+      const [{data:referralLinkData,error:refCodeError},{count:referralCount,error:refCountError}]=await Promise.all([
+        supabase.functions.invoke('flamexbot-referral-link'),
         supabase.from('flamexbot_referrals').select('id',{count:'exact',head:true}).eq('referrer_id',state.session.user.id)
       ]);
+      const referralCode=referralLinkData?.code||null;
       host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'))} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
@@ -293,8 +294,9 @@ async function loadPage() {
         <div class="streak-list">${state.streaks.filter(s=>effectiveStreakDays(s)>0).length?state.streaks.filter(s=>effectiveStreakDays(s)>0).map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${effectiveStreakDays(s)} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Найди друга и начните обмениваться сообщениями каждый день.</div>'}</div>
         <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
       host.querySelector('#copy-referral')?.addEventListener('click',async()=>{
-        const link=window.location.origin+'/?ref='+encodeURIComponent(referralCode||'');
-        try{await navigator.clipboard.writeText(link);toast('Реферальная ссылка скопирована!');}
+        const link=referralLinkData?.link;
+        if(!link){toast(refCodeError?.message||referralLinkData?.error||'Реферальная ссылка пока недоступна.');return;}
+        try{await navigator.clipboard.writeText(link);toast('Реферальная ссылка бота скопирована!');}
         catch{window.prompt('Скопируй ссылку приглашения',link);}
       });
       if(refCodeError||refCountError)console.warn('Referral panel load:',refCodeError?.message||refCountError?.message);
@@ -735,7 +737,7 @@ async function openBusinessChat(id) {
       </section>
       <section class="business-control-card">
         <div class="business-control-title"><b>🛡 Антимут</b><span class="business-control-state ${antimutEnabled?'active':''}">${antimutEnabled?'Включён':'Выключен'}</span></div>
-        <p>Сохраняет видимость сообщений владельца в истории FLAMEXBOT. Не снимает мут собеседника и не гарантирует уведомления в Telegram.</p>
+        <p>Отправляет новые сообщения от имени бота FLAMEXBOT, если собеседник уже открыл бота и нажал Start. Не обходит блокировки Telegram.</p>
         ${!founderChat && !premiumAccess && !antimutEnabled ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
         <button type="button" class="outline small" id="toggle-business-antimut" ${founderChat||(!premiumAccess && !antimutEnabled)?'disabled':''}>${antimutEnabled?'Выключить антимут':'Включить антимут'}</button>
         ${antimutEnabled && !founderChat ? '<small class="business-control-note">Режим можно выключить командой <code>.unantimute</code> или кнопкой выше.</small>' : ''}
@@ -754,12 +756,12 @@ async function openBusinessChat(id) {
     });
     controlsHost.querySelector('#toggle-business-antimut')?.addEventListener('click', async e => {
       const next = !antimutEnabled;
-      if (next && (founderChat || !premiumAccess || !canReplyMessages)) return;
+      if (next && (founderChat || !premiumAccess)) return;
       e.currentTarget.disabled = true;
       const { data, error } = await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next}});
       if (error || data?.error) { toast(data?.error || 'Не удалось изменить антимут: '+(error?.message||'')); e.currentTarget.disabled = false; return; }
       antimutEnabled = next; chat.antimut_enabled = next;
-      toast(next ? 'Антимут включён: доступна ручная попытка отправки' : 'Антимут выключен');
+      toast(next ? 'Антимут включён: новые сообщения пойдут от имени бота' : 'Антимут выключен');
       renderBusinessControls();
       await refreshBusinessChatList(document.querySelector('#page-content'));
     });
@@ -859,7 +861,7 @@ async function openBusinessChat(id) {
         if(next&&!isPremium()){button.disabled=false;toast('Включение антимута доступно только в Premium.');return;}
         const {data:antiSettingData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next,command_mode:true,command_name:name}});
         button.disabled=false;if(antiError||antiSettingData?.error){toast(antiSettingData?.error||antiError?.message||'Не удалось изменить антимут');return;}
-        antimutEnabled=next;chat.antimut_enabled=next;renderBusinessControls();toast(next?'Антимут включён: сообщения владельца будут видны в истории FLAMEXBOT':'Антимут выключен');form.reset();return;
+        antimutEnabled=next;chat.antimut_enabled=next;renderBusinessControls();toast(next?'Антимут включён: сообщения будут отправляться от имени бота':'Антимут выключен');form.reset();return;
       }
       const preferenceCommands={
         autoread:['autoread',true,'Автопрочтение'],unautoread:['autoread',false,'Автопрочтение'],
@@ -892,7 +894,7 @@ async function openBusinessChat(id) {
       button.disabled=false;toast('Неизвестная команда. Напиши .help');return;
     }
     const replyId=form.querySelector('[name=reply_to_message_id]').value||null;
-    const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id:id,text,storage_path:storagePath,media_type:mediaType,reply_to_message_id:replyId } });
+    const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id:id,text,storage_path:storagePath,media_type:mediaType,reply_to_message_id:replyId,antimut_mode:antimutEnabled } });
     button.disabled = false;
     if (error || data?.error) {
       if(storagePath) await supabase.storage.from('flamex-business-media').remove([storagePath]);
@@ -1088,6 +1090,27 @@ async function renderAdminUser(host) {
 
 
 
+function animateFortuneWheel(prizeType) {
+ const wheel=document.querySelector('#fortune-wheel');
+ if(!wheel)return Promise.resolve();
+ const centers={premium_day:27,addon:117,free_spin:252};
+ const target=centers[prizeType]??252;
+ if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
+   wheel.style.transform='rotate('+((360-target)%360)+'deg');
+   return Promise.resolve();
+ }
+ wheel.style.transition='none';
+ wheel.style.transform='rotate(0deg)';
+ void wheel.offsetWidth;
+ return new Promise(resolve=>{
+   requestAnimationFrame(()=>{
+     wheel.style.transition='transform 5.1s cubic-bezier(.12,.78,.12,1)';
+     wheel.style.transform='rotate('+(360*6-target)+'deg)';
+   });
+   window.setTimeout(resolve,5250);
+ });
+}
+
 async function renderTariffs(host, initialTab='premium') {
  const premium=isPremium();
  const isPro=state.subscription?.plan==='pro'&&premium;
@@ -1147,6 +1170,15 @@ async function renderTariffs(host, initialTab='premium') {
   </section>
   <section class="business-card wheel-card">
    <div class="eyebrow">LUCKY SPIN</div><h2>🎡 Колесо фортуны</h2>
+   <div class="fortune-wheel-stage" aria-label="Колесо фортуны">
+    <span class="fortune-wheel-pointer">▼</span>
+    <div class="fortune-wheel" id="fortune-wheel">
+     <span class="wheel-prize wheel-prize-premium">⭐</span>
+     <span class="wheel-prize wheel-prize-addon">🛡️</span>
+     <span class="wheel-prize wheel-prize-spin">🎁</span>
+     <span class="fortune-wheel-center">✦</span>
+    </div>
+   </div>
    <p class="muted">Прокрутка стоит 5 ⭐. Возможные награды: 1 день Premium, защита от команд на 5 дней или бесплатная прокрутка.</p>
    <div class="wheel-odds"><span>15% · Premium 1 день</span><span>25% · Дополнение 5 дней</span><span>60% · Бесплатная прокрутка</span></div>
    <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐'}</button>
@@ -1256,6 +1288,7 @@ async function renderTariffs(host, initialTab='premium') {
    try{
      const {data,error}=await supabase.functions.invoke('create-wheel-invoice',{body:freeSpin?{action:'free_spin'}:{}});
      if(freeSpin&&data?.prize?.prize_label){
+       await animateFortuneWheel(data.prize.prize_type);
        const {data:profile}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
        state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0,command_protection_expires_at:profile?.command_protection_expires_at};
        if(data.prize.prize_type==='premium_day'){
@@ -1272,11 +1305,12 @@ async function renderTariffs(host, initialTab='premium') {
          toast('Оплата принята. Определяем награду…');
          let result=null;
          for(let attempt=0;attempt<18;attempt++){
-           const {data:order,error:orderError}=await supabase.from('flamexbot_wheel_orders').select('status,prize_label').eq('id',data.order_id).maybeSingle();
+           const {data:order,error:orderError}=await supabase.from('flamexbot_wheel_orders').select('status,prize_label,prize_type').eq('id',data.order_id).maybeSingle();
            if(orderError)console.warn('Wheel status:',orderError.message);
            if(order?.status==='paid'){result=order;break;}
            await new Promise(resolve=>setTimeout(resolve,600));
          }
+         if(result)await animateFortuneWheel(result.prize_type);
          toast(result?'🎉 Выпало: '+result.prize_label:'Платёж принят. Награда появится после подтверждения Telegram.');
          const {data:profile}=await supabase.from('profiles').select('wheel_free_spins').eq('id',state.session.user.id).maybeSingle();
          state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0};
