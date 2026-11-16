@@ -61,6 +61,12 @@ Deno.serve(async (req: Request) => {
     const { data: current, error: subscriptionError } = await admin.from("user_subscriptions")
       .select("plan,expires_at").eq("user_id", authData.user.id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
+    if (current?.plan === "founder" && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now())) {
+      return response({ error: "У тебя активен бессрочный FLAMEX FOUNDER — покупка Premium не требуется." }, 409);
+    }
+    if (current?.plan === "pro" && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now())) {
+      return response({ error: "У тебя активен FLAMEX PRO — покупка Premium не требуется." }, 409);
+    }
     if (current?.plan === "premium" && !current.expires_at) {
       return response({ error: "У тебя бессрочный Premium — продление не требуется." }, 409);
     }

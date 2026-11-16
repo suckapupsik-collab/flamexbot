@@ -24,6 +24,7 @@ function mimeTypeFromName(fileName: string) {
 function explainTelegramSendError(description: unknown) {
  const raw=String(description??"ошибка Telegram API"), lower=raw.toLowerCase();
  if(/blocked by the user|bot was blocked|user is deactivated|chat not found|peer_id_invalid/.test(lower))return "Telegram отклонил отправку: чат недоступен или получатель ограничил сообщения. FLAMEXBOT не может обходить блокировки.";
+ if(/bot can\x27t initiate conversation|bot cannot initiate|bot can\x27t send messages to bots/.test(lower))return "Чтобы отправить сообщение через FLAMEXBOT, собеседник должен сначала открыть бота и нажать Start. Антимут не обходит блокировки Telegram.";
  if(/business_connection_invalid|business connection.*(invalid|not found|disabled)/.test(lower))return "Telegram Business-подключение недействительно или отключено.";
  if(/not enough rights|can't write|can_reply|chat_write_forbidden|have no rights/.test(lower))return "Telegram не разрешил отправку: у Business-подключения нет нужного права или чат недоступен для ответа.";
  if(/too many requests|retry after/.test(lower))return "Telegram временно ограничил отправку. Подожди и попробуй позже вручную.";
@@ -68,9 +69,9 @@ Deno.serve(async (req: Request) => {
     const commandMatch = text.trim().match(/^[./]([a-z][a-z0-9_]*)(?:@\w+)?(?:\s+([\s\S]*))?$/i);
     const commandName = String(body?.command_name || commandMatch?.[1] || (action === "set_mute" ? (body.enabled ? "mute" : "unmute") : action === "set_antimute" ? "antimute" : "")).toLowerCase();
     const commandArgs = String(commandMatch?.[2] || "").trim().toLowerCase();
-    const commandMode = antimutMode || body?.command_mode === true || settingAction || Boolean(commandMatch);
+    const commandMode = body?.command_mode === true || settingAction || Boolean(commandMatch);
     if (!["send","refresh_avatar","set_mute","set_antimute","set_preference"].includes(action)) return reply({ error: "Неизвестное действие Business-чата." }, 400);
-    if (antimutMode) return reply({ error: "Антимут работает как режим отображения истории, а не как отправка сообщений." }, 400);
+    if (antimutMode && action !== "send") return reply({ error: "Антимут применяется только к отправке сообщения." }, 400);
     if (settingAction && typeof body?.enabled !== "boolean") return reply({ error: "Для настройки укажи enabled: true или false." }, 400);
     const preferenceKeys: Record<string,string> = {
       autoread: "autoread_enabled", autotyping: "autotyping_enabled", autovoice: "autovoice_enabled",
@@ -151,7 +152,7 @@ Deno.serve(async (req: Request) => {
       .eq("profile_id", profileId).eq("connection_id", chat.business_connection_id).maybeSingle();
     if (connectionError) throw connectionError;
     if (!connection?.is_enabled) return reply({ error: "Telegram Business отключён. Подключи его заново в Telegram." }, 409);
-    if (connection.rights?.can_reply === false && !settingAction) return reply({ error: "У бота нет разрешения отвечать на бизнес-сообщения." }, 403);
+    if (connection.rights?.can_reply === false && !settingAction && !antimutMode) return reply({ error: "У бота нет разрешения отвечать на бизнес-сообщения." }, 403);
 
     const ownerIsFounder = String(moderation?.telegram_id ?? "") === FOUNDER_TELEGRAM_ID;
     const targetTelegramId = String(chat.telegram_user_id || chat.telegram_chat_id || "");
@@ -177,7 +178,7 @@ Deno.serve(async (req: Request) => {
         const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
           .select("plan,expires_at").eq("user_id", profileId).maybeSingle();
         if (subscriptionError) throw subscriptionError;
-        const premium = subscription?.plan === "premium" && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+        const premium = ["premium","pro","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
         if (!premium) return reply({ error: "Включение этой функции доступно только в Premium. Отключение остаётся бесплатным." }, 403);
       }
       if (action === "set_mute" && enabled && connection.rights?.can_delete_all_messages !== true) {
@@ -188,8 +189,8 @@ Deno.serve(async (req: Request) => {
         return reply({ error: "Для фильтрации сообщений Telegram Business должен выдать право «Удалять все сообщения»." }, 403);
       }
       if (action === "set_preference") {
-        const { error: settingError } = await admin.from("flamexbot_user_preferences")
-          .upsert({ profile_id: profileId, [preferenceKey!]: enabled, updated_at: new Date().toISOString() }, { onConflict: "profile_id" });
+        const { error: settingError } = await admin.from("flamexbot_business_chat_settings")
+          .upsert({ profile_id: profileId, business_chat_id: chat.id, [preferenceKey!]: enabled, updated_at: new Date().toISOString() }, { onConflict: "profile_id,business_chat_id" });
         if (settingError) throw settingError;
         return reply({ ok: true, preference: body.preference, enabled });
       }
@@ -201,14 +202,37 @@ Deno.serve(async (req: Request) => {
     }
 
     const commandNeedsPremium =
-      ["mute","spam","afk","timeprofile","bold","dumb","link","time"].includes(commandName)
+      ["mute","spam","afk","timeprofile","bold","dumb","link","time","copyp"].includes(commandName)
       || (["antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(commandName) && !settingAction);
     if (!settingAction && !antimutMode && commandNeedsPremium) {
       const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
         .select("plan,expires_at").eq("user_id", profileId).maybeSingle();
       if (subscriptionError) throw subscriptionError;
-      const premium = subscription?.plan === "premium" && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+      const premium = ["premium","pro","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
       if (!premium) return reply({ error: "Эта команда доступна только в Premium." }, 403);
+    }
+
+    if (commandName === "afk" || commandName === "unafk") {
+      if (hasMedia) return reply({ error: "Команды AFK не принимают вложения." }, 400);
+      const rawArgs = commandMatch?.[2]?.trim() ?? "";
+      const enabled = commandName === "afk";
+      const afkMessage = enabled
+        ? (rawArgs || "Сейчас отошёл, отвечу позже.").slice(0, 300)
+        : null;
+      const { error: afkError } = await admin.from("flamexbot_business_chat_settings").upsert({
+        profile_id: profileId,
+        business_chat_id: chat.id,
+        afk_enabled: enabled,
+        ...(enabled ? { afk_message: afkMessage, last_afk_reply_at: null } : {}),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "profile_id,business_chat_id" });
+      if (afkError) throw afkError;
+      return reply({
+        ok: true,
+        command: commandName,
+        afk_enabled: enabled,
+        message: enabled ? "AFK включён только в этом диалоге." : "AFK выключен в этом диалоге.",
+      });
     }
 
     if (antimutMode) {
@@ -217,16 +241,16 @@ Deno.serve(async (req: Request) => {
       }
       const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions").select("plan,expires_at").eq("user_id", profileId).maybeSingle();
       if (subscriptionError) throw subscriptionError;
-      const premium = subscription?.plan === "premium" && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+      const premium = ["premium","pro","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
       if (!premium) return reply({ error: "Антимут доступен только в Premium." }, 403);
       const { data: settings, error: settingsError } = await admin.from("flamexbot_business_chat_settings").select("antimut_enabled").eq("profile_id", profileId).eq("business_chat_id", chat.id).maybeSingle();
       if (settingsError) throw settingsError;
       if (!settings?.antimut_enabled) return reply({ error: "Сначала включи антимут в настройках этого чата." }, 409);
-      if (connection.rights?.can_reply !== true) return reply({ error: "Telegram Business не выдал право «Отвечать». Отправка не выполнялась." }, 403);
+      /* Antimut sends from the bot account itself; Telegram still enforces blocks and bot-start requirements. */
     }
 
     const telegramPayload = new FormData();
-    telegramPayload.append("business_connection_id", connection.connection_id);
+    if (!antimutMode) telegramPayload.append("business_connection_id", connection.connection_id);
     telegramPayload.append("chat_id", String(chat.telegram_chat_id));
     if (replyTo) telegramPayload.append("reply_parameters", JSON.stringify({ message_id: replyTo }));
     let method = "sendMessage";

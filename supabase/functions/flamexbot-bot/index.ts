@@ -28,11 +28,71 @@ async function getTelegramBan(telegramUserId: unknown) {
 }
 
 async function telegram(method: string, body: Record<string, unknown>) {
+  let payload = body;
+  if (method === "sendMessage" && body.reply_markup && typeof body.reply_markup === "object") {
+    try {
+      const available = await getAvailablePremiumEmojiIds();
+      const icons: Record<string, keyof typeof PREMIUM_EMOJI> = {
+        open: "sparkles", settings: "settings", back: "back", home: "home",
+        refresh: "refresh", success: "success", confirm: "success",
+        cancel: "cancel", help: "help", download: "download", export: "download",
+        security: "lock", premium: "diamond", star: "star", upload: "upload",
+        search: "search", folder: "folder", profile: "user",
+      };
+      const enrich = (rows: unknown) => Array.isArray(rows) ? rows.map((row: any) =>
+        Array.isArray(row) ? row.map((button: any) => {
+          if (!button || typeof button !== "object" || button.icon_custom_emoji_id) return button;
+          const label = String(button.text ?? "").toLowerCase();
+          const key = /отмен|cancel|закрыть/.test(label) ? "cancel"
+            : /назад|back/.test(label) ? "back"
+            : /обнов|refresh|повтор/.test(label) ? "refresh"
+            : /помощ|help|команд/.test(label) ? "help"
+            : /экспорт|скач|download/.test(label) ? "download"
+            : /настрой|settings/.test(label) ? "settings"
+            : /домой|главн|home/.test(label) ? "home"
+            : /подтверд|готово|продолж|открыть|прилож/.test(label) ? "success"
+            : /профил|аккаунт/.test(label) ? "profile"
+            : /оплат|stars|звезд/.test(label) ? "star"
+            : /premium|pro|тариф/.test(label) ? "diamond"
+            : /защит|безопас|lock/.test(label) ? "security"
+            : /загруз|отправ|upload/.test(label) ? "upload"
+            : /поиск|найти|search/.test(label) ? "search"
+            : /папк|архив/.test(label) ? "folder"
+            : /открыть|запустить|старт/.test(label) ? "open"
+            : null;
+          if (!key) return button;
+          const emoji = PREMIUM_EMOJI[icons[key] ?? key as keyof typeof PREMIUM_EMOJI];
+          return emoji && available.has(emoji.id) ? { ...button, icon_custom_emoji_id: emoji.id } : button;
+        }) : row
+      ) : rows;
+      const markup = body.reply_markup as Record<string, unknown>;
+      const enhanced = { ...markup };
+      if (markup.inline_keyboard) enhanced.inline_keyboard = enrich(markup.inline_keyboard);
+      if (markup.keyboard) enhanced.keyboard = enrich(markup.keyboard);
+      payload = { ...body, reply_markup: enhanced };
+    } catch (error) {
+      console.warn("Telegram button emoji enrichment skipped:", (error as any)?.message ?? error);
+    }
+  }
   const response = await fetch(`${API}/${method}`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) throw new Error(data.description ?? `Telegram API ${method} failed`);
+  if (!response.ok || !data.ok) {
+    const message = String(data.description ?? `Telegram API ${method} failed`);
+    if (method === "sendMessage" && JSON.stringify(payload) !== JSON.stringify(body)
+        && /icon_custom_emoji_id|custom emoji.*button|button.*emoji/i.test(message)) {
+      const fallbackResponse = await fetch(`${API}/${method}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const fallbackData = await fallbackResponse.json();
+      if (!fallbackResponse.ok || !fallbackData.ok) {
+        throw new Error(fallbackData.description ?? `Telegram API ${method} failed`);
+      }
+      return fallbackData.result;
+    }
+    throw new Error(message);
+  }
   return data.result;
 }
 function explainTelegramSendError(error: unknown) {
@@ -273,17 +333,15 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
   if (messageError) throw messageError;
   if (direction === "inbound") {
     if (isFounderTarget(chatId)) return;
-    const { data: prefs, error: prefsError } = await admin.from("flamexbot_user_preferences")
-      .select("afk_enabled,afk_message,autoread_enabled,autotyping_enabled,autovoice_enabled,mutestick_enabled,antimat_enabled")
-      .eq("profile_id", connection.profile_id).maybeSingle();
-    if (prefsError) throw prefsError;
     const { data: chatPrefs, error: chatSettingsError } = await admin.from("flamexbot_business_chat_settings")
-      .select("is_muted").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
+      .select("is_muted,antimut_enabled,afk_enabled,afk_message,autoread_enabled,autotyping_enabled,autovoice_enabled,mutestick_enabled,antimat_enabled")
+      .eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
     if (chatSettingsError) throw chatSettingsError;
     const isFounderChat = chatId === FOUNDER_TELEGRAM_ID;
     const hasCommandAutomations = Boolean(
-      chatPrefs?.is_muted || prefs?.afk_enabled || prefs?.autoread_enabled ||
-      prefs?.autotyping_enabled || prefs?.autovoice_enabled || prefs?.mutestick_enabled || prefs?.antimat_enabled
+      chatPrefs?.is_muted || chatPrefs?.antimut_enabled || chatPrefs?.afk_enabled ||
+      chatPrefs?.autoread_enabled || chatPrefs?.autotyping_enabled || chatPrefs?.autovoice_enabled ||
+      chatPrefs?.mutestick_enabled || chatPrefs?.antimat_enabled
     );
     if (hasCommandAutomations && connection.telegram_user_id !== FOUNDER_TELEGRAM_ID) {
       const { data: targetProtection, error: targetProtectionError } = await admin.from("profiles")
@@ -294,8 +352,8 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
       if (protectedUntil > Date.now()) return;
     }
     const shouldHardMute = !isFounderChat && Boolean(chatPrefs?.is_muted);
-    const shouldDeleteSticker = media.type === "sticker" && Boolean(prefs?.mutestick_enabled);
-    const shouldDeleteProfanity = Boolean(prefs?.antimat_enabled) && containsBusinessProfanity(content);
+    const shouldDeleteSticker = media.type === "sticker" && Boolean(chatPrefs?.mutestick_enabled);
+    const shouldDeleteProfanity = Boolean(chatPrefs?.antimat_enabled) && containsBusinessProfanity(content);
     const shouldFilter = shouldDeleteSticker || shouldDeleteProfanity;
     if (shouldHardMute || shouldFilter) {
       if (connection.rights?.can_delete_all_messages) {
@@ -305,16 +363,17 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
             message_ids: [message.message_id],
           });
           const deletedAt = new Date().toISOString();
-          const { error: eventError } = await admin.from("flamexbot_business_message_events").upsert({
-            profile_id: connection.profile_id, business_chat_id: chat.id, telegram_message_id: message.message_id,
-            event_type: "deleted", original_content: content, message_type: media.type,
-            media_file_id: media.fileId, media_url: null, original_raw: message, occurred_at: deletedAt,
-          }, { onConflict: "business_chat_id,telegram_message_id,event_type,occurred_at", ignoreDuplicates: true });
-          if (eventError) throw eventError;
-          const { error: markDeletedError } = await admin.from("flamexbot_business_messages")
-            .update({ deleted_at: deletedAt })
-            .eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id);
-          if (markDeletedError) throw markDeletedError;
+          const [eventResult,markDeletedResult] = await Promise.all([
+            admin.from("flamexbot_business_message_events").upsert({
+              profile_id: connection.profile_id, business_chat_id: chat.id, telegram_message_id: message.message_id,
+              event_type: "deleted", original_content: content, message_type: media.type,
+              media_file_id: media.fileId, media_url: null, original_raw: message, occurred_at: deletedAt,
+            }, { onConflict: "business_chat_id,telegram_message_id,event_type,occurred_at", ignoreDuplicates: true }),
+            admin.from("flamexbot_business_messages").update({ deleted_at: deletedAt })
+              .eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id)
+          ]);
+          if (eventResult.error) throw eventResult.error;
+          if (markDeletedResult.error) throw markDeletedResult.error;
           // Delete first so Telegram removal is not delayed by file downloads.
           // Preserve media in the archive afterwards for the deleted-message page.
           if (media.fileId) {
@@ -359,21 +418,21 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
       });
       if (noticeError) throw noticeError;
     }
-    if (prefs?.autoread_enabled) {
+    if (chatPrefs?.autoread_enabled) {
       try { await telegram("readBusinessMessage", { business_connection_id: connection.connection_id, chat_id: Number(chatId), message_id: message.message_id }); }
       catch (error) { console.warn("Business auto-read skipped:", error?.message ?? error); }
     }
-    if (prefs?.autovoice_enabled || prefs?.autotyping_enabled) {
-      try { await telegram("sendChatAction", { business_connection_id: connection.connection_id, chat_id: Number(chatId), action: prefs.autovoice_enabled ? "record_voice" : "typing" }); }
+    if (chatPrefs?.autovoice_enabled || chatPrefs?.autotyping_enabled) {
+      try { await telegram("sendChatAction", { business_connection_id: connection.connection_id, chat_id: Number(chatId), action: chatPrefs.autovoice_enabled ? "record_voice" : "typing" }); }
       catch (error) { console.warn("Business chat action skipped:", error?.message ?? error); }
     }
-    if (prefs?.afk_enabled) {
+    if (chatPrefs?.afk_enabled) {
       const { data: lastReply, error: lastReplyError } = await admin.from("flamexbot_business_chat_settings")
         .select("last_afk_reply_at").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
       if (lastReplyError) throw lastReplyError;
       const lastAt = lastReply?.last_afk_reply_at ? new Date(lastReply.last_afk_reply_at).getTime() : 0;
       if (Date.now() - lastAt > 60 * 60 * 1000) {
-        await telegram("sendMessage", { business_connection_id: connection.connection_id, chat_id: Number(chatId), text: `🌙 Автоответ: ${prefs.afk_message || "Сейчас отошёл, отвечу позже."}` });
+        await telegram("sendMessage", { business_connection_id: connection.connection_id, chat_id: Number(chatId), text: `🌙 Автоответ: ${chatPrefs.afk_message || "Сейчас отошёл, отвечу позже."}` });
         const { error: markError } = await admin.from("flamexbot_business_chat_settings").upsert({
           profile_id: connection.profile_id, business_chat_id: chat.id, last_afk_reply_at: new Date().toISOString(),
         }, { onConflict: "profile_id,business_chat_id" });
@@ -384,24 +443,35 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
 }
 async function updateBusinessMessage(message: any) {
   if (!admin || !message?.business_connection_id || !message?.chat?.id || !message?.message_id) return;
-  const { data: connection, error } = await admin.from("flamexbot_business_connections").select("profile_id").eq("connection_id", message.business_connection_id).maybeSingle();
+  const { data: connection, error } = await admin.from("flamexbot_business_connections").select("profile_id,telegram_user_id").eq("connection_id", message.business_connection_id).maybeSingle();
   if (error) throw error; if (!connection?.profile_id) return;
   const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats").select("id").eq("profile_id", connection.profile_id).eq("telegram_chat_id", String(message.chat.id)).maybeSingle();
   if (chatError) throw chatError; if (!chat) return;
   const { data: existing, error: existingError } = await admin.from("flamexbot_business_messages").select("direction,content,message_type,media_file_id,media_url,raw").eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id).maybeSingle();
   if (existingError) throw existingError;
   const editAt = message.edit_date ? new Date(Number(message.edit_date) * 1000).toISOString() : new Date().toISOString();
-  if (existing?.direction === "inbound") {
+  {
+    const originalRaw=existing?.raw??{};
+    const originalName=originalRaw.document?.file_name??originalRaw.audio?.file_name??originalRaw.video?.file_name??undefined;
+    const originalMediaUrl=existing?.media_url||(existing?.media_file_id
+      ? await archiveBusinessMedia(existing.media_file_id,connection.profile_id,chat.id,message.message_id,originalName)
+      : null);
     const { error: eventError } = await admin.from("flamexbot_business_message_events").upsert({
       profile_id: connection.profile_id, business_chat_id: chat.id, telegram_message_id: message.message_id, event_type: "edited",
-      original_content: existing.content ?? "", message_type: existing.message_type ?? "text", media_file_id: existing.media_file_id ?? null, media_url: existing.media_url ?? null, original_raw: existing.raw ?? {}, occurred_at: editAt,
+      original_content: existing?.content ?? "[Предыдущая версия не была сохранена до включения архива]", message_type: existing?.message_type ?? "text", media_file_id: existing?.media_file_id ?? null, media_url: originalMediaUrl, original_raw: originalRaw, occurred_at: editAt,
     }, { onConflict: "business_chat_id,telegram_message_id,event_type,occurred_at", ignoreDuplicates: true });
     if (eventError) throw eventError;
   }
   const media = messageMedia(message);
   const originalName = message.document?.file_name ?? message.audio?.file_name ?? message.video?.file_name ?? undefined;
   const mediaUrl = media.fileId ? await archiveBusinessMedia(media.fileId, connection.profile_id, chat.id, message.message_id, originalName) : null;
-  const { error: updateError } = await admin.from("flamexbot_business_messages").update({ content: messageContent(message), message_type: media.type, media_file_id: media.fileId, media_url: mediaUrl, edited_at: editAt, raw: message }).eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id);
+  const direction = String(message.from?.id ?? "") === String(connection.telegram_user_id ?? "") ? "outbound" : "inbound";
+  const { error: updateError } = await admin.from("flamexbot_business_messages").upsert({
+    business_chat_id: chat.id, telegram_message_id: message.message_id, direction,
+    sender_profile_id: direction === "outbound" ? connection.profile_id : null,
+    content: messageContent(message), message_type: media.type, media_file_id: media.fileId,
+    media_url: mediaUrl, edited_at: editAt, raw: message,
+  }, { onConflict: "business_chat_id,telegram_message_id" });
   if (updateError) throw updateError;
 }
 async function deleteBusinessMessages(update: any) {
@@ -413,11 +483,25 @@ async function deleteBusinessMessages(update: any) {
   const { data: messages, error: messagesError } = await admin.from("flamexbot_business_messages").select("telegram_message_id,direction,content,message_type,media_file_id,media_url,raw,deleted_at").eq("business_chat_id", chat.id).in("telegram_message_id", update.message_ids);
   if (messagesError) throw messagesError;
   const deletedAt = new Date().toISOString();
-  const events = (messages || []).filter((item: any) => item.direction === "inbound" && !item.deleted_at).map((item: any) => ({
-    profile_id: connection.profile_id, business_chat_id: chat.id, telegram_message_id: item.telegram_message_id, event_type: "deleted",
-    original_content: item.content ?? "", message_type: item.message_type ?? "text", media_file_id: item.media_file_id ?? null, media_url: item.media_url ?? null, original_raw: item.raw ?? {}, occurred_at: deletedAt,
+  const events = await Promise.all((messages || []).filter((item: any) => !item.deleted_at).map(async (item: any) => {
+    const raw=item.raw??{};
+    const originalName=raw.document?.file_name??raw.audio?.file_name??raw.video?.file_name??raw.animation?.file_name??undefined;
+    const archivedUrl=item.media_url||(item.media_file_id
+      ? await archiveBusinessMedia(item.media_file_id,connection.profile_id,chat.id,item.telegram_message_id,originalName)
+      : null);
+    return {
+      profile_id: connection.profile_id, business_chat_id: chat.id, telegram_message_id: item.telegram_message_id, event_type: "deleted",
+      original_content: item.content ?? "", message_type: item.message_type ?? "text", media_file_id: item.media_file_id ?? null, media_url: archivedUrl, original_raw: raw, occurred_at: deletedAt,
+    };
   }));
-  if (events.length) { const { error: eventError } = await admin.from("flamexbot_business_message_events").upsert(events, { onConflict: "business_chat_id,telegram_message_id,event_type,occurred_at", ignoreDuplicates: true }); if (eventError) throw eventError; }
+  const knownIds = new Set((messages || []).map((item: any) => Number(item.telegram_message_id)));
+  const missingEvents = update.message_ids.filter((messageId: number) => !knownIds.has(Number(messageId))).map((messageId: number) => ({
+    profile_id: connection.profile_id, business_chat_id: chat.id, telegram_message_id: messageId,
+    event_type: "deleted", original_content: "[Текст не был сохранён до получения события об удалении]",
+    message_type: "unknown", media_file_id: null, media_url: null, original_raw: {}, occurred_at: deletedAt,
+  }));
+  const allEvents = [...events, ...missingEvents];
+  if (allEvents.length) { const { error: eventError } = await admin.from("flamexbot_business_message_events").upsert(allEvents, { onConflict: "business_chat_id,telegram_message_id,event_type,occurred_at", ignoreDuplicates: true }); if (eventError) throw eventError; }
   const { error: deleteError } = await admin.from("flamexbot_business_messages").update({ deleted_at: deletedAt }).eq("business_chat_id", chat.id).in("telegram_message_id", update.message_ids);
   if (deleteError) throw deleteError;
 }
@@ -460,24 +544,24 @@ async function handleBusinessChatCommand(message: any, businessConnectionId: str
   if (command === "help" || command === "inf" || command === "commands") {
     await reply(`${tgEmoji("sparkles")} <b>FLAMEXBOT · все команды</b>
 
-${tgEmoji("settings")} <b>Настройки аккаунта</b>
-<code>.afk причина</code> / <code>.unafk</code> — включить или выключить автоответ
-<code>.autoread</code> / <code>.unautoread</code> — включить или выключить автопрочтение
-<code>.autotyping</code> / <code>.unautotyping</code> — включить или выключить статус набора
-<code>.autovoice</code> / <code>.unautovoice</code> — включить или выключить статус записи
-<code>.mutestick</code> / <code>.unmutestick</code> — включить или выключить фильтр стикеров\n<code>.antimat</code> / <code>.unantimat</code> — фильтр мата
+${tgEmoji("settings")} <b>Автоматизация текущего диалога</b>
+<code>.afk причина</code> / <code>.unafk</code> — автоответ только в этом диалоге
+<code>.autoread</code> / <code>.unautoread</code> — автопрочтение только здесь
+<code>.autotyping</code> / <code>.unautotyping</code> — статус набора только здесь
+<code>.autovoice</code> / <code>.unautovoice</code> — статус записи только здесь
+<code>.mutestick</code> / <code>.unmutestick</code> — фильтр стикеров только здесь\n<code>.antimat</code> / <code>.unantimat</code> — фильтр мата
 
 ${tgEmoji("lock")} <b>Текущий диалог</b>
 <code>.ping</code> / <code>/ping</code> — проверить ответы Business-команд\n<code>.help</code> / <code>/help</code> / <code>.commands</code> — полный список команд\n<code>.streak 1-3650</code> — мгновенно установить серию (только администрация)\n<code>.mute</code> / <code>/mute</code> — удалять новые входящие сообщения
 <code>.unmute</code> — остановить удаление сообщений
-<code>.antimute</code> / <code>.unantimute</code> — включить или выключить режим видимости сообщений владельца в истории FLAMEXBOT
+<code>.antimute</code> / <code>.unantimute</code> — отправлять новые сообщения от имени бота FLAMEXBOT (собеседник должен открыть бота и нажать Start)
 <code>.spam 2-5 текст</code> — отправить от 2 до 5 копий сообщения
 
 ${tgEmoji("edit")} <b>Дополнительно</b>
 <code>.timeprofile</code> — закрепить московское время (UTC+3)
 <code>.time</code> / <code>.untime</code> — показать или скрыть время профиля
 <code>.bold текст</code> / <code>.dumb текст</code> — изменить оформление текста
-<code>.link текст</code> — создать ссылку на этот диалог
+<code>.link текст</code> — создать ссылку на этот диалог\n<code>.copyp</code> — скопировать данные профиля собеседника\n<code>.qr текст</code> — создать QR-код для текста или ссылки
 
 ${tgEmoji("help")} <b>Как пользоваться</b>
 Отправляй команду прямо в переписке с нужным человеком. FLAMEXBOT сам определит текущий диалог — <b>@username и ID указывать не нужно</b>. Для команд включения Premium-функций нужна активная подписка; команды отключения доступны бесплатно.
@@ -520,34 +604,36 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(`${tgEmoji("sparkles")} <b>Огонёк установлен мгновенно!</b>\nСерия: <b>${days} дн.</b>\nПользователь добавлен в друзья, если вы ещё не были друзьями. Дальше огонёк будет продлеваться обычной взаимной перепиской.`, "HTML");
     return true;
   }
-  const commandNeedsPremium = ["mute","spam","afk","timeprofile","bold","dumb","link","time","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
+  const commandNeedsPremium = ["mute","spam","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
   let premium = false;
   if (commandNeedsPremium) {
     const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
       .select("plan,expires_at").eq("user_id", profile.id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
-    premium = subscription?.plan === "premium" && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+    premium = ["premium","pro","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
   }
   if (!premium && commandNeedsPremium) {
     await reply(`${tgEmoji("star")} Для этой команды нужна активная подписка <b>Premium</b>. Команды отключения и размут доступны и без неё.`, "HTML");
     return true;
   }
 
-  const savePreference = async (values: Record<string, unknown>) => {
-    const { error } = await admin.from("flamexbot_user_preferences").upsert({
-      profile_id: profile.id, ...values, updated_at: new Date().toISOString(),
-    }, { onConflict: "profile_id" });
-    if (error) throw error;
-  };
   if (command === "afk") {
     const reason = args.join(" ").trim().slice(0, 300) || "Сейчас отошёл, отвечу позже.";
-    await savePreference({ afk_enabled: true, afk_message: reason });
-    await reply("🌙 AFK включён. Автоответ будет отправляться на входящие Business-сообщения.");
+    const { error: afkError } = await admin.from("flamexbot_business_chat_settings").upsert({
+      profile_id: profile.id, business_chat_id: chat.id, afk_enabled: true, afk_message: reason,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "profile_id,business_chat_id" });
+    if (afkError) throw afkError;
+    await reply("🌙 AFK включён только в этом диалоге. Автоответ будет отправляться на входящие Business-сообщения.");
     return true;
   }
   if (command === "unafk") {
-    await savePreference({ afk_enabled: false });
-    await reply("AFK выключен.");
+    const { error: afkError } = await admin.from("flamexbot_business_chat_settings").upsert({
+      profile_id: profile.id, business_chat_id: chat.id, afk_enabled: false,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "profile_id,business_chat_id" });
+    if (afkError) throw afkError;
+    await reply("AFK выключен в этом диалоге.");
     return true;
   }
   const preferenceCommands: Record<string, { key: string; enabled: boolean; label: string }> = {
@@ -569,7 +655,11 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       await reply("⛔ Для включения фильтра Telegram Business должен выдать право «Удалять все сообщения».");
       return true;
     }
-    await savePreference({ [preferenceCommand.key]: preferenceCommand.enabled });
+    const { error: chatPreferenceError } = await admin.from("flamexbot_business_chat_settings").upsert({
+      profile_id: profile.id, business_chat_id: chat.id,
+      [preferenceCommand.key]: preferenceCommand.enabled, updated_at: new Date().toISOString(),
+    }, { onConflict: "profile_id,business_chat_id" });
+    if (chatPreferenceError) throw chatPreferenceError;
     await reply((preferenceCommand.enabled ? tgEmoji("success") + " <b>" : tgEmoji("lock") + " <b>") +
       escapeHtml(preferenceCommand.label) + (preferenceCommand.enabled ? " включён.</b>" : " выключен.</b>"), "HTML");
     return true;
@@ -583,7 +673,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     const { error: settingError } = await admin.from("flamexbot_business_chat_settings").upsert({ profile_id: profile.id, business_chat_id: chat.id, antimut_enabled: enabled }, { onConflict: "profile_id,business_chat_id" });
     if (settingError) throw settingError;
     const markup = { inline_keyboard: [[{ text: enabled ? "🔒 Отключить антимут" : "🛡 Включить антимут", callback_data: "fb:antimut_" + (enabled ? "off" : "on") + ":" + chat.id }]] };
-    await reply(enabled ? tgEmoji("success") + " <b>Антимут включён</b>\nСообщения владельца будут видны в истории FLAMEXBOT. Это не снимает мут собеседника и не гарантирует уведомление в Telegram." : tgEmoji("lock") + " <b>Антимут выключен</b>\nДополнительное сохранение режима антимута отключено.", "HTML", markup);
+    await reply(enabled ? tgEmoji("success") + " <b>Антимут включён</b>\nНовые сообщения будут отправляться от имени бота FLAMEXBOT. Получатель должен открыть бота и нажать Start; блокировки Telegram не обходятся." : tgEmoji("lock") + " <b>Антимут выключен</b>\nДополнительное сохранение режима антимута отключено.", "HTML", markup);
     return true;
   }
   if (command === "timeprofile") {
@@ -622,7 +712,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
   if (command === "mute" || command === "unmute" || command === "spam") {
     if (!businessConnectionId) { await reply("Эту команду нужно писать в личной переписке с собеседником."); return true; }
     const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats")
-      .select("id,telegram_chat_id,telegram_user_id,business_connection_id,username")
+      .select("id,telegram_chat_id,telegram_user_id,business_connection_id,username,first_name,last_name,photo_url")
       .eq("profile_id", profile.id).eq("telegram_chat_id", String(message.chat.id)).eq("business_connection_id", businessConnectionId).maybeSingle();
     if (chatError) throw chatError;
     if (!chat) { await reply("Не удалось определить текущий Business-чат. Проверь подключение Telegram Business."); return true; }
@@ -654,6 +744,32 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
         ? `${tgEmoji("lock")} <b>Мут включён</b>\nНовые входящие сообщения в этом диалоге будут удаляться. Уже сохранённая переписка не затрагивается.`
         : `${tgEmoji("success")} <b>Размут выполнен</b>\nНовые сообщения больше не удаляются.`,
         "HTML", markup);
+      return true;
+    }
+    if (command === "copyp") {
+      const username = String(chat.username || "").replace(/^@/, "").replace(/[^A-Za-z0-9_]/g, "");
+      const fullName = [chat.first_name, chat.last_name].filter(Boolean).join(" ") || "Telegram-пользователь";
+      const telegramId = String(chat.telegram_user_id || chat.telegram_chat_id);
+      const profileLink = username ? `<a href="https://t.me/${username}">Открыть профиль</a>` : "Публичная ссылка недоступна";
+      await reply(`${tgEmoji("users")} <b>Профиль собеседника</b>\nИмя: <b>${escapeHtml(fullName)}</b>\nЮзернейм: ${username ? "@" + escapeHtml(username) : "не указан"}\nTelegram ID: <code>${escapeHtml(telegramId)}</code>\n${profileLink}`, "HTML");
+      return true;
+    }
+    if (command === "qr") {
+      const value = args.join(" ").trim();
+      if (!value || value.length > 512) {
+        await reply("Формат: .qr ссылка или текст (до 512 символов).");
+        return true;
+      }
+      const qrUrl = new URL("https://api.qrserver.com/v1/create-qr-code/");
+      qrUrl.searchParams.set("size", "512x512");
+      qrUrl.searchParams.set("data", value);
+      await telegram("sendPhoto", {
+        business_connection_id: businessConnectionId,
+        chat_id: message.chat.id,
+        photo: qrUrl.toString(),
+        caption: `${tgEmoji("sparkles")} <b>QR-код создан в FLAMEXBOT</b>`,
+        parse_mode: "HTML",
+      });
       return true;
     }
     const count = Number(args[0]);
@@ -739,7 +855,7 @@ async function handleBusinessActionCallback(query: any) {
     const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
       .select("plan,expires_at").eq("user_id", chat.profile_id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
-    const premium = subscription?.plan === "premium" &&
+    const premium = ["premium","pro","founder"].includes(subscription?.plan) &&
       (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
     if (!premium) {
       await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Для включения этой функции нужна активная Premium-подписка." });
@@ -787,13 +903,17 @@ function parseCommandProtectionPayload(payload: string) {
   const match = /^flamexbot_addon:command_protection:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(payload);
   return match?.[1] ?? null;
 }
+function parseWheelPayload(payload: string) {
+  const match = /^flamexbot_wheel:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(payload);
+  return match?.[1] ?? null;
+}
 async function sendPremiumInvoice(chatId: number, telegramUserId: number) {
   if (!admin) throw new Error("Database is unavailable");
   const { data: profile, error } = await admin.from("profiles").select("id,telegram_id").eq("telegram_id", String(telegramUserId)).maybeSingle();
   if (error) throw error;
   if (!profile?.id) { await sendRichTelegramMessage(chatId, `${tgEmoji("warning")} <b>Сначала привяжи Telegram.</b> Открой профиль FLAMEXBOT и заверши привязку этого аккаунта.`, "HTML"); return; }
   const { data: current } = await admin.from("user_subscriptions").select("plan,expires_at").eq("user_id", profile.id).maybeSingle();
-  if (current?.plan === "premium" && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now())) {
+  if (["premium","pro","founder"].includes(current?.plan) && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now())) {
     await sendRichTelegramMessage(chatId, `${tgEmoji("success")} <b>Premium уже активен.</b> Все возможности тарифа доступны до окончания подписки.`, "HTML"); return;
   }
   const payload = `flamexbot_premium:${profile.id}:${crypto.randomUUID()}`;
@@ -824,6 +944,16 @@ async function handlePreCheckout(query: any) {
           if (profileError) throw profileError;
           ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id));
         }
+      } else if (parseWheelPayload(payload) && query.total_amount === 5) {
+        const { data: order, error: orderError } = await admin.from("flamexbot_wheel_orders")
+          .select("user_id,telegram_user_id,status,price_stars").eq("invoice_payload",payload).maybeSingle();
+        if (orderError) throw orderError;
+        if (order && order.status === "pending" && order.price_stars === 5 && order.telegram_user_id === String(query.from?.id)) {
+          const { data: profile, error: profileError } = await admin.from("profiles")
+            .select("telegram_id,is_banned").eq("id",order.user_id).maybeSingle();
+          if (profileError) throw profileError;
+          ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id));
+        }
       }
     }
   } catch (error) { console.error("pre-checkout validation:", error?.message ?? error); }
@@ -842,6 +972,35 @@ async function handleSuccessfulPayment(message: any) {
   if (!admin || !message?.from?.id || !message?.successful_payment) return;
   const payment = message.successful_payment;
   const invoicePayload = String(payment.invoice_payload ?? "");
+  const wheelUserId = parseWheelPayload(invoicePayload);
+  if (wheelUserId) {
+    if (payment.currency !== "XTR" || payment.total_amount !== 5 || !payment.telegram_payment_charge_id) throw new Error("Wheel payment mismatch");
+    const { data: order, error: orderError } = await admin.from("flamexbot_wheel_orders")
+      .select("id,user_id,telegram_user_id,status").eq("invoice_payload",invoicePayload).maybeSingle();
+    if (orderError) throw orderError;
+    if (!order || order.user_id !== wheelUserId || order.telegram_user_id !== String(message.from.id)) throw new Error("Wheel order does not match payer");
+    if (order.status === "paid") return;
+    const { data: profile, error: profileError } = await admin.from("profiles")
+      .select("id,telegram_id,is_banned").eq("id",wheelUserId).maybeSingle();
+    if (profileError) throw profileError;
+    if (!profile || profile.telegram_id !== String(message.from.id)) throw new Error("Wheel payer does not match profile");
+    if (profile.is_banned) {
+      await refundTelegramStarsPayment(Number(message.from.id),payment.telegram_payment_charge_id);
+      await sendRichTelegramMessage(message.chat.id,"Оплата возвращена: аккаунт заблокирован.","HTML");
+      return;
+    }
+    const {data:prize,error:prizeError}=await admin.rpc("apply_flamexbot_wheel_payment",{
+      p_invoice_payload:invoicePayload,p_telegram_user_id:String(message.from.id),
+      p_telegram_payment_charge_id:payment.telegram_payment_charge_id,
+      p_provider_payment_charge_id:payment.provider_payment_charge_id??null,
+      p_currency:payment.currency,p_total_amount:payment.total_amount
+    });
+    if(prizeError)throw prizeError;
+    await sendRichTelegramMessage(message.chat.id,
+      `${tgEmoji("sparkles")} <b>Колесо фортуны!</b>\nТвоя награда: <b>${String(prize?.prize_label??"Награда начислена")}</b>.\nОткрой FLAMEXBOT, чтобы посмотреть результат.`,
+      "HTML",{inline_keyboard:[[{text:"✦ Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
+    return;
+  }
   const addonUserId = parseCommandProtectionPayload(invoicePayload);
   if (addonUserId) {
     if (payment.currency !== "XTR" || payment.total_amount !== 15 || !payment.telegram_payment_charge_id) {
@@ -947,7 +1106,12 @@ async function processTelegramUpdate(update: any) {
         return new Response("OK", { status: 200 });
       }
     }
-    if (update.callback_query) await handleBusinessActionCallback(update.callback_query);
+    if (update.callback_query?.data === "fx:connect_guide") {
+      await telegram("answerCallbackQuery",{callback_query_id:update.callback_query.id});
+      await sendRichTelegramMessage(update.callback_query.message.chat.id,
+        `<b>Инструкция по подключению FLAMEXBOT</b>\n\n1. Открой Telegram → Настройки → Telegram Business.\n2. Выбери «Чат-боты» → «Добавить чат-бота».\n3. Найди FLAMEXBOT и подключи его.\n4. Разреши доступ к сообщениям и отправке ответов. Для автоматического удаления сообщений также включи право удаления.\n5. Вернись в Mini App → Профиль и проверь статус подключения.`,
+        "HTML",{inline_keyboard:[[{text:"✦ Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
+    } else if (update.callback_query) await handleBusinessActionCallback(update.callback_query);
     if (update.message?.successful_payment) await handleSuccessfulPayment(update.message);
     if (update.message?.chat?.type === "private" && update.message.from?.id && /^\/premium(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim())) {
       await sendPremiumInvoice(update.message.chat.id, update.message.from.id);
@@ -1055,8 +1219,16 @@ async function processTelegramUpdate(update: any) {
     if (update.edited_business_message?.chat?.type === "private") await updateBusinessMessage(update.edited_business_message);
     if (update.deleted_business_messages?.chat?.type === "private") await deleteBusinessMessages(update.deleted_business_messages);
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
-        /^[/](start|app)(?:@\w+)?(?:\s|$)/i.test(update.message.text)) {
+        /^[/](start|app)(?:@\w+)?(?:\s+([A-Za-z0-9_-]+))?\s*$/i.test(update.message.text)) {
       const chatId = update.message.chat.id;
+      const startMatch = /^\/start(?:@\w+)?(?:\s+([A-Za-z0-9_-]+))?\s*$/i.exec(update.message.text.trim());
+      const referralCode = startMatch?.[1]?.startsWith("ref_") ? startMatch[1].slice(4) : null;
+      if (referralCode && update.message.from?.id) {
+        const {error:referralError}=await admin.rpc("record_flamexbot_referral",{
+          p_telegram_user_id:String(update.message.from.id),p_code:referralCode
+        });
+        if(referralError)console.warn("Referral link processing skipped:",referralError.message);
+      }
       await enableBusinessUpdates();
       await telegram("setChatMenuButton", {
         chat_id: chatId,
@@ -1070,7 +1242,10 @@ ${tgEmoji("users")} Общайся с друзьями, поддерживай �
 
 ${tgEmoji("settings")} Подключение Telegram Business и управление разрешениями доступны в профиле приложения.`,
         "HTML",
-        { inline_keyboard: [[{ text: "✦ Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
+        { inline_keyboard: [
+          [{ text: "✦ Открыть FLAMEXBOT", web_app: { url: APP_URL } }],
+          [{ text: "📖 Инструкция к подключению", callback_data: "fx:connect_guide" }]
+        ] },
       );
     }
 
