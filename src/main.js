@@ -139,6 +139,8 @@ function updateHeaderProfile() {
   if(menu)menu.innerHTML=avatar(url,p.display_name||p.username,'avatar-lg');
   const name=document.querySelector('#menu-display-name');
   if(name)name.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p));
+  const triggerName=document.querySelector('.profile-trigger-name');
+  if(triggerName)triggerName.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p));
   const badges=document.querySelector('#menu-profile-badges');
   if(badges)badges.innerHTML=badgeMarkup(state.profileBadges);
   const triggerBadges=document.querySelector('#top-profile-badges');
