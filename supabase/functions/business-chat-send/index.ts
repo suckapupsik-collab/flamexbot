@@ -64,14 +64,20 @@ Deno.serve(async (req: Request) => {
       ? Number(body.reply_to_message_id) : null;
     const hasMedia = Boolean(storagePath);
     const antimutMode = body?.antimut_mode === true;
-    const settingAction = action === "set_mute" || action === "set_antimute";
+    const settingAction = action === "set_mute" || action === "set_antimute" || action === "set_preference";
     const commandMatch = text.trim().match(/^[./]([a-z][a-z0-9_]*)(?:@\w+)?(?:\s+([\s\S]*))?$/i);
     const commandName = String(body?.command_name || commandMatch?.[1] || (action === "set_mute" ? (body.enabled ? "mute" : "unmute") : action === "set_antimute" ? "antimute" : "")).toLowerCase();
     const commandArgs = String(commandMatch?.[2] || "").trim().toLowerCase();
     const commandMode = antimutMode || body?.command_mode === true || settingAction || Boolean(commandMatch);
-    if (!["send","refresh_avatar","set_mute","set_antimute"].includes(action)) return reply({ error: "Неизвестное действие Business-чата." }, 400);
-    if (antimutMode && hasMedia) return reply({ error: "Антимут поддерживает только одну ручную попытку отправки текста." }, 400);
+    if (!["send","refresh_avatar","set_mute","set_antimute","set_preference"].includes(action)) return reply({ error: "Неизвестное действие Business-чата." }, 400);
+    if (antimutMode) return reply({ error: "Антимут работает как режим отображения истории, а не как отправка сообщений." }, 400);
     if (settingAction && typeof body?.enabled !== "boolean") return reply({ error: "Для настройки укажи enabled: true или false." }, 400);
+    const preferenceKeys: Record<string,string> = {
+      autoread: "autoread_enabled", autotyping: "autotyping_enabled", autovoice: "autovoice_enabled",
+      mutestick: "mutestick_enabled", antimat: "antimat_enabled",
+    };
+    const preferenceKey = action === "set_preference" ? preferenceKeys[String(body?.preference ?? "")] : null;
+    if (action === "set_preference" && !preferenceKey) return reply({ error: "Неизвестная настройка." }, 400);
     if (action !== "refresh_avatar" && !settingAction && (!chatId || (!text && !hasMedia) || text.length > 4096)) return reply({ error: "Укажи чат и текст или вложение." }, 400);
     if (settingAction && !chatId) return reply({ error: "Не указан диалог." }, 400);
     if (action === "refresh_avatar" && !chatId) return reply({ error: "Не указан диалог." }, 400);
@@ -119,14 +125,16 @@ Deno.serve(async (req: Request) => {
       const imageBlob = await imageResponse.blob();
       if (imageBlob.size > 5*1024*1024) return reply({ ok: true, photo_url: chat.photo_url || null });
       const bucket = "flamexbot-avatars";
-      const { error: bucketError } = await admin.storage.createBucket(bucket, {
-        public: true, fileSizeLimit: 5*1024*1024, allowedMimeTypes: ["image/jpeg","image/png","image/webp"],
-      });
-      if (bucketError && !/already exists|duplicate|exists/i.test(bucketError.message || "")) throw bucketError;
-      const extension = file.file_path.toLowerCase().endsWith(".png") ? "png" : "jpg";
+      const pathHint = file.file_path.toLowerCase();
+      const responseMime = (imageResponse.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      const mimeType = ["image/jpeg","image/png","image/webp"].includes(responseMime)
+        ? responseMime
+        : pathHint.endsWith(".png") ? "image/png" : pathHint.endsWith(".webp") ? "image/webp" : "image/jpeg";
+      const extension = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
+      const normalizedImage = imageBlob.type === mimeType ? imageBlob : new Blob([imageBlob], { type: mimeType });
       const path = `${profileId}/${chat.id}.${extension}`;
-      const { error: uploadError } = await admin.storage.from(bucket).upload(path,imageBlob,{
-        contentType: imageBlob.type || (extension === "png" ? "image/png" : "image/jpeg"),upsert:true,
+      const { error: uploadError } = await admin.storage.from(bucket).upload(path,normalizedImage,{
+        contentType: mimeType,upsert:true,
       });
       if (uploadError) throw uploadError;
       const { data: publicUrl } = admin.storage.from(bucket).getPublicUrl(path);
@@ -175,8 +183,15 @@ Deno.serve(async (req: Request) => {
       if (action === "set_mute" && enabled && connection.rights?.can_delete_all_messages !== true) {
         return reply({ error: "Telegram Business не выдал право «Удалять все сообщения»." }, 403);
       }
-      if (action === "set_antimute" && enabled && connection.rights?.can_reply !== true) {
-        return reply({ error: "Telegram Business не выдал право «Отвечать»." }, 403);
+      if (action === "set_preference" && enabled && ["mutestick","antimat"].includes(String(body?.preference)) &&
+          connection.rights?.can_delete_all_messages !== true) {
+        return reply({ error: "Для фильтрации сообщений Telegram Business должен выдать право «Удалять все сообщения»." }, 403);
+      }
+      if (action === "set_preference") {
+        const { error: settingError } = await admin.from("flamexbot_user_preferences")
+          .upsert({ profile_id: profileId, [preferenceKey!]: enabled, updated_at: new Date().toISOString() }, { onConflict: "profile_id" });
+        if (settingError) throw settingError;
+        return reply({ ok: true, preference: body.preference, enabled });
       }
       const values = action === "set_mute" ? { is_muted: enabled } : { antimut_enabled: enabled };
       const { error: settingError } = await admin.from("flamexbot_business_chat_settings")
@@ -187,8 +202,7 @@ Deno.serve(async (req: Request) => {
 
     const commandNeedsPremium =
       ["mute","spam","afk","timeprofile","bold","dumb","link","time"].includes(commandName)
-      || (["antimute","antimut"].includes(commandName) && commandArgs !== "off" && !settingAction)
-      || (["autoread","autotyping","autovoice","mutestick"].includes(commandName) && commandArgs === "on");
+      || (["antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(commandName) && !settingAction);
     if (!settingAction && !antimutMode && commandNeedsPremium) {
       const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
         .select("plan,expires_at").eq("user_id", profileId).maybeSingle();
