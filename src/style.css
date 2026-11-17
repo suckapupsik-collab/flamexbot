@@ -1452,3 +1452,33 @@ body{
 .media-viewer-close{position:absolute;top:14px;right:16px;width:42px;height:42px;border:1px solid rgba(255,255,255,.2);border-radius:50%;background:rgba(255,255,255,.1);color:#fff;font-size:27px;line-height:1}
 .media-viewer-open{color:#c7d7ef;font-size:12px;text-decoration:none}
 @media(max-width:600px){.business-media-viewer{padding:54px 8px 18px}.media-viewer-stage{height:76vh}.media-viewer-close{top:9px;right:10px}}
+
+
+/* FLAMEXBOT interaction polish */
+@keyframes fx-enter {
+  from { opacity: 0; transform: translateY(9px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fx-toast-in {
+  from { opacity: 0; transform: translate(-50%, 10px) scale(.98); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .page-heading { animation: fx-enter .38s cubic-bezier(.2,.7,.2,1) both; }
+  .business-card, .tariff-card, .addon-card, .trial-card, .wheel-card {
+    animation: fx-enter .42s cubic-bezier(.2,.7,.2,1) both;
+    transition: border-color .22s ease, background-color .22s ease, box-shadow .22s ease, transform .22s ease;
+  }
+  .business-card:hover, .tariff-card:hover, .addon-card:hover {
+    border-color: color-mix(in srgb, var(--orange) 42%, var(--line));
+  }
+  .primary, .outline, .google, .command-filter, .media-expand-button {
+    transition: transform .18s ease, filter .18s ease, border-color .18s ease, background-color .18s ease;
+  }
+  .primary:active, .outline:active, .google:active, .command-filter:active { transform: scale(.975); }
+  .toast { animation: fx-toast-in .24s ease-out both; }
+  .business-media-viewer { animation: fx-enter .2s ease-out both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
