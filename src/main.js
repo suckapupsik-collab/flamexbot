@@ -1265,11 +1265,25 @@ async function renderTariffs(host, initialTab='premium') {
  const weeklySpins=isPro?2:premium?1:0;
  const rareLuck=isPro?10:0;
  const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
- const {data:paymentHistory,error:paymentHistoryError}=await supabase.from('flamexbot_star_payments')
-   .select('created_at,plan,total_amount,currency,period_days')
-   .eq('user_id',state.session.user.id)
-   .order('created_at',{ascending:false})
-   .limit(10);
+ const [{data:subscriptionPayments,error:subscriptionPaymentError},{data:addonPayments,error:addonPaymentError}]=await Promise.all([
+   supabase.from('flamexbot_star_payments')
+     .select('created_at,plan,total_amount,currency,period_days')
+     .eq('user_id',state.session.user.id)
+     .order('created_at',{ascending:false})
+     .limit(10),
+   supabase.from('flamexbot_addon_star_payments')
+     .select('addon_code,total_amount,currency,period_days,paid_at')
+     .eq('user_id',state.session.user.id)
+     .eq('status','paid')
+     .not('paid_at','is',null)
+     .order('paid_at',{ascending:false})
+     .limit(10)
+ ]);
+ const paymentHistory=[
+   ...(subscriptionPayments||[]).map(payment=>({...payment,kind:'subscription',history_at:payment.created_at})),
+   ...(addonPayments||[]).map(payment=>({...payment,kind:'addon',history_at:payment.paid_at}))
+ ].sort((a,b)=>new Date(b.history_at).getTime()-new Date(a.history_at).getTime()).slice(0,10);
+ const paymentHistoryError=subscriptionPaymentError||addonPaymentError;
  const trialUsed=Boolean(trialRecord);
  const lifetime=premium&&!state.subscription?.expires_at;
  const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
@@ -1329,7 +1343,7 @@ async function renderTariffs(host, initialTab='premium') {
    ${paymentHistoryError
      ? '<p class="muted">Не удалось загрузить историю оплат. Попробуй обновить раздел позже.</p>'
      : paymentHistory?.length
-       ? '<div class="payment-history-list">'+paymentHistory.map(payment=>'<div class="payment-history-row"><div><b>'+(payment.plan==='pro'?'FLAMEX PRO':'FLAMEX Premium')+'</b><small>'+esc(formatMskDateTime(payment.created_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}))+' · '+esc(String(payment.period_days))+' дней</small></div><strong>'+esc(String(payment.total_amount))+' '+(payment.currency==='XTR'?'⭐':esc(String(payment.currency)))+'</strong></div>').join('')+'</div>'
+       ? '<div class="payment-history-list">'+paymentHistory.map(payment=>'<div class="payment-history-row"><div><b>'+(payment.kind==='addon'?(payment.addon_code==='command_protection'?'Защита от команд':'Дополнение FLAMEXBOT'):(payment.plan==='pro'?'FLAMEX PRO':'FLAMEX Premium'))+'</b><small>'+esc(formatMskDateTime(payment.history_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}))+' · '+esc(String(payment.period_days))+' дней</small></div><strong>'+esc(String(payment.total_amount))+' '+(payment.currency==='XTR'?'⭐':esc(String(payment.currency)))+'</strong></div>').join('')+'</div>'
        : '<p class="muted payment-history-empty">Пока нет завершённых оплат подписки. После первой покупки здесь появится история последних 10 платежей.</p>'}
    <small class="premium-payment-note">Показываются только подтверждённые оплаты подписки. Платежи за отдельные дополнения учитываются отдельно.</small>
   </section>
