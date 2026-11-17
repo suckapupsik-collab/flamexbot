@@ -29,7 +29,7 @@ FLAMEXBOT — Telegram Mini App для общения, общих огонько
 - `20261116016000_enforced_bans_and_admin_audit.sql` — enforces bans in Supabase Auth and user-scoped RLS policies, and adds an owner-only moderation audit log.
 - `20261116035000_flamexbot_command_protection_addon_and_webhook_reliability.sql` — adds the five-day command-protection entitlement, private Stars payment ledger, and durable Telegram update receipts with retry-safe processing.
 
-- `20261117003000_flamexbot_trigger_acl_and_fk_indexes.sql` — restricts direct execution of trigger-only SECURITY DEFINER functions and indexes Business-chat foreign keys.
+- `20261117121753_flamexbot_trigger_acl_and_fk_indexes.sql` — restricts direct execution of trigger-only SECURITY DEFINER functions and indexes Business-chat foreign keys.
 
 These migrations have been applied to the connected Supabase project. The owner account has the protected Founder, Verified, Developer and Administrator badges.
 
@@ -54,6 +54,7 @@ FLAMEXBOT работает только с диалогами и разреше�
 | `/status` | Проверить состояние Telegram Business и выданные разрешения |
 | `/commands` | Получить справку по командам в личном чате с ботом |
 | `/premium` | Создать счёт на Premium в Telegram Stars на 30 дней; продление вручную |
+| `/pro` | Создать счёт на FLAMEX PRO в Telegram Stars на 30 дней; при переходе с Premium сохраняется остаток срока |
 | `.ping` / `/ping` | Проверить обработчик Business-команд в текущем диалоге |
 | `.help` | Показать список Business-команд в текущем диалоге |
 | `.mute` | Включить удаление новых входящих сообщений в текущем диалоге |
@@ -61,13 +62,15 @@ FLAMEXBOT работает только с диалогами и разреше�
 | `.antimute on` / `.antimut on` | Разрешить одну ручную попытку отправки через Business |
 | `.antimute off` / `.antimut off` | Выключить режим антимута |
 | `.antimute текст` / `.antimut текст` | Выполнить одну попытку отправки указанного текста |
-| `.spam 2-5 текст` | Отправить от двух до пяти копий сообщения |
+| `.spamallow` / `.spamstop` | Дать или отозвать согласие на тестовые повторные сообщения |
+| `.spam 2-5 текст` | Отправить от двух до пяти согласованных тестовых копий; требуется FLAMEX PRO |
 | `.afk причина` / `.unafk` | Включить или выключить автоответ |
 | `.autoread on/off` | Настроить автоматическую отметку прочтения |
 | `.autotyping on/off` | Настроить статус «печатает…» |
 | `.autovoice on/off` | Настроить статус записи голосового |
 | `.mutestick on/off` | Включить или выключить фильтр стикеров |
 | `.timeprofile +3` | Установить часовой пояс |
+| `.antimat` / `.unantimat` | Включить или выключить фильтр ненормативной лексики |
 | `.time` / `.untime` | Показать или скрыть время профиля |
 | `.bold текст` / `.dumb текст` | Изменить оформление текста |
 | `.link текст` | Создать ссылку на текущий диалог |
