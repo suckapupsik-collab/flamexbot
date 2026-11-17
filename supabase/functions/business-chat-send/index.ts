@@ -220,7 +220,7 @@ Deno.serve(async (req: Request) => {
         if (settingError) throw settingError;
         return reply({ ok: true, preference: body.preference, enabled });
       }
-      const values = action === "set_mute" ? { is_muted: enabled } : { antimut_enabled: enabled };
+      const values = action === "set_mute" ? { is_muted: enabled, auto_flood_muted: false } : { antimut_enabled: enabled };
       const { error: settingError } = await admin.from("flamexbot_business_chat_settings")
         .upsert({ profile_id: profileId, business_chat_id: chat.id, ...values }, { onConflict: "profile_id,business_chat_id" });
       if (settingError) throw settingError;
