@@ -1266,6 +1266,13 @@ async function renderTariffs(host, initialTab='premium') {
  const isPro=state.subscription?.plan==='pro'&&premium;
  const weeklySpins=isPro?2:premium?1:0;
  const rareLuck=isPro?10:0;
+ const rareWeightBoost=isPro?1.1:1;
+ const wheelOddsTotal=92+8*rareWeightBoost;
+ const wheelOddsHtml=[
+  ['Прокрутка',55],['Защита 5 дней',25],['Premium 7 дней',12],
+  ['Premium 30 дней',5*rareWeightBoost],['Premium 90 дней',1.5*rareWeightBoost],
+  ['PRO 7 дней',1*rareWeightBoost],['PRO 30 дней',0.4*rareWeightBoost],['PRO 90 дней',0.1*rareWeightBoost]
+ ].map(([label,weight])=>'<span>'+((weight/wheelOddsTotal)*100).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+label+'</span>').join('');
  const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
  const [{data:subscriptionPayments,error:subscriptionPaymentError},{data:addonPayments,error:addonPaymentError}]=await Promise.all([
    supabase.from('flamexbot_star_payments')
@@ -1330,7 +1337,7 @@ async function renderTariffs(host, initialTab='premium') {
     <ul>
      <li>Всё из Premium</li>
      <li><b>+2 бесплатные прокрутки колеса каждую неделю</b></li>
-     <li><b>+10% к относительному шансу выпадения редких наград</b></li>
+     <li><b>+10% к весам редких наград колеса</b></li>
      <li>Эксклюзивный бейдж PRO и ранний доступ к новым функциям</li>
      <li>Экспорт выбранной Business-переписки в JSON</li>
     </ul>
@@ -1375,9 +1382,9 @@ async function renderTariffs(host, initialTab='premium') {
     </div>
    </div>
    <p class="muted">Прокрутка стоит 5 ⭐. Можно выиграть Premium или PRO на 7, 30 и 90 дней, защиту от команд либо ещё одну прокрутку.</p>
-   <div class="wheel-odds"><span>55% · Прокрутка</span><span>25% · Защита 5 дней</span><span>12% · Premium 7 дней</span><span>5% · Premium 30 дней</span><span>1,5% · Premium 90 дней</span><span>1% · PRO 7 дней</span><span>0,4% · PRO 30 дней</span><span>0,1% · PRO 90 дней</span></div>
+   <div class="wheel-odds">${wheelOddsHtml}</div>${isPro?'<small class="premium-payment-note">Вероятности пересчитаны с учётом бонуса PRO к весам редких наград.</small>':''}
    <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐'}</button>
-   <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${weeklySpins} для текущего тарифа${rareLuck?' · редкие награды +' + rareLuck + '%':''}.</small>
+   <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${weeklySpins} для текущего тарифа${rareLuck?' · веса редких наград +' + rareLuck + '%':''}.</small>
   </section>
  </section>
  <section class="tariff-tab-panel" data-tariff-panel="addons" hidden>
