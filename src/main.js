@@ -1020,16 +1020,6 @@ async function openBusinessChat(id) {
         const enabled=name==='time';const {error:timeError}=await supabase.from('profiles').update({show_profile_time:enabled}).eq('id',state.session.user.id);
         button.disabled=false;if(timeError){toast('Не удалось обновить время профиля');return;}state.profile={...state.profile,show_profile_time:enabled};toast(enabled?'Время в профиле включено':'Время в профиле выключено');form.reset();return;
       }
-      if(name==='spam'){
-        const match=args.match(/^(\d{1,2})\s+([\s\S]+)$/);if(!match){button.disabled=false;toast('Формат: .spam 2-5 текст сообщения');return;}
-        const count=Number(match[1]),spamText=match[2].trim();if(count<2||count>5||!spamText){button.disabled=false;toast('Разрешено отправить от 2 до 5 повторов.');return;}
-        const replyId=form.querySelector('[name=reply_to_message_id]').value||null;
-        for(let i=0;i<count;i++){const {data:spamData,error:spamError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text:spamText,reply_to_message_id:i===0?replyId:null,command_mode:true,command_name:'spam'}});
-          if(spamError||spamData?.error){button.disabled=false;toast(spamData?.error||spamError?.message||'Отправка остановлена');await refreshBusinessMessages(id);return;}
-          if(i<count-1)await new Promise(resolve=>setTimeout(resolve,1200));
-        }
-        button.disabled=false;form.reset();document.querySelector('#business-reply-preview').hidden=true;toast(`Отправлено ${count} сообщений`);await refreshBusinessMessages(id);return;
-      }
       if(['copyp','qr','afk','unafk'].includes(name)){
         if(name==='qr'&&!args){button.disabled=false;toast('Формат: .qr ссылка или текст');return;}
         const {data:utilityData,error:utilityError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text,command_mode:true,command_name:name}});
@@ -2054,8 +2044,6 @@ async function renderCommands(host) {
     {syntax:'/commands',title:'Справка по командам',description:'Открывает ту же справку, что и /help.',access:'free',group:'Личный чат с ботом'},
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
     {syntax:'/pro',title:'Купить или продлить FLAMEX PRO',description:'Создаёт счёт Telegram Stars на 30 дней. При переходе с Premium оставшееся время сохраняется.',access:'free',group:'Подписка · личный чат'},
-    {syntax:'.spamallow',title:'Разрешить тестовые повторы',description:'Даёт согласие на тестовые повторные сообщения в этом диалоге.',access:'free',group:'Управление чатом'},
-    {syntax:'.spamstop',title:'Отозвать согласие на повторы',description:'Немедленно отзывает согласие на повторные тестовые сообщения.',access:'free',group:'Управление чатом'},
     {syntax:'.unantimute',title:'Выключить антимут',description:'Отключает альтернативную отправку от имени бота.',access:'free',group:'Управление чатом'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Включить мут',description:'Удаляет новые входящие сообщения в выбранном диалоге. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
@@ -2094,7 +2082,6 @@ async function renderCommands(host) {
     {syntax:'.wordcount текст',title:'Подсчёт слов',description:'Считает количество слов в тексте.',access:'free',group:'Работа с текстом'},
     {syntax:'.choose A | B',title:'Случайный выбор',description:'Выбирает один из вариантов, разделённых символом |.',access:'free',group:'Утилиты'},
     {syntax:'.roll 100',title:'Случайное число',description:'Выдаёт случайное число от 1 до заданного максимума.',access:'free',group:'Утилиты'},
-    {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Только согласованные тестовые сообщения; команда требует PRO.',access:'pro',group:'PRO'},
     {syntax:'.profile',title:'Публичная карточка',description:'Анимированно показывает открытые сведения текущего Telegram-диалога. Не обращается к утечкам и закрытым базам.',access:'pro',group:'PRO'},
     {syntax:'.streak 7',title:'Установить огонёк',description:'Мгновенно создаёт или устанавливает серию на указанное число дней (1–3650). Только владелец и администраторы.',access:'admin',group:'Администрация'}
   ];
