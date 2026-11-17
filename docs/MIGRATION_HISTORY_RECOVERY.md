@@ -72,3 +72,18 @@ Weekly wheel grants are now idempotent per user/week and can top up an existing 
 The wheel UI now computes displayed probabilities from the same weights and PRO multiplier as the database draw routine. The PRO copy describes a 10% increase to rare-prize weights rather than promising an exact 10% increase to normalized probabilities.
 
 The performance advisor identified two exactly identical pending-notification indexes. The newer duplicate was removed; the original index was retained. An index was also added to the refund ledger's user foreign key. No other unused indexes were dropped because advisor usage counters alone are insufficient evidence that they are safe to remove.
+
+
+## Follow-up check — 2026-11-17 (weekly grant top-up and index cleanup)
+
+The production migration ledger now contains **80 applied migrations** and GitHub `main` contains **33 SQL migration files**. The raw count difference remains 47; it is not a verified count of individually missing migration files.
+
+New migrations:
+- `20261117134807_top_up_weekly_wheel_grants_after_pro_upgrade.sql`
+- `20261117135026_refund_ledger_fk_index_and_dedupe_notifications_index.sql`
+
+The weekly grant RPC now tops up an existing one-spin Premium grant to two spins if the same account upgrades to PRO during that UTC week. It locks by user/week, locks and re-reads the profile and subscription, and only adds the positive delta. Downgrades do not remove already granted spins. Existing Monday cron schedule and service-role-only execution are preserved. This logic was verified by inspecting the deployed SQL definition and ACL; the grant job was not manually executed against real accounts.
+
+The wheel interface now derives displayed probabilities from the same weight set and PRO multiplier as the SQL draw routine. PRO wording now describes the 10% weight increase accurately.
+
+The performance advisor's duplicate-index warning was resolved: the exact duplicate `notifications_telegram_delivery_pending_idx` was dropped, retaining `notifications_pending_telegram_idx`. A user_id index was added to the refund ledger; the advisor no longer reports its foreign key as unindexed. Other unused indexes were left intact pending query-level evidence.
