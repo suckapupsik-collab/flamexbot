@@ -292,7 +292,7 @@ function containsBusinessProfanity(value: string) {
 }
 function calculateBusinessExpression(input: string): number | null {
   const source = String(input ?? "").replace(/\s+/g, "");
-  if (!source || source.length > 120 || !/^[0-9.+*/%()\-]+$/.test(source)) return null;
+  if (!source || source.length > 120 || !/^[0-9.+*\/%()\-]+$/.test(source)) return null;
   let index = 0;
   const parsePrimary = (): number => {
     if (source[index] === "+") { index++; return parsePrimary(); }
@@ -682,7 +682,7 @@ ${tgEmoji("edit")} <b>Дополнительно</b>
 <code>.timeprofile</code> — закрепить московское время (UTC+3)
 <code>.time</code> / <code>.untime</code> — показать или скрыть время профиля
 <code>.bold текст</code> / <code>.dumb текст</code> — изменить оформление текста
-<code>.link текст</code> — создать ссылку на этот диалог\n<code>.copyp</code> — скопировать данные профиля собеседника\n<code>.qr текст</code> — создать QR-код для текста или ссылки
+<code>.link текст</code> — создать ссылку на этот диалог\n<code>.copyp</code> — скопировать публичную карточку собеседника\n<code>.qr текст</code> — создать QR-код для текста или ссылки\n<code>.id</code> / <code>.chatid</code> — ID собеседника и чата\n<code>.date</code> — дата и время по Москве\n<code>.calc выражение</code> — калькулятор со скобками\n<code>.upper</code> / <code>.lower</code> / <code>.reverse</code> — обработка текста\n<code>.count</code> / <code>.wordcount</code> — подсчёт символов и слов\n<code>.choose A | B</code> — случайный выбор\n<code>.roll 100</code> — случайное число от 1 до 100
 
 ${tgEmoji("help")} <b>Как пользоваться</b>
 Отправляй команду прямо в переписке с нужным человеком. FLAMEXBOT сам определит текущий диалог — <b>@username и ID указывать не нужно</b>. Для команд включения Premium-функций нужна активная подписка; команды отключения доступны бесплатно.
