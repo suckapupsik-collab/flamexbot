@@ -120,7 +120,7 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
   }
 }
 const PAGE_LABELS = {
-  home:'Обзор', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
+  home:'Обзор', support:'Входящие бота', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
   stats:'Статистика', commands:'Все команды', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
@@ -212,7 +212,7 @@ function renderApp() {
     ['commands','⌘','Все команды','Полный список команд'],
     ['tariffs','✧','Тарифы','Подписка и дополнения'],
     ['profile','◉','Профиль','Настройки аккаунта'],
-    ...(state.isAdmin?[['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
+    ...(state.isAdmin?[['support','✉','Входящие бота','Сообщения пользователей'],['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
   ];
   app.innerHTML=`
     <div class="app-layout">
@@ -332,6 +332,7 @@ async function loadPage() {
     else if(state.page==='achievements') await renderAchievements(host);
     else if(state.page==='stats') await renderStats(host);
     else if(state.page==='commands') await renderCommands(host);
+    else if(state.page==='support') await renderSupportInbox(host);
     else if(state.page==='users') await renderUsers(host);
     else if(state.page==='admin_user') await renderAdminUser(host);
     else if(state.page==='admin') await renderAdmin(host);
@@ -1058,6 +1059,65 @@ async function openBusinessChat(id) {
   });
 }
 
+async function renderSupportInbox(host) {
+  const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
+  if(accessError||allowed!==true||!state.isAdmin){
+    host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Входящие доступны только владельцу и администраторам.</p></div>';
+    return;
+  }
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · SUPPORT</div><h1>Входящие бота</h1><p class="muted">Личные сообщения, которые пользователи отправляют FLAMEXBOT. Ответы отправляются от имени бота.</p></div>
+    <div class="support-inbox"><aside class="support-chat-list"><div class="support-list-head"><b>Диалоги</b><button class="outline small" id="support-refresh" type="button">↻</button></div><div class="support-chat-items"><div class="empty-state">Загрузка диалогов…</div></div></aside>
+    <section class="support-thread"><div class="support-thread-placeholder"><span>✉</span><b>Выбери диалог</b><small>Здесь появится история сообщений с пользователем.</small></div></section></div>`;
+  const list=host.querySelector('.support-chat-items');
+  const thread=host.querySelector('.support-thread');
+  let activeId=null;
+  const loadList=async()=>{
+    const {data,error}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'list'}});
+    if(error||data?.error){list.innerHTML='<div class="empty-state">Не удалось загрузить входящие: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
+    const chats=data?.chats||[];
+    list.innerHTML=chats.length?chats.map(chat=>{
+      const name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id;
+      return `<button type="button" class="support-chat-choice ${activeId===chat.id?'selected':''}" data-support-chat="${esc(chat.id)}">
+        <span class="support-avatar">${esc((name||'U').slice(0,1).toUpperCase())}</span><span class="support-chat-copy"><b>${esc(name)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}${esc(chat.last_message_preview||'Новое сообщение')}</small></span>
+        <span class="support-chat-meta">${chat.unread_count?'<i>'+Number(chat.unread_count)+'</i>':''}<time>${chat.last_message_at?formatMskTime(chat.last_message_at):''}</time></span></button>`;
+    }).join(''):'<div class="empty-state">Пока нет входящих сообщений. Когда пользователь напишет боту, диалог появится здесь автоматически.</div>';
+    list.querySelectorAll('[data-support-chat]').forEach(btn=>btn.addEventListener('click',()=>openChat(btn.dataset.supportChat)));
+  };
+  const openChat=async id=>{
+    activeId=id;
+    list.querySelectorAll('[data-support-chat]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.supportChat===id));
+    const {data,error}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'messages',chat_id:id}});
+    if(error||data?.error){thread.innerHTML='<div class="empty-state">Не удалось открыть диалог: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
+    const chat=data.chat||{};
+    const name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id;
+    thread.innerHTML=`<div class="support-thread-head"><button class="support-back outline small" id="support-back" type="button">← Диалоги</button><div><b>${esc(name)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}ID ${esc(chat.telegram_user_id||'')}</small></div></div>
+      <div class="support-message-list">${(data.messages||[]).map(msg=>`<article class="support-message ${msg.direction==='outgoing'?'outgoing':'incoming'}"><p>${esc(msg.content||'['+msg.message_type+']')}</p><time>${formatMskDateTime(msg.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</time></article>`).join('')||'<div class="empty-state">Сообщений пока нет.</div>'}</div>
+      <form class="support-reply-form" id="support-reply-form"><textarea name="content" rows="2" maxlength="4096" placeholder="Написать пользователю…" required></textarea><button class="primary" type="submit">Отправить ↗</button></form>`;
+    thread.classList.add('active');
+    thread.querySelector('#support-back')?.addEventListener('click',()=>thread.classList.remove('active'));
+    const messageList=thread.querySelector('.support-message-list');
+    if(messageList)messageList.scrollTop=messageList.scrollHeight;
+    thread.querySelector('#support-reply-form')?.addEventListener('submit',async event=>{
+      event.preventDefault();
+      const form=event.currentTarget;
+      const input=form.elements.content;
+      const content=String(input.value||'').trim();
+      const button=form.querySelector('button[type=submit]');
+      if(!content)return;
+      button.disabled=true;button.textContent='Отправляем…';
+      const {data:sent,error:sendError}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'send',chat_id:id,content}});
+      button.disabled=false;button.textContent='Отправить ↗';
+      if(sendError||sent?.error){toast(sent?.error||sendError?.message||'Не удалось отправить сообщение');return;}
+      input.value='';
+      await openChat(id);
+      await loadList();
+    });
+    await loadList();
+  };
+  host.querySelector('#support-refresh')?.addEventListener('click',loadList);
+  await loadList();
+}
+
 async function renderAdmin(host) {
   const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
   if(accessError||allowed!==true||!state.isAdmin){
@@ -1097,6 +1157,7 @@ async function renderAdmin(host) {
     </div>
     <div class="admin-section-title"><div><div class="eyebrow">CONTROL MODULES</div><h3>Инструменты управления</h3></div><span class="admin-secure">🔐 Защищённый доступ</span></div>
     <div class="admin-module-grid">
+      <button class="admin-module" data-go="support"><span class="admin-module-icon users">✉</span><b>Входящие бота</b><small>Сообщения пользователей и ответы от имени FLAMEXBOT</small><i>Открыть →</i></button>
       <button class="admin-module" data-go="users"><span class="admin-module-icon users">👥</span><b>Все пользователи</b><small>Поиск, сортировка, фильтры и карточки участников</small><i>Открыть →</i></button>
       <button class="admin-module" data-admin-filter="verified"><span class="admin-module-icon verify">🔵</span><b>Верификация</b><small>Синие галочки и официальные значки ролей</small><i>Управлять →</i></button>
       <button class="admin-module" data-admin-filter="premium"><span class="admin-module-icon premium">✦</span><b>Premium</b><small>Выдача, продление и снятие подписки</small><i>Управлять →</i></button>
