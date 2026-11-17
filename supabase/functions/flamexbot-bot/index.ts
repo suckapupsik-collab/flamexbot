@@ -1870,9 +1870,29 @@ async function processTelegramUpdate(update: any) {
         }));
         if (ownerConnection?.is_enabled &&
             String(update.business_message.from.id) === String(ownerConnection.telegram_user_id)) {
-          const handled = await handleBusinessChatCommand(update.business_message, update.business_message.business_connection_id, ownerConnection);
-          console.log("business command processed", JSON.stringify({ command: commandToken, handled: Boolean(handled) }));
-          if (ownerConnection.rights?.can_delete_sent_messages) {
+          let handled = false;
+          try {
+            handled = await handleBusinessChatCommand(update.business_message, update.business_message.business_connection_id, ownerConnection);
+            console.log("business command processed", JSON.stringify({ command: commandToken, handled: Boolean(handled) }));
+          } catch (commandError) {
+            const reason = String((commandError as any)?.message ?? commandError ?? "Неизвестная ошибка").slice(0, 240);
+            console.error("Business command failed", JSON.stringify({
+              command: commandToken, chat_id: String(update.business_message.chat.id),
+              owner_id: String(ownerConnection.telegram_user_id), error: reason,
+            }));
+            try {
+              const safeReason = reason.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              await sendBusinessReply(
+                update.business_message.business_connection_id,
+                update.business_message.chat.id,
+                `${tgEmoji("warning")} <b>Команда .${commandToken} не выполнена</b>\\nПричина: ${safeReason}\\nПопробуй ещё раз позже. Если ошибка повторяется, сообщи администратору FLAMEXBOT.`,
+                "HTML",
+              );
+            } catch (replyError) {
+              console.error("Could not report Business command failure:", (replyError as any)?.message ?? replyError);
+            }
+          }
+          if (handled && ownerConnection.rights?.can_delete_sent_messages) {
             try {
               await telegram("deleteBusinessMessages", {
                 business_connection_id: update.business_message.business_connection_id,
