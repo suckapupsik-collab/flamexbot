@@ -217,17 +217,17 @@ async function sendRichTelegramMessage(
     const sent = await telegram("sendMessage", payload);
     if (!connectionId && admin && /^\\d+$/.test(String(chatId)) && sent?.message_id) {
       try {
-        const { data: supportChat } = await admin.from("flamexbot_support_chats")
+        const { data: supportChat } = await admin.from("flamexbot_bot_inbox_chats")
           .select("id").eq("telegram_chat_id", String(chatId)).maybeSingle();
         if (supportChat?.id) {
           const readable = String(body).replace(/<tg-emoji[^>]*>(.*?)<\/tg-emoji>/g, "$1")
             .replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
           const createdAt = new Date((sent.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
-          await admin.from("flamexbot_support_messages").upsert({
-            support_chat_id: supportChat.id, telegram_message_id: sent.message_id,
+          await admin.from("flamexbot_bot_inbox_messages").upsert({
+            inbox_chat_id: supportChat.id, telegram_message_id: sent.message_id,
             direction: "outgoing", content: readable, message_type: "text", created_at: createdAt,
           }, { onConflict: "support_chat_id,telegram_message_id" });
-          await admin.from("flamexbot_support_chats").update({
+          await admin.from("flamexbot_bot_inbox_chats").update({
             last_message_preview: readable.slice(0, 240), last_message_at: createdAt, updated_at: new Date().toISOString(),
           }).eq("id", supportChat.id);
         }
@@ -725,7 +725,7 @@ ${tgEmoji("edit")} <b>Дополнительно</b>
 <code>/premium</code> — счёт на FLAMEXBOT Premium на 30 дней
 
 ${tgEmoji("star")} <b>Подписка и тарифы · личный чат с ботом</b>
-Подписки оплачиваются разово через Telegram Stars и не продлеваются автоматически. Текущий тариф и срок действия смотри в Mini App → «Тарифы». Продление выполняется вручную командой <code>/premium</code>. Все прежние PRO-возможности теперь входят в Premium.
+Подписки оплачиваются разово через Telegram Stars и не продлеваются автоматически. Текущий тариф и срок действия смотри в Mini App → «Тарифы». Продление выполняется вручную командой <code>/premium</code>. 
 
 ${tgEmoji("help")} <b>Как пользоваться</b>
 Отправляй команду прямо в переписке с нужным человеком. FLAMEXBOT сам определит текущий диалог — <b>@username и ID указывать не нужно</b>. Для команд включения Premium-функций нужна активная подписка; команды отключения доступны бесплатно.
@@ -768,21 +768,14 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(`${tgEmoji("sparkles")} <b>Огонёк установлен мгновенно!</b>\nСерия: <b>${days} дн.</b>\nПользователь добавлен в друзья, если вы ещё не были друзьями. Дальше огонёк будет продлеваться обычной взаимной перепиской.`, "HTML");
     return true;
   }
-  const proOnlyCommands: string[] = [];
   const commandNeedsPremium = ["mute","profile","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
   let premium = false;
-  let pro = false;
   if (commandNeedsPremium) {
     const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
       .select("plan,expires_at").eq("user_id", profile.id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
     const active = !subscription?.expires_at || new Date(subscription.expires_at).getTime() > Date.now();
-    premium = ["premium","pro","founder"].includes(subscription?.plan) && active;
-    pro = premium;
-  }
-  if (proOnlyCommands.includes(command) && !pro) {
-    await reply(`${tgEmoji("diamond")} Для команды <b>.${escapeHtml(command)}</b> нужна активная подписка <b>FLAMEX PRO</b>.`, "HTML");
-    return true;
+    premium = ["premium","founder"].includes(subscription?.plan) && active;
   }
   if (!premium && commandNeedsPremium) {
     await reply(`${tgEmoji("star")} Для этой команды нужна активная подписка <b>Premium</b>. Команды отключения и размут доступны и без неё.`, "HTML");
@@ -1634,40 +1627,48 @@ async function deliverPendingTelegramNotifications(telegramUserId: number | stri
   }
 }
 
-async function saveSupportInboxMessage(message: any) {
-  if (!admin || message?.chat?.type !== "private" || !message?.chat?.id || !message?.message_id || !message?.from?.id || message.from.is_bot || String(message.from.id) === FOUNDER_TELEGRAM_ID) return;
-  const media = messageMedia(message);
-  const caption = messageContent(message);
-  const content = media.type === "text" ? caption : JSON.stringify({
-    _fx_media: 1, caption, file_id: media.fileId, file_name: message.document?.file_name ?? message.audio?.file_name ?? message.video?.file_name ?? null,
-    mime_type: message.document?.mime_type ?? message.audio?.mime_type ?? message.video?.mime_type ?? null,
-  });
-  const telegramChatId = String(message.chat.id);
-  const now = new Date((message.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
-  const { data: chat, error: chatError } = await admin.from("flamexbot_support_chats").upsert({
-    telegram_chat_id: telegramChatId,
-    telegram_user_id: String(message.from.id),
-    username: message.from.username ?? null,
-    first_name: message.from.first_name ?? null,
-    last_name: message.from.last_name ?? null,
-    last_message_preview: content.slice(0, 240),
-    last_message_at: now,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "telegram_chat_id" }).select("id,unread_count").single();
-  if (chatError) throw chatError;
-  const { error: messageError } = await admin.from("flamexbot_support_messages").upsert({
-    support_chat_id: chat.id,
-    telegram_message_id: message.message_id,
-    direction: "incoming",
-    content,
-    message_type: media.type,
-    created_at: now,
-  }, { onConflict: "support_chat_id,telegram_message_id", ignoreDuplicates: true });
-  if (messageError) throw messageError;
-  const { error: unreadError } = await admin.from("flamexbot_support_chats")
-    .update({ unread_count: Number(chat.unread_count || 0) + 1, updated_at: new Date().toISOString() })
-    .eq("id", chat.id);
-  if (unreadError) throw unreadError;
+async function saveBotInboxMessage(message: any) {
+  if (!admin || message?.chat?.type !== "private" || !message?.chat?.id || !message?.message_id || !message?.from?.id || message.from.is_bot) return;
+  const media=messageMedia(message),caption=messageContent(message);
+  const content=media.type==="text"?caption:JSON.stringify({_fx_media:1,caption,file_id:media.fileId,file_name:message.document?.file_name??message.audio?.file_name??message.video?.file_name??null,mime_type:message.document?.mime_type??message.audio?.mime_type??message.video?.mime_type??null});
+  const now=new Date((message.date??Math.floor(Date.now()/1000))*1000).toISOString();
+  const {data:chat,error:chatError}=await admin.from("flamexbot_bot_inbox_chats").upsert({
+    telegram_chat_id:String(message.chat.id),telegram_user_id:String(message.from.id),username:message.from.username??null,
+    first_name:message.from.first_name??null,last_name:message.from.last_name??null,last_message_preview:content.slice(0,240),
+    last_message_at:now,updated_at:new Date().toISOString()
+  },{onConflict:"telegram_chat_id"}).select("id,unread_count").single();
+  if(chatError)throw chatError;
+  const {data:inserted,error:messageError}=await admin.from("flamexbot_bot_inbox_messages").upsert({
+    inbox_chat_id:chat.id,telegram_message_id:message.message_id,direction:"incoming",content,message_type:media.type,created_at:now
+  },{onConflict:"inbox_chat_id,telegram_message_id",ignoreDuplicates:true}).select("id");
+  if(messageError)throw messageError;
+  if(inserted?.length){
+    const {error:unreadError}=await admin.from("flamexbot_bot_inbox_chats").update({
+      unread_count:Number(chat.unread_count||0)+1,updated_at:new Date().toISOString()
+    }).eq("id",chat.id);
+    if(unreadError)throw unreadError;
+  }
+}
+
+async function saveSupportRequestMessage(message: any,content: string) {
+  if(!admin||!message?.chat?.id||!message?.message_id||!message?.from?.id)return;
+  const now=new Date((message.date??Math.floor(Date.now()/1000))*1000).toISOString();
+  const {data:chat,error:chatError}=await admin.from("flamexbot_support_chats").upsert({
+    telegram_chat_id:String(message.chat.id),telegram_user_id:String(message.from.id),username:message.from.username??null,
+    first_name:message.from.first_name??null,last_name:message.from.last_name??null,last_message_preview:content.slice(0,240),
+    last_message_at:now,updated_at:new Date().toISOString()
+  },{onConflict:"telegram_chat_id"}).select("id,unread_count").single();
+  if(chatError)throw chatError;
+  const {data:inserted,error:messageError}=await admin.from("flamexbot_support_messages").upsert({
+    support_chat_id:chat.id,telegram_message_id:message.message_id,direction:"incoming",content,message_type:"text",created_at:now
+  },{onConflict:"support_chat_id,telegram_message_id",ignoreDuplicates:true}).select("id");
+  if(messageError)throw messageError;
+  if(inserted?.length){
+    const {error:unreadError}=await admin.from("flamexbot_support_chats").update({
+      unread_count:Number(chat.unread_count||0)+1,updated_at:new Date().toISOString()
+    }).eq("id",chat.id);
+    if(unreadError)throw unreadError;
+  }
 }
 
 async function processTelegramUpdate(update: any) {
@@ -1705,7 +1706,12 @@ async function processTelegramUpdate(update: any) {
       await deliverPendingTelegramNotifications(update.message.from.id, update.message.chat.id);
     }
     if (update.message?.chat?.type === "private" && update.message.from?.id && !update.message.from.is_bot && !update.message.successful_payment) {
-      await saveSupportInboxMessage(update.message);
+      const supportMatch=typeof update.message.text==="string"?update.message.text.match(/^\/support(?:@\w+)?(?:\s+([\s\S]+))?$/i):null;
+      if(supportMatch){
+        const requestText=String(supportMatch[1]||"").trim();
+        if(!requestText) await sendRichTelegramMessage(update.message.chat.id,"🛟 <b>Техподдержка FLAMEXBOT</b>\n\nОтправь обращение командой:\n<code>/support Текст обращения</code>\n\nЛичные сообщения боту и обращения в поддержку хранятся отдельно.","HTML");
+        else { await saveSupportRequestMessage(update.message,requestText); await sendRichTelegramMessage(update.message.chat.id,"✅ Обращение отправлено в техподдержку. Ответ придёт сюда в личный чат с ботом.","HTML"); }
+      } else await saveBotInboxMessage(update.message);
     }
     if (update.callback_query?.data === "fx:connect_guide") {
       await telegram("answerCallbackQuery",{callback_query_id:update.callback_query.id});
@@ -1714,12 +1720,6 @@ async function processTelegramUpdate(update: any) {
         "HTML",{inline_keyboard:[[{text:"Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
     } else if (update.callback_query) await handleBusinessActionCallback(update.callback_query);
     if (update.message?.successful_payment) await handleSuccessfulPayment(update.message);
-    if (update.message?.chat?.type === "private" && update.message.from?.id
-        && /^\/pro(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim())) {
-      await sendRichTelegramMessage(update.message.chat.id,
-        "⭐ Тариф FLAMEX PRO упразднён. Все его возможности и дополнения перенесены в Premium. Используй /premium для покупки или продления.",
-        "HTML");
-    }
     if (update.message?.chat?.type === "private" && update.message.from?.id
         && /^\/premium(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim())) {
       await sendTierInvoice(update.message.chat.id, update.message.from.id, "premium");
@@ -1875,7 +1875,7 @@ async function processTelegramUpdate(update: any) {
           { command: "help", description: "Справка и команды" },
           { command: "commands", description: "Список доступных команд" },
           { command: "premium", description: "Купить или продлить Premium" },
-          { command: "pro", description: "Купить или продлить FLAMEX PRO" },
+          { command: "support", description: "Написать в техподдержку" },
         ],
       });
       await telegram("setChatMenuButton", {
