@@ -53,7 +53,7 @@ async function telegram(method: string, body: Record<string, unknown>) {
             : /подтверд|готово|продолж|сохран/.test(label) ? "success"
             : /профил|аккаунт/.test(label) ? "profile"
             : /оплат|stars|звезд/.test(label) ? "star"
-            : /premium|pro|тариф/.test(label) ? "diamond"
+            : /premium|тариф/.test(label) ? "diamond"
             : /защит|безопас|lock/.test(label) ? "security"
             : /загруз|отправ|upload/.test(label) ? "upload"
             : /поиск|найти|search/.test(label) ? "search"
@@ -345,11 +345,11 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
     );
     if (hasCommandAutomations && connection.telegram_user_id !== FOUNDER_TELEGRAM_ID) {
       const { data: targetProtection, error: targetProtectionError } = await admin.from("profiles")
-        .select("command_protection_expires_at").eq("telegram_id", chatId).maybeSingle();
+        .select("command_protection_expires_at,command_protection_disabled").eq("telegram_id", chatId).maybeSingle();
       if (targetProtectionError) throw targetProtectionError;
       const protectedUntil = targetProtection?.command_protection_expires_at
         ? new Date(targetProtection.command_protection_expires_at).getTime() : 0;
-      if (protectedUntil > Date.now()) return;
+      if (protectedUntil > Date.now() && targetProtection?.command_protection_disabled !== true) return;
     }
     const shouldHardMute = !isFounderChat && Boolean(chatPrefs?.is_muted);
     const shouldDeleteSticker = media.type === "sticker" && Boolean(chatPrefs?.mutestick_enabled);
@@ -527,12 +527,12 @@ async function handleBusinessChatCommand(message: any, businessConnectionId: str
   if (String(message.from.id) !== FOUNDER_TELEGRAM_ID) {
     const targetTelegramId = String(message.chat.id);
     const { data: protection, error: protectionError } = await admin.from("profiles")
-      .select("command_protection_expires_at")
+      .select("command_protection_expires_at,command_protection_disabled")
       .eq("telegram_id", targetTelegramId).maybeSingle();
     if (protectionError) throw protectionError;
     const protectionExpiresAt = protection?.command_protection_expires_at
       ? new Date(protection.command_protection_expires_at).getTime() : 0;
-    if (protectionExpiresAt > Date.now()) {
+    if (protectionExpiresAt > Date.now() && protection?.command_protection_disabled !== true) {
       await reply(`${tgEmoji("lock")} <b>Защита от команд включена</b>\nВладелец этого аккаунта запретил применение команд FLAMEXBOT. Использовать команды на защищённом аккаунте может только Основатель проекта.`, "HTML");
       return true;
     }
@@ -610,7 +610,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
       .select("plan,expires_at").eq("user_id", profile.id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
-    premium = ["premium","pro","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+    premium = ["premium","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
   }
   if (!premium && commandNeedsPremium) {
     await reply(`${tgEmoji("star")} Для этой команды нужна активная подписка <b>Premium</b>. Команды отключения и размут доступны и без неё.`, "HTML");
@@ -838,10 +838,11 @@ async function handleBusinessActionCallback(query: any) {
     const targetTelegramId = String(chat.telegram_user_id || chat.telegram_chat_id || "");
     if (targetTelegramId) {
       const { data: protection, error: protectionError } = await admin.from("profiles")
-        .select("command_protection_expires_at").eq("telegram_id", targetTelegramId).maybeSingle();
+        .select("command_protection_expires_at,command_protection_disabled").eq("telegram_id", targetTelegramId).maybeSingle();
       if (protectionError) throw protectionError;
       if (protection?.command_protection_expires_at
-          && new Date(protection.command_protection_expires_at).getTime() > Date.now()) {
+          && new Date(protection.command_protection_expires_at).getTime() > Date.now()
+          && protection.command_protection_disabled !== true) {
         await telegram("answerCallbackQuery", {
           callback_query_id: query.id,
           text: "Пользователь включил защиту от команд. Использовать команды на нём может только Основатель.",
@@ -855,7 +856,7 @@ async function handleBusinessActionCallback(query: any) {
     const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
       .select("plan,expires_at").eq("user_id", chat.profile_id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
-    const premium = ["premium","pro","founder"].includes(subscription?.plan) &&
+    const premium = ["premium","founder"].includes(subscription?.plan) &&
       (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
     if (!premium) {
       await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Для включения этой функции нужна активная Premium-подписка." });
@@ -913,7 +914,7 @@ async function sendPremiumInvoice(chatId: number, telegramUserId: number) {
   if (error) throw error;
   if (!profile?.id) { await sendRichTelegramMessage(chatId, `${tgEmoji("warning")} <b>Сначала привяжи Telegram.</b> Открой профиль FLAMEXBOT и заверши привязку этого аккаунта.`, "HTML"); return; }
   const { data: current } = await admin.from("user_subscriptions").select("plan,expires_at").eq("user_id", profile.id).maybeSingle();
-  if (["premium","pro","founder"].includes(current?.plan) && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now())) {
+  if (["premium","founder"].includes(current?.plan) && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now())) {
     await sendRichTelegramMessage(chatId, `${tgEmoji("success")} <b>Premium уже активен.</b> Все возможности тарифа доступны до окончания подписки.`, "HTML"); return;
   }
   const payload = `flamexbot_premium:${profile.id}:${crypto.randomUUID()}`;
