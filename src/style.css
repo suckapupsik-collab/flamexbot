@@ -1382,3 +1382,14 @@ body{
 .streak-person-avatar{width:52px;height:52px;flex:none;display:grid;place-items:center}
 .streak-person-avatar .avatar{width:52px;height:52px;margin:0;border:1px solid #4a3930}
 .command-access.pro{color:#e6b4ff;background:#33223d;border-color:#624078}
+
+/* Friends and streaks: quick filtering and clearer activity hierarchy */
+.friend-list-filter{display:flex;align-items:center;gap:9px;margin:0 0 12px;padding:0 12px;border:1px solid rgba(255,255,255,.09);border-radius:11px;background:rgba(255,255,255,.025);color:#8291a5}
+.friend-list-filter span{font-size:19px}
+.friend-list-filter input{width:100%;min-width:0;padding:11px 0;border:0;outline:0;background:transparent;color:#f4f6fa;font-size:11px}
+.friend-card[hidden]{display:none}
+.streak-overview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin:0 0 17px}
+.streak-overview-grid>div{display:grid;gap:8px;padding:15px;border:1px solid rgba(255,255,255,.08);border-radius:13px;background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.012))}
+.streak-overview-grid small{color:#8291a5;font-size:8px;font-weight:900;letter-spacing:1px}
+.streak-overview-grid b{color:#f3f5f8;font:800 22px Manrope,sans-serif}
+@media(max-width:560px){.streak-overview-grid{gap:7px}.streak-overview-grid>div{padding:11px}.streak-overview-grid b{font-size:17px}.streak-overview-grid small{font-size:7px}}
