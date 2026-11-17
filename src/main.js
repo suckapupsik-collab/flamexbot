@@ -1135,6 +1135,75 @@ async function renderSupportInbox(host) {
   },6000);
 }
 
+
+async function renderBotInbox(host) {
+  const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
+  if(accessError||allowed!==true||!state.isAdmin){
+    host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Личные сообщения бота доступны только владельцу и администраторам.</p></div>';
+    return;
+  }
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · BOT INBOX</div><h1>Личные сообщения бота</h1><p class="muted">Все обычные личные сообщения, которые пользователи отправляют FLAMEXBOT. Обращения в техподдержку находятся в отдельном разделе.</p></div>
+    <div class="support-inbox bot-private-inbox"><aside class="support-chat-list"><div class="support-list-head"><b>Диалоги</b><button class="outline small" id="bot-inbox-refresh" type="button">↻</button></div><div class="support-chat-items"><div class="empty-state">Загрузка диалогов…</div></div></aside>
+    <section class="support-thread"><div class="support-thread-placeholder"><span>✉</span><b>Выбери личный чат</b><small>Здесь появятся сообщения пользователя и ответы бота.</small></div></section></div>`;
+  const list=host.querySelector('.support-chat-items'),thread=host.querySelector('.support-thread');
+  let activeId=null,polling=false;
+  const parseMedia=raw=>{try{const value=JSON.parse(raw||'');return value&&value._fx_media===1?value:null;}catch{return null;}};
+  const renderMessages=messages=>(messages||[]).map(msg=>{
+    const media=parseMedia(msg.content),caption=media?.caption||(!media?msg.content:'');
+    const attachment=media?'<div class="support-attachment">📎 '+esc(media.file_name||msg.message_type||'Вложение')+'</div>':'';
+    return '<article class="support-message '+(msg.direction==='outgoing'?'outgoing':'incoming')+'">'+(caption?'<p>'+esc(caption)+'</p>':'')+attachment+'<time>'+formatMskDateTime(msg.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'</time></article>';
+  }).join('')||'<div class="empty-state">Сообщений пока нет.</div>';
+  const loadList=async()=>{
+    const {data,error}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_list'}});
+    if(error||data?.error){list.innerHTML='<div class="empty-state">Не удалось загрузить личные сообщения: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
+    const chats=data?.chats||[];
+    list.innerHTML=chats.length?chats.map(chat=>{
+      const name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id||'Пользователь';
+      return '<button type="button" class="support-chat-choice '+(activeId===chat.id?'selected':'')+'" data-bot-inbox-chat="'+esc(chat.id)+'"><span class="support-avatar">'+esc((name||'U').slice(0,1).toUpperCase())+'</span><span class="support-chat-copy"><b>'+esc(name)+'</b><small>'+(chat.username?'@'+esc(chat.username)+' · ':'')+esc(chat.last_message_preview||'Новое сообщение')+'</small></span><span class="support-chat-meta">'+(chat.unread_count?'<i>'+Number(chat.unread_count)+'</i>':'')+'<time>'+(chat.last_message_at?formatMskTime(chat.last_message_at):'')+'</time></span></button>';
+    }).join(''):'<div class="empty-state">Личных сообщений пока нет. Новые диалоги появятся автоматически, когда пользователь напишет боту.</div>';
+    list.querySelectorAll('[data-bot-inbox-chat]').forEach(btn=>btn.addEventListener('click',()=>openChat(btn.dataset.botInboxChat)));
+  };
+  const openChat=async id=>{
+    activeId=id;
+    const {data,error}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_messages',chat_id:id}});
+    if(error||data?.error){thread.innerHTML='<div class="empty-state">Не удалось открыть чат: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
+    const chat=data.chat||{},name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id||'Пользователь';
+    thread.innerHTML='<div class="support-thread-head"><button class="support-back outline small" id="bot-inbox-back" type="button">← Диалоги</button><div><b>'+esc(name)+'</b><small>'+(chat.username?'@'+esc(chat.username)+' · ':'')+'ID '+esc(chat.telegram_user_id||'')+'</small></div></div><div class="support-message-list">'+renderMessages(data.messages||[])+'</div><form class="support-reply-form" id="bot-inbox-reply"><textarea name="content" rows="2" maxlength="4096" placeholder="Ответить пользователю от имени FLAMEXBOT…"></textarea><button class="primary" type="submit">Отправить ↗</button></form>';
+    thread.classList.add('active');
+    thread.querySelector('#bot-inbox-back')?.addEventListener('click',()=>thread.classList.remove('active'));
+    const messageList=thread.querySelector('.support-message-list');if(messageList)messageList.scrollTop=messageList.scrollHeight;
+    thread.querySelector('#bot-inbox-reply')?.addEventListener('submit',async event=>{
+      event.preventDefault();const form=event.currentTarget,input=form.elements.content,content=String(input.value||'').trim(),button=form.querySelector('button[type=submit]');
+      if(!content)return;button.disabled=true;button.textContent='Отправляем…';
+      const result=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_send',chat_id:id,content}});
+      button.disabled=false;button.textContent='Отправить ↗';
+      if(result.error||result.data?.error){toast(result.data?.error||result.error?.message||'Не удалось отправить');return;}
+      input.value='';await openChat(id);await loadList();
+    });
+    await loadList();
+  };
+  host.querySelector('#bot-inbox-refresh')?.addEventListener('click',loadList);
+  await loadList();
+  const timer=setInterval(async()=>{
+    if(!host.isConnected||state.page!=='inbox'){clearInterval(timer);return;}
+    if(polling||document.hidden)return;
+    polling=true;
+    try{
+      await loadList();
+      if(activeId){
+        const {data}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_messages',chat_id:activeId}});
+        const messageList=thread.querySelector('.support-message-list');
+        if(data?.messages&&messageList){
+          const near=messageList.scrollHeight-messageList.scrollTop-messageList.clientHeight<90;
+          messageList.innerHTML=renderMessages(data.messages);
+          if(near)messageList.scrollTop=messageList.scrollHeight;
+        }
+      }
+    }catch(error){console.warn('Bot inbox refresh skipped:',error?.message||error);}
+    finally{polling=false;}
+  },5000);
+}
+
 async function renderAdmin(host) {
   const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
   if(accessError||allowed!==true||!state.isAdmin){
