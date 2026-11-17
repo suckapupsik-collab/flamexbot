@@ -533,6 +533,33 @@ async function renderBusinessMessages(host) {
   // The initial chat list is already populated above; realtime keeps it current.
 }
 
+function openBusinessMediaViewer(url,type) {
+  if(!url)return;
+  document.querySelector('.business-media-viewer')?.remove();
+  const overlay=document.createElement('div');
+  overlay.className='business-media-viewer';
+  const safeUrl=esc(url);
+  let media='';
+  if(type==='video')media='<video class="media-viewer-content" controls autoplay playsinline src="'+safeUrl+'"></video>';
+  else media='<img class="media-viewer-content" src="'+safeUrl+'" alt="Просмотр вложения"/>';
+  overlay.innerHTML='<button type="button" class="media-viewer-close" aria-label="Закрыть">×</button><div class="media-viewer-stage">'+media+'</div><a class="media-viewer-open" href="'+safeUrl+'" target="_blank" rel="noopener">Открыть оригинал ↗</a>';
+  const close=()=>{const video=overlay.querySelector('video');if(video)video.pause();overlay.remove();document.removeEventListener('keydown',onKey);};
+  const onKey=event=>{if(event.key==='Escape')close();};
+  overlay.addEventListener('click',event=>{if(event.target===overlay||event.target.classList.contains('media-viewer-stage'))close();});
+  overlay.querySelector('.media-viewer-close')?.addEventListener('click',close);
+  document.addEventListener('keydown',onKey);
+  document.body.appendChild(overlay);
+}
+
+function bindBusinessMediaViewer(list) {
+  list.querySelectorAll('[data-media-viewer]').forEach(control=>control.addEventListener('click',event=>{
+    event.preventDefault();
+    const type=control.dataset.mediaViewer;
+    const url=control.dataset.mediaUrl||control.getAttribute('href');
+    openBusinessMediaViewer(url,type);
+  }));
+}
+
 function bindBusinessMessageActions(list) {
   list.querySelectorAll('[data-copy-message]').forEach(button=>button.addEventListener('click',async()=>{
     const value=button.getAttribute('data-copy-message')||'';
@@ -562,9 +589,9 @@ function renderBusinessBubble(message, mediaUrl = '') {
   const mediaType = message.message_type || 'text';
   let media = '';
   if (mediaType !== 'text' && !message.deleted_at) {
-    if (mediaUrl && mediaType === 'photo') media = `<a class="business-media-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="Фото"/></a>`;
-    else if (mediaUrl && ['animation','sticker'].includes(mediaType)) media = `<a class="business-media-preview business-animation-preview" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="${mediaType==='sticker'?'Стикер':'GIF-анимация'}"/></a>`;
-    else if (mediaUrl && ['video','video_note'].includes(mediaType)) media = `<video class="business-video-preview" controls playsinline preload="metadata" src="${esc(mediaUrl)}"></video>`;
+    if (mediaUrl && mediaType === 'photo') media = `<a class="business-media-preview" href="${esc(mediaUrl)}" data-media-viewer="image" aria-label="Открыть фото"><img src="${esc(mediaUrl)}" loading="lazy" alt="Фото"/></a>`;
+    else if (mediaUrl && ['animation','sticker'].includes(mediaType)) media = `<a class="business-media-preview business-animation-preview" href="${esc(mediaUrl)}" data-media-viewer="image" aria-label="Открыть ${mediaType==='sticker'?'стикер':'GIF-анимацию'}"><img src="${esc(mediaUrl)}" loading="lazy" alt="${mediaType==='sticker'?'Стикер':'GIF-анимация'}"/></a>`;
+    else if (mediaUrl && ['video','video_note'].includes(mediaType)) media = `<div class="business-video-wrap"><video class="business-video-preview" controls playsinline preload="metadata" src="${esc(mediaUrl)}"></video><button type="button" class="media-expand-button" data-media-viewer="video" data-media-url="${esc(mediaUrl)}">Развернуть видео</button></div>`;
     else if (mediaUrl && ['audio','voice'].includes(mediaType)) media = `<div class="business-audio-card"><span>${mediaType==='voice'?'🎙 Голосовое сообщение':'🎵 Аудио'}</span><audio class="business-audio-preview" controls preload="metadata" src="${esc(mediaUrl)}"></audio></div>`;
     else if (mediaUrl) media = `<a class="business-file-link" href="${esc(mediaUrl)}" target="_blank" rel="noopener" download="${esc(mediaName)}"><span>📎</span><span><b>${esc(mediaName)}</b><small>${esc(mediaType.toUpperCase())}${mediaSizeLabel}</small></span><span>↓</span></a>`;
     else media = `<div class="business-media-note">Вложение: ${esc(mediaType)}${message.media_file_id ? ' · получено от Telegram' : ''}</div>`;
@@ -720,6 +747,7 @@ async function renderBusinessMessagesList(chatId,scrollOptions={}) {
   list.innerHTML=loadOlderMarkup+messagesMarkup;
   list.querySelector("#business-load-older")?.addEventListener("click",()=>loadOlderBusinessMessages(chatId));
   bindBusinessMessageActions(list);
+  bindBusinessMediaViewer(list);
   list.querySelectorAll("[data-reply-to]").forEach(button=>button.addEventListener("click",()=>{
     const form=document.querySelector("#business-send-form");
     const preview=document.querySelector("#business-reply-preview");
@@ -780,6 +808,7 @@ async function openBusinessChat(id) {
       list.innerHTML='<div class="business-search-results"><b>Результаты по всей сохранённой истории: '+found.length+'</b><small>Показаны последние совпадения, максимум 100.</small><button type="button" class="outline small" id="business-search-restore">Вернуться к переписке</button></div>'+(found.length?found.reverse().map(message=>renderBusinessBubble(message,mediaMap[message.media_url]||'')).join(''):'<div class="chat-placeholder"><b>Совпадений не найдено</b><small>Попробуй изменить поисковый запрос.</small></div>');
       list.querySelector('#business-search-restore')?.addEventListener('click',()=>refreshBusinessMessages(id));
       bindBusinessMessageActions(list);
+      bindBusinessMediaViewer(list);
       list.querySelectorAll('[data-reply-to]').forEach(button=>button.addEventListener('click',()=>{const form=box.querySelector('#business-send-form');const preview=box.querySelector('#business-reply-preview');if(!form||!preview)return;form.querySelector('[name=reply_to_message_id]').value=button.dataset.replyTo;preview.hidden=false;preview.querySelector('span').textContent='Ответ на сообщение #'+button.dataset.replyTo;form.querySelector('input[name=content]').focus();}));
     }catch(error){toast('Не удалось выполнить поиск: '+(error?.message||'ошибка'));}
     finally{searchAllButton.disabled=false;searchAllButton.textContent='Вся история';}
