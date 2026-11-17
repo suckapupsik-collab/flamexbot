@@ -1369,6 +1369,20 @@ async function handleSuccessfulPayment(message: any) {
     if (orderError) throw orderError;
     if (!order || order.user_id !== wheelUserId || order.telegram_user_id !== String(message.from.id)) throw new Error("Wheel order does not match payer");
     if (order.status === "paid") return;
+    if (order.status === "refunded") {
+      await refundAndRecordStarsPayment({
+        userId: wheelUserId,
+        telegramUserId: String(message.from.id),
+        invoicePayload,
+        paymentKind: "wheel",
+        currency: payment.currency,
+        totalAmount: payment.total_amount,
+        chargeId: payment.telegram_payment_charge_id,
+        providerChargeId: payment.provider_payment_charge_id ?? null,
+        reason: "wheel_order_already_refunded",
+      });
+      return;
+    }
     const { data: profile, error: profileError } = await admin.from("profiles")
       .select("id,telegram_id,is_banned").eq("id",wheelUserId).maybeSingle();
     if (profileError) throw profileError;
