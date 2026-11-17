@@ -449,21 +449,23 @@ async function renderBusinessMessageEvents(host,eventType) {
     .eq('profile_id',uid).eq('event_type',eventType).order('occurred_at',{ascending:false}).limit(100);
   if(error){list.innerHTML=`<div class="empty-state">Не удалось загрузить историю: ${esc(error.message)}</div>`;return;}
   if(!events?.length){list.innerHTML=`<div class="empty-state">${deleted?'Удалённых сообщений пока нет.':'Изменённых сообщений пока нет.'}</div>`;return;}
-  const chatIds=[...new Set(events.map(e=>e.business_chat_id))];
+  const visibleEvents=deleted?events.filter(event=>{const raw=event.original_raw||{};const body=String(event.original_content||raw.text||raw.caption||'').trim();return Boolean(body||event.media_url||event.media_file_id||(event.message_type&&event.message_type!=='text'));}):events;
+  if(!visibleEvents.length){list.innerHTML='<div class="empty-state">Удалённых сообщений с сохранённым содержимым пока нет.</div>';return;}
+  const chatIds=[...new Set(visibleEvents.map(e=>e.business_chat_id))];
   const {data:chats,error:chatError}=await supabase.from('flamexbot_business_chats')
     .select('id,telegram_chat_id,username,first_name,last_name,photo_url').eq('profile_id',uid).in('id',chatIds);
   if(chatError){list.innerHTML=`<div class="empty-state">Не удалось загрузить переписки: ${esc(chatError.message)}</div>`;return;}
   const chatMap=new Map((chats||[]).map(c=>[c.id,c]));
   const currentMessageMap=new Map();
   if(!deleted){
-    const messageIds=[...new Set(events.map(e=>e.telegram_message_id))];
+    const messageIds=[...new Set(visibleEvents.map(e=>e.telegram_message_id))];
     const {data:currentMessages,error:currentError}=await supabase.from('flamexbot_business_messages')
       .select('business_chat_id,telegram_message_id,content,message_type')
       .eq('direction','inbound').in('business_chat_id',chatIds).in('telegram_message_id',messageIds);
     if(currentError){list.innerHTML=`<div class="empty-state">Не удалось загрузить актуальные версии: ${esc(currentError.message)}</div>`;return;}
     (currentMessages||[]).forEach(m=>currentMessageMap.set(m.business_chat_id+':'+m.telegram_message_id,m));
   }
-  const paths=[...new Set(events.map(e=>e.media_url).filter(Boolean))];
+  const paths=[...new Set(visibleEvents.map(e=>e.media_url).filter(Boolean))];
   const mediaUrlMap={};
   if(paths.length){
     try{
@@ -472,7 +474,7 @@ async function renderBusinessMessageEvents(host,eventType) {
     }catch(error){console.warn('Message event media preview:',error?.message||error);}
   }
   const grouped=new Map();
-  events.forEach(event=>{if(!grouped.has(event.business_chat_id))grouped.set(event.business_chat_id,[]);grouped.get(event.business_chat_id).push(event);});
+  visibleEvents.forEach(event=>{if(!grouped.has(event.business_chat_id))grouped.set(event.business_chat_id,[]);grouped.get(event.business_chat_id).push(event);});
   list.innerHTML=[...grouped.entries()].map(([chatId,chatEvents])=>{
     const chat=chatMap.get(chatId)||{};
     const chatName=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||(chat.username?'@'+chat.username:'Telegram-пользователь');
@@ -1148,7 +1150,7 @@ async function renderAdmin(host) {
   const actionLabels={
     ban:'Заблокирован аккаунт',unban:'Снята блокировка',verify:'Выдана синяя галочка',
     unverify:'Снята синяя галочка',premium_grant:'Выдан или продлён Premium',
-    premium_revoke:'Снят Premium',pro_grant:'Выдан или продлён PRO',pro_revoke:'Снят PRO',
+    premium_revoke:'Снят Premium',
     badge_grant:'Выдан значок роли',badge_revoke:'Снят значок роли'
   };
   const auditRows=(audit.data||[]).map(item=>{
@@ -1260,11 +1262,11 @@ async function renderUsers(host) {
     const card=btn.closest('[data-user-card]');
     let reason=null,days=30,badgeCode=null;
     if(action==='ban'){reason=prompt('Причина блокировки (будет сохранена в карточке пользователя):','Нарушение правил сообщества');if(reason===null)return;}
-    if(action==='premium_grant'||action==='pro_grant'){const label=action==='pro_grant'?'PRO':'Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? Введи 0 для бессрочной подписки.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}reason=prompt('Комментарий к выдаче '+label+' (будет виден в уведомлении):','Подарок от администрации');if(reason===null)return;reason=reason.trim()||'Выдано администрацией FLAMEXBOT';}
+    if(action==='premium_grant'){const label='Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? Введи 0 для бессрочной подписки.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}reason=prompt('Комментарий к выдаче '+label+' (будет виден в уведомлении):','Подарок от администрации');if(reason===null)return;reason=reason.trim()||'Выдано администрацией FLAMEXBOT';}
     if(action==='badge_grant')badgeCode=card?.querySelector('[data-role-select]')?.value||null;
     if(action==='badge_revoke')badgeCode=card?.querySelector('[data-role-remove]')?.value||null;
     if(['badge_grant','badge_revoke'].includes(action)&&!badgeCode){toast('Сначала выбери значок');return;}
-    if(['unban','premium_revoke','pro_revoke','unverify','badge_revoke'].includes(action)&&!confirm('Подтвердить это действие?'))return;
+    if(['unban','premium_revoke','unverify','badge_revoke'].includes(action)&&!confirm('Подтвердить это действие?'))return;
     btn.disabled=true;
     const {data, error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{
       p_user_id:userId,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days
@@ -1307,9 +1309,9 @@ async function renderAdminUser(host) {
     const action=btn.dataset.adminDetailAction;
     let reason=null,days=30,badgeCode=null;
     if(action==='ban'){reason=prompt('Причина блокировки:','Нарушение правил сообщества');if(reason===null)return;}
-    if(action==='premium_grant'||action==='pro_grant'){const label=action==='pro_grant'?'PRO':'Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? 0 — бессрочно.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}reason=prompt('Комментарий к выдаче (необязательно):','')||null;}
+    if(action==='premium_grant'){const label='Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? 0 — бессрочно.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}reason=prompt('Комментарий к выдаче (необязательно):','')||null;}
     if(action==='badge_grant'||action==='badge_revoke'){badgeCode=host.querySelector('#admin-detail-badge')?.value||badges.find(code=>code!=='verified'&&code!=='premium')||null;if(!badgeCode){toast('Выбери значок');return;}}
-    if(['ban','unban','unverify','premium_revoke','pro_revoke','badge_revoke'].includes(action)&&!confirm('Подтвердить действие?'))return;
+    if(['ban','unban','unverify','premium_revoke','badge_revoke'].includes(action)&&!confirm('Подтвердить действие?'))return;
     btn.disabled=true;
     const {error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{p_user_id:u.id,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days});
     if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
@@ -1543,8 +1545,7 @@ async function renderTariffs(host, initialTab='premium') {
    }
  };
  host.querySelector('#buy-premium')?.addEventListener('click',event=>startTierPurchase(event.currentTarget,'premium'));
- host.querySelector('#buy-pro')?.addEventListener('click',event=>startTierPurchase(event.currentTarget,'pro'));
-
+ 
  const trialButton=host.querySelector('#claim-trial');
  trialButton?.addEventListener('click',async()=>{
    trialButton.disabled=true;trialButton.textContent='Активируем…';
