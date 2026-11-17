@@ -39,10 +39,16 @@ async function telegram(method: string, body: Record<string, unknown>) {
         security: "lock", premium: "diamond", star: "star", upload: "upload",
         search: "search", folder: "folder", profile: "user",
       };
+      const stripButtonEmoji = (value: string) => value
+        .replace(/[\\p{Emoji_Presentation}\\p{Extended_Pictographic}\\uFE0F\\u200D]/gu, "")
+        .replace(/\\s{2,}/g, " ").trim();
       const enrich = (rows: unknown) => Array.isArray(rows) ? rows.map((row: any) =>
         Array.isArray(row) ? row.map((button: any) => {
-          if (!button || typeof button !== "object" || button.icon_custom_emoji_id) return button;
-          const label = (String(button.text ?? "") + " " + String(button.callback_data ?? "")).toLowerCase();
+          if (!button || typeof button !== "object") return button;
+          const cleanText = typeof button.text === "string" ? stripButtonEmoji(button.text) : button.text;
+          const normalizedButton = cleanText !== button.text ? { ...button, text: cleanText || "Открыть" } : button;
+          if (normalizedButton.icon_custom_emoji_id) return normalizedButton;
+          const label = (String(normalizedButton.text ?? "") + " " + String(normalizedButton.callback_data ?? "")).toLowerCase();
           const key = /отмен|cancel|закрыть/.test(label) ? "cancel"
             : /назад|back/.test(label) ? "back"
             : /обнов|refresh|повтор/.test(label) ? "refresh"
@@ -60,9 +66,9 @@ async function telegram(method: string, body: Record<string, unknown>) {
             : /папк|архив/.test(label) ? "folder"
             : /открыть|запустить|старт|подключ|войти|прилож/.test(label) ? "open"
             : null;
-          if (!key) return button;
+          if (!key) return normalizedButton;
           const emoji = PREMIUM_EMOJI[icons[key] ?? key as keyof typeof PREMIUM_EMOJI];
-          return emoji && available.has(emoji.id) ? { ...button, icon_custom_emoji_id: emoji.id } : button;
+          return emoji && available.has(emoji.id) ? { ...normalizedButton, icon_custom_emoji_id: emoji.id } : normalizedButton;
         }) : row
       ) : rows;
       const markup = body.reply_markup as Record<string, unknown>;
@@ -284,6 +290,51 @@ async function ensureBusinessConnection(connectionId: string) {
 function containsBusinessProfanity(value: string) {
   return /(^|[^а-яёa-z0-9_])(?:бля[а-яё]*|хуй[а-яё]*|хуе[а-яё]*|пизд[а-яё]*|еб[а-яё]*|муд[а-яё]*|сука[а-яё]*|пидор[а-яё]*|fuck[a-z]*|shit[a-z]*|bitch[a-z]*|asshole[a-z]*)(?=$|[^а-яёa-z0-9_])/i.test(value);
 }
+function calculateBusinessExpression(input: string): number | null {
+  const source = String(input ?? "").replace(/\\s+/g, "");
+  if (!source || source.length > 120 || !/^[0-9.+*/%()\\-]+$/.test(source)) return null;
+  let index = 0;
+  const parsePrimary = (): number => {
+    if (source[index] === "+") { index++; return parsePrimary(); }
+    if (source[index] === "-") { index++; return -parsePrimary(); }
+    if (source[index] === "(") {
+      index++;
+      const value = parseExpression();
+      if (source[index] !== ")") throw new Error("parenthesis");
+      index++;
+      return value;
+    }
+    const match = /^(?:\\d+(?:\\.\\d*)?|\\.\\d+)/.exec(source.slice(index));
+    if (!match) throw new Error("number");
+    index += match[0].length;
+    return Number(match[0]);
+  };
+  const parseTerm = (): number => {
+    let value = parsePrimary();
+    while (["*", "/", "%"].includes(source[index] ?? "")) {
+      const operator = source[index++];
+      const right = parsePrimary();
+      if ((operator === "/" || operator === "%") && right === 0) throw new Error("zero");
+      value = operator === "*" ? value * right : operator === "/" ? value / right : value % right;
+    }
+    return value;
+  };
+  const parseExpression = (): number => {
+    let value = parseTerm();
+    while (source[index] === "+" || source[index] === "-") {
+      const operator = source[index++];
+      const right = parseTerm();
+      value = operator === "+" ? value + right : value - right;
+    }
+    return value;
+  };
+  try {
+    const result = parseExpression();
+    return index === source.length && Number.isFinite(result) ? result : null;
+  } catch {
+    return null;
+  }
+}
 async function saveBusinessMessage(message: any, connectionOverride?: any) {
   if (!admin || !message?.business_connection_id || !message?.chat?.id || !message?.message_id) {
     throw new Error("Business message payload is incomplete");
@@ -332,6 +383,54 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
   }, { onConflict: "business_chat_id,telegram_message_id" });
   if (messageError) throw messageError;
   if (direction === "inbound") {
+    const placeholder = "[Текст не был сохранён до получения события об удалении]";
+    const { data: pendingDeletion, error: pendingDeletionError } = await admin.from("flamexbot_business_message_events")
+      .select("id,occurred_at").eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id)
+      .eq("event_type", "deleted").eq("original_content", placeholder)
+      .order("occurred_at", { ascending: false }).limit(1).maybeSingle();
+    if (pendingDeletionError) throw pendingDeletionError;
+    if (pendingDeletion) {
+      const archivedUrl = media.fileId
+        ? await archiveBusinessMedia(media.fileId, connection.profile_id, chat.id, message.message_id, originalName)
+        : null;
+      const { error: reconcileError } = await admin.from("flamexbot_business_message_events")
+        .update({
+          original_content: content, message_type: media.type, media_file_id: media.fileId,
+          media_url: archivedUrl, original_raw: message,
+        }).eq("id", pendingDeletion.id);
+      if (reconcileError) throw reconcileError;
+      const { error: markLateDeleteError } = await admin.from("flamexbot_business_messages")
+        .update({ deleted_at: pendingDeletion.occurred_at })
+        .eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id);
+      if (markLateDeleteError) throw markLateDeleteError;
+    }
+    const { data: currentPrefs, error: currentPrefsError } = await admin.from("flamexbot_business_chat_settings")
+      .select("is_muted").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
+    if (currentPrefsError) throw currentPrefsError;
+    if (!currentPrefs?.is_muted && senderId) {
+      const { data: floodData, error: floodError } = await admin.rpc("record_flamexbot_business_flood", {
+        p_profile_id: connection.profile_id,
+        p_business_chat_id: chat.id,
+        p_sender_telegram_id: senderId,
+      });
+      if (floodError) throw floodError;
+      const flood = Array.isArray(floodData) ? floodData[0] : floodData;
+      if (flood?.triggered) {
+        const { error: autoMuteError } = await admin.from("flamexbot_business_chat_settings").upsert({
+          profile_id: connection.profile_id, business_chat_id: chat.id, is_muted: true,
+        }, { onConflict: "profile_id,business_chat_id" });
+        if (autoMuteError) throw autoMuteError;
+        const canDeleteIncoming = connection.rights?.can_delete_all_messages === true;
+        const notice = `${tgEmoji("warning")} <b>FLAMEXBOT · защита от флуда сработала</b>\\nВ этом диалоге получено 10 или более сообщений за 2 секунды.\\n${canDeleteIncoming
+          ? "Автоматический мут включён: новые сообщения будут удаляться."
+          : "Диалог помечен мутом, но Telegram не выдал право удалять входящие сообщения. Включи право «Удалять все сообщения» в Telegram Business."}\\nОткрой FLAMEXBOT и нажми «Размут», когда будешь готов продолжить общение.`;
+        try {
+          await sendRichTelegramMessage(connection.telegram_user_id, notice, "HTML");
+        } catch (notifyError) {
+          console.warn("Could not notify business owner about incoming flood:", (notifyError as any)?.message ?? notifyError);
+        }
+      }
+    }
     const consentCommand = content.trim().toLowerCase();
     if (consentCommand === ".spamallow" || consentCommand === "/spamallow") {
       const { error: consentError } = await admin.from("flamexbot_business_spam_consents").upsert({
@@ -818,6 +917,61 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       });
       return true;
     }
+    if (command === "id" || command === "chatid") {
+      await reply(`${tgEmoji("user")} <b>Данные собеседника</b>\\nTelegram ID: <code>${escapeHtml(String(chat.telegram_user_id || chat.telegram_chat_id))}</code>\\nЧат ID: <code>${escapeHtml(String(chat.telegram_chat_id))}</code>\\nЮзернейм: ${chat.username ? "@" + escapeHtml(chat.username) : "не указан"}`, "HTML");
+      return true;
+    }
+    if (command === "date") {
+      const now = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", dateStyle: "full", timeStyle: "short" }).format(new Date());
+      await reply(`${tgEmoji("calendar")} <b>Сейчас по Москве</b>\\n${escapeHtml(now)}`, "HTML");
+      return true;
+    }
+    if (command === "calc") {
+      const expression = args.join(" ").trim();
+      const value = calculateBusinessExpression(expression);
+      if (value === null || !Number.isFinite(value)) {
+        await reply("Формат: .calc (12 + 8) * 2. Поддерживаются числа, скобки и + − × ÷ %.");
+      } else {
+        await reply(`${tgEmoji("success")} <b>Результат:</b> <code>${escapeHtml(String(Number(value.toPrecision(12))))}</code>`, "HTML");
+      }
+      return true;
+    }
+    if (["upper", "lower", "reverse", "count", "wordcount"].includes(command)) {
+      const value = args.join(" ").trim();
+      if (!value || value.length > 3000) {
+        await reply(`Формат: .${command} текст (до 3000 символов).`);
+        return true;
+      }
+      if (command === "count") await reply(`Символов: <b>${value.length}</b>`, "HTML");
+      else if (command === "wordcount") await reply(`Слов: <b>${(value.match(/[^\\s]+/g) || []).length}</b>`, "HTML");
+      else {
+        const transformed = command === "upper" ? value.toLocaleUpperCase("ru-RU")
+          : command === "lower" ? value.toLocaleLowerCase("ru-RU")
+          : Array.from(value).reverse().join("");
+        await reply(escapeHtml(transformed), "HTML");
+      }
+      return true;
+    }
+    if (command === "choose") {
+      const choices = args.join(" ").split("|").map(value => value.trim()).filter(Boolean).slice(0, 30);
+      if (choices.length < 2) {
+        await reply("Формат: .choose вариант 1 | вариант 2 | вариант 3");
+        return true;
+      }
+      const selected = choices[Math.floor(Math.random() * choices.length)];
+      await reply(`${tgEmoji("sparkles")} Выбор FLAMEXBOT: <b>${escapeHtml(selected)}</b>`, "HTML");
+      return true;
+    }
+    if (command === "roll") {
+      const max = args[0] ? Number(args[0]) : 6;
+      if (!Number.isInteger(max) || max < 2 || max > 100000) {
+        await reply("Формат: .roll [максимум]. По умолчанию — от 1 до 6, максимум — 100000.");
+        return true;
+      }
+      const result = Math.floor(Math.random() * max) + 1;
+      await reply(`${tgEmoji("dice" in PREMIUM_EMOJI ? "dice" : "star")} Выпало: <b>${result}</b> (1–${max})`, "HTML");
+      return true;
+    }
     const count = Number(args[0]);
     const spamText = args.slice(1).join(" ").trim();
     if (!Number.isInteger(count) || count < 2 || count > 5 || !spamText || spamText.length > 1000) {
@@ -1081,7 +1235,7 @@ async function handleSuccessfulPayment(message: any) {
     if(prizeError)throw prizeError;
     await sendRichTelegramMessage(message.chat.id,
       `${tgEmoji("sparkles")} <b>Колесо фортуны!</b>\nТвоя награда: <b>${String(prize?.prize_label??"Награда начислена")}</b>.\nОткрой FLAMEXBOT, чтобы посмотреть результат.`,
-      "HTML",{inline_keyboard:[[{text:"✦ Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
+      "HTML",{inline_keyboard:[[{text:"Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
     const {error:wheelNoticeMarkError}=await admin.from("notifications")
       .update({telegram_delivered_at:new Date().toISOString()})
       .eq("user_id",wheelUserId)
@@ -1287,7 +1441,7 @@ async function processTelegramUpdate(update: any) {
       await telegram("answerCallbackQuery",{callback_query_id:update.callback_query.id});
       await sendRichTelegramMessage(update.callback_query.message.chat.id,
         `<b>Инструкция по подключению FLAMEXBOT</b>\n\n1. Открой Telegram → Настройки → Telegram Business.\n2. Выбери «Чат-боты» → «Добавить чат-бота».\n3. Найди FLAMEXBOT и подключи его.\n4. Разреши доступ к сообщениям и отправке ответов. Для автоматического удаления сообщений также включи право удаления.\n5. Вернись в Mini App → Профиль и проверь статус подключения.`,
-        "HTML",{inline_keyboard:[[{text:"✦ Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
+        "HTML",{inline_keyboard:[[{text:"Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
     } else if (update.callback_query) await handleBusinessActionCallback(update.callback_query);
     if (update.message?.successful_payment) await handleSuccessfulPayment(update.message);
     if (update.message?.chat?.type === "private" && update.message.from?.id
@@ -1346,7 +1500,7 @@ async function processTelegramUpdate(update: any) {
 
 Команды без адреса собеседника и без @username — бот определит текущий чат автоматически. Статус подключения: /status. Тарифы: /premium и /pro.`,
         "HTML",
-        { inline_keyboard: [[{ text: "✦ Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
+        { inline_keyboard: [[{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
       );
     }
 
@@ -1422,7 +1576,7 @@ ${tgEmoji("users")} Общайся с друзьями, поддерживай �
 ${tgEmoji("settings")} Подключение Telegram Business и управление разрешениями доступны в профиле приложения.`,
         "HTML",
         { inline_keyboard: [
-          [{ text: "✦ Открыть FLAMEXBOT", web_app: { url: APP_URL } }],
+          [{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }],
           [{ text: "📖 Инструкция к подключению", callback_data: "fx:connect_guide" }]
         ] },
       );
