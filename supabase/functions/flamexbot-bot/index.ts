@@ -104,7 +104,7 @@ async function telegram(method: string, body: Record<string, unknown>) {
             : row);
         }
       }
-      const fallbackResponse = await fetch(\`\${API}/\${method}\`, {
+      const fallbackResponse = await fetch(`${API}/${method}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(fallbackPayload),
       });
       const fallbackData = await fallbackResponse.json();
@@ -197,13 +197,13 @@ async function sendRichTelegramMessage(
         const known = Object.values(PREMIUM_EMOJI).filter(item => available.has(item.id))
           .sort((a, b) => b.fallback.length - a.fallback.length);
         for (const item of known) {
-          output = output.split(item.fallback).join(\`<tg-emoji emoji-id="\${item.id}">\${item.fallback}</tg-emoji>\`);
+          output = output.split(item.fallback).join(`<tg-emoji emoji-id="${item.id}">${item.fallback}</tg-emoji>`);
         }
         return output;
       }).join("")
     : body;
   const prepared = richBody.replace(emojiPattern, (_match, id, fallback) =>
-    available.has(String(id)) ? \`<tg-emoji emoji-id="\${id}">\${fallback}</tg-emoji>\` : fallback);
+    available.has(String(id)) ? `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>` : fallback);
   const payload: Record<string, unknown> = {
     ...(connectionId ? { business_connection_id: connectionId } : {}),
     chat_id: chatId,
