@@ -704,7 +704,7 @@ ${tgEmoji("lock")} <b>Текущий диалог</b>
 <code>.ping</code> / <code>/ping</code> — проверить ответы Business-команд\n<code>.help</code> / <code>/help</code> / <code>.commands</code> — полный список команд\n<code>.streak 1-3650</code> — мгновенно установить серию (только администрация)\n<code>.mute</code> / <code>/mute</code> — удалять новые входящие сообщения
 <code>.unmute</code> — остановить удаление сообщений
 <code>.antimute</code> / <code>.unantimute</code> — отправлять новые сообщения от имени бота FLAMEXBOT (собеседник должен открыть бота и нажать Start)
-<code>.spam 2-5 текст</code> — отправить до 5 копий при согласии собеседника
+<code>.spam 2-5 текст</code> — отправить 2–5 тестовых копий; требуется FLAMEX PRO и согласие собеседника
 <code>.spamallow</code> / <code>.spamstop</code> — дать или отозвать согласие
 <code>.dokc</code> — анимированный поиск публичной информации
 
