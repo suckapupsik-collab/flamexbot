@@ -723,10 +723,9 @@ ${tgEmoji("edit")} <b>Дополнительно</b>
 <code>.bold текст</code> / <code>.dumb текст</code> — изменить оформление текста
 <code>.link текст</code> — создать ссылку на этот диалог\n<code>.copyp</code> — скопировать публичную карточку собеседника\n<code>.qr текст</code> — создать QR-код для текста или ссылки\n<code>.id</code> / <code>.chatid</code> — ID собеседника и чата\n<code>.date</code> — дата и время по Москве\n<code>.calc выражение</code> — калькулятор со скобками\n<code>.upper</code> / <code>.lower</code> / <code>.reverse</code> — обработка текста\n<code>.count</code> / <code>.wordcount</code> — подсчёт символов и слов\n<code>.choose A | B</code> — случайный выбор\n<code>.roll 100</code> — случайное число от 1 до 100
 <code>/premium</code> — счёт на FLAMEXBOT Premium на 30 дней
-<code>/pro</code> — счёт на FLAMEX PRO на 30 дней
 
 ${tgEmoji("star")} <b>Подписка и тарифы · личный чат с ботом</b>
-Подписки оплачиваются разово через Telegram Stars и не продлеваются автоматически. Текущий тариф и срок действия смотри в Mini App → «Тарифы». Продление выполняется вручную командами <code>/premium</code> или <code>/pro</code>.
+Подписки оплачиваются разово через Telegram Stars и не продлеваются автоматически. Текущий тариф и срок действия смотри в Mini App → «Тарифы». Продление выполняется вручную командой <code>/premium</code>. Все прежние PRO-возможности теперь входят в Premium.
 
 ${tgEmoji("help")} <b>Как пользоваться</b>
 Отправляй команду прямо в переписке с нужным человеком. FLAMEXBOT сам определит текущий диалог — <b>@username и ID указывать не нужно</b>. Для команд включения Premium-функций нужна активная подписка; команды отключения доступны бесплатно.
@@ -769,7 +768,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(`${tgEmoji("sparkles")} <b>Огонёк установлен мгновенно!</b>\nСерия: <b>${days} дн.</b>\nПользователь добавлен в друзья, если вы ещё не были друзьями. Дальше огонёк будет продлеваться обычной взаимной перепиской.`, "HTML");
     return true;
   }
-  const proOnlyCommands = ["profile"];
+  const proOnlyCommands: string[] = [];
   const commandNeedsPremium = ["mute","profile","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
   let premium = false;
   let pro = false;
@@ -779,7 +778,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     if (subscriptionError) throw subscriptionError;
     const active = !subscription?.expires_at || new Date(subscription.expires_at).getTime() > Date.now();
     premium = ["premium","pro","founder"].includes(subscription?.plan) && active;
-    pro = (subscription?.plan === "pro" || String(message.from.id) === FOUNDER_TELEGRAM_ID) && active;
+    pro = premium;
   }
   if (proOnlyCommands.includes(command) && !pro) {
     await reply(`${tgEmoji("diamond")} Для команды <b>.${escapeHtml(command)}</b> нужна активная подписка <b>FLAMEX PRO</b>.`, "HTML");
@@ -1720,9 +1719,14 @@ async function processTelegramUpdate(update: any) {
     } else if (update.callback_query) await handleBusinessActionCallback(update.callback_query);
     if (update.message?.successful_payment) await handleSuccessfulPayment(update.message);
     if (update.message?.chat?.type === "private" && update.message.from?.id
-        && /^\/(premium|pro)(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim())) {
-      const plan = /^\/pro(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim()) ? "pro" : "premium";
-      await sendTierInvoice(update.message.chat.id, update.message.from.id, plan);
+        && /^\/pro(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim())) {
+      await sendRichTelegramMessage(update.message.chat.id,
+        "⭐ Тариф FLAMEX PRO упразднён. Все его возможности и дополнения перенесены в Premium. Используй /premium для покупки или продления.",
+        "HTML");
+    }
+    if (update.message?.chat?.type === "private" && update.message.from?.id
+        && /^\/premium(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim())) {
+      await sendTierInvoice(update.message.chat.id, update.message.from.id, "premium");
     }
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
         /^\/ping(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
@@ -1773,7 +1777,7 @@ async function processTelegramUpdate(update: any) {
 
 Открой FLAMEXBOT, подключи Telegram Business и выдай необходимые разрешения. Затем отправь <code>.help</code> или <code>/help</code> в нужном диалоге.
 
-Команды без адреса собеседника и без @username — бот определит текущий чат автоматически. Статус подключения: /status. Тарифы: /premium и /pro.`,
+Команды без адреса собеседника и без @username — бот определит текущий чат автоматически. Статус подключения: /status. Тарифы: /premium. Все прежние PRO-возможности входят в Premium.`,
         "HTML",
         { inline_keyboard: [[{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
       );
