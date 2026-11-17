@@ -1428,8 +1428,16 @@ async function deliverPendingTelegramNotifications(telegramUserId: number | stri
       const body = String(item.body ?? "");
       await sendRichTelegramMessage(privateChatId, "📬 " + title + (body ? "\n\n" + body : ""));
     } catch (error) {
-      // Keep the failed row leased for two minutes: a network timeout may happen after Telegram accepted the message.
-      console.warn("Bot notification delivery stopped; claim will expire:", (error as any)?.message ?? error);
+      // A network timeout can happen after Telegram accepted the message, so keep the lease in that ambiguous case.
+      const reason = String((error as any)?.message ?? error);
+      const outcomeUnknown = error instanceof TypeError || /timeout|timed out|network|connection reset|aborted/i.test(reason);
+      if (!outcomeUnknown) {
+        const { error: releaseError } = await admin.rpc("release_flamexbot_telegram_notification_claims", {
+          p_claim_token: claimToken,
+        });
+        if (releaseError) console.warn("Could not release failed notification claims:", releaseError.message);
+      }
+      console.warn("Bot notification delivery stopped:", reason);
       break;
     }
 
