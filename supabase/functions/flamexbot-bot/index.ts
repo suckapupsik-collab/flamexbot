@@ -60,7 +60,9 @@ async function telegram(method: string, body: Record<string, unknown>) {
             : /профил|аккаунт/.test(label) ? "profile"
             : /оплат|stars|звезд/.test(label) ? "star"
             : /premium|pro|тариф/.test(label) ? "diamond"
-            : /защит|безопас|lock/.test(label) ? "security"
+            : /выключить мут|размут|unmute/.test(label) ? "unlock"
+             : /включить мут|мут|mute/.test(label) ? "lock"
+             : /защит|безопас|lock/.test(label) ? "security"
             : /загруз|отправ|upload/.test(label) ? "upload"
             : /поиск|найти|search/.test(label) ? "search"
             : /папк|архив/.test(label) ? "folder"
@@ -88,8 +90,22 @@ async function telegram(method: string, body: Record<string, unknown>) {
     const message = String(data.description ?? `Telegram API ${method} failed`);
     if (JSON.stringify(payload) !== JSON.stringify(body)
         && /icon_custom_emoji_id|custom emoji|BUTTON_TYPE_INVALID|BUTTON_DATA_INVALID|keyboard button|button.*invalid/i.test(message)) {
-      const fallbackResponse = await fetch(`${API}/${method}`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      const fallbackPayload = JSON.parse(JSON.stringify(payload)) as Record<string, any>;
+      const fallbackMarkup = fallbackPayload.reply_markup;
+      for (const key of ["inline_keyboard", "keyboard"]) {
+        if (Array.isArray(fallbackMarkup?.[key])) {
+          fallbackMarkup[key] = fallbackMarkup[key].map((row: any) => Array.isArray(row)
+            ? row.map((button: any) => {
+                if (!button || typeof button !== "object") return button;
+                const clean = { ...button };
+                delete clean.icon_custom_emoji_id;
+                return clean;
+              })
+            : row);
+        }
+      }
+      const fallbackResponse = await fetch(\`\${API}/\${method}\`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(fallbackPayload),
       });
       const fallbackData = await fallbackResponse.json();
       if (!fallbackResponse.ok || !fallbackData.ok) {
@@ -174,8 +190,20 @@ async function sendRichTelegramMessage(
 ) {
   const available = await getAvailablePremiumEmojiIds();
   const emojiPattern = new RegExp('<tg-emoji emoji-id="([0-9]+)">([^<]*)</tg-emoji>', 'g');
-  const prepared = body.replace(emojiPattern, (_match, id, fallback) =>
-    available.has(String(id)) ? `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>` : fallback);
+  const richBody = parseMode === "HTML"
+    ? body.split(/(<tg-emoji[^>]*>[^<]*<\/tg-emoji>)/g).map(part => {
+        if (part.startsWith("<tg-emoji ")) return part;
+        let output = part;
+        const known = Object.values(PREMIUM_EMOJI).filter(item => available.has(item.id))
+          .sort((a, b) => b.fallback.length - a.fallback.length);
+        for (const item of known) {
+          output = output.split(item.fallback).join(\`<tg-emoji emoji-id="\${item.id}">\${item.fallback}</tg-emoji>\`);
+        }
+        return output;
+      }).join("")
+    : body;
+  const prepared = richBody.replace(emojiPattern, (_match, id, fallback) =>
+    available.has(String(id)) ? \`<tg-emoji emoji-id="\${id}">\${fallback}</tg-emoji>\` : fallback);
   const payload: Record<string, unknown> = {
     ...(connectionId ? { business_connection_id: connectionId } : {}),
     chat_id: chatId,
