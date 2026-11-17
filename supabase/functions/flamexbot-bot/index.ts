@@ -1703,7 +1703,11 @@ async function deliverPendingTelegramNotifications(telegramUserId: number | stri
 async function saveSupportInboxMessage(message: any) {
   if (!admin || message?.chat?.type !== "private" || !message?.chat?.id || !message?.message_id || !message?.from?.id || message.from.is_bot || String(message.from.id) === FOUNDER_TELEGRAM_ID) return;
   const media = messageMedia(message);
-  const content = messageContent(message) || (media.type === "text" ? "" : `[${media.type}]`);
+  const caption = messageContent(message);
+  const content = media.type === "text" ? caption : JSON.stringify({
+    _fx_media: 1, caption, file_id: media.fileId, file_name: message.document?.file_name ?? message.audio?.file_name ?? message.video?.file_name ?? null,
+    mime_type: message.document?.mime_type ?? message.audio?.mime_type ?? message.video?.mime_type ?? null,
+  });
   const telegramChatId = String(message.chat.id);
   const now = new Date((message.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
   const { data: chat, error: chatError } = await admin.from("flamexbot_support_chats").upsert({
