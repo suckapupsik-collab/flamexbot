@@ -214,7 +214,28 @@ async function sendRichTelegramMessage(
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   };
   try {
-    return await telegram("sendMessage", payload);
+    const sent = await telegram("sendMessage", payload);
+    if (!connectionId && admin && /^\\d+$/.test(String(chatId)) && sent?.message_id) {
+      try {
+        const { data: supportChat } = await admin.from("flamexbot_support_chats")
+          .select("id").eq("telegram_chat_id", String(chatId)).maybeSingle();
+        if (supportChat?.id) {
+          const readable = String(body).replace(/<tg-emoji[^>]*>(.*?)<\\/tg-emoji>/g, "$1")
+            .replace(/<\\/?[a-z][^>]*>/gi, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+          const createdAt = new Date((sent.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
+          await admin.from("flamexbot_support_messages").upsert({
+            support_chat_id: supportChat.id, telegram_message_id: sent.message_id,
+            direction: "outgoing", content: readable, message_type: "text", created_at: createdAt,
+          }, { onConflict: "support_chat_id,telegram_message_id" });
+          await admin.from("flamexbot_support_chats").update({
+            last_message_preview: readable.slice(0, 240), last_message_at: createdAt, updated_at: new Date().toISOString(),
+          }).eq("id", supportChat.id);
+        }
+      } catch (logError) {
+        console.warn("Support inbox outgoing message archive skipped:", (logError as any)?.message ?? logError);
+      }
+    }
+    return sent;
   } catch (error) {
     const reason = String((error as any)?.message ?? error).toLowerCase();
     if (/<tg-emoji/.test(prepared) && /custom emoji|can't parse entities|unsupported start tag/.test(reason)) {
@@ -1680,7 +1701,7 @@ async function deliverPendingTelegramNotifications(telegramUserId: number | stri
 }
 
 async function saveSupportInboxMessage(message: any) {
-  if (!admin || message?.chat?.type !== "private" || !message?.chat?.id || !message?.message_id || !message?.from?.id || message.from.is_bot) return;
+  if (!admin || message?.chat?.type !== "private" || !message?.chat?.id || !message?.message_id || !message?.from?.id || message.from.is_bot || String(message.from.id) === FOUNDER_TELEGRAM_ID) return;
   const media = messageMedia(message);
   const content = messageContent(message) || (media.type === "text" ? "" : `[${media.type}]`);
   const telegramChatId = String(message.chat.id);
