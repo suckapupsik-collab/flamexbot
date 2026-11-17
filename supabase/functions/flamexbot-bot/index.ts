@@ -190,25 +190,27 @@ async function sendRichTelegramMessage(
 ) {
   const available = await getAvailablePremiumEmojiIds();
   const emojiPattern = new RegExp('<tg-emoji emoji-id="([0-9]+)">([^<]*)</tg-emoji>', 'g');
-  const richBody = parseMode === "HTML"
-    ? body.split(/(<tg-emoji[^>]*>[^<]*<\/tg-emoji>)/g).map(part => {
+  const effectiveParseMode = parseMode || "HTML";
+  const sourceBody = parseMode ? body : body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const richBody = effectiveParseMode === "HTML"
+    ? sourceBody.split(/(<tg-emoji[^>]*>[^<]*<\/tg-emoji>)/g).map(part => {
         if (part.startsWith("<tg-emoji ")) return part;
         let output = part;
         const known = Object.values(PREMIUM_EMOJI).filter(item => available.has(item.id))
           .sort((a, b) => b.fallback.length - a.fallback.length);
         for (const item of known) {
-          output = output.split(item.fallback).join(`<tg-emoji emoji-id="${item.id}">${item.fallback}</tg-emoji>`);
+          output = output.split(item.fallback).join('<tg-emoji emoji-id="' + item.id + '">' + item.fallback + '</tg-emoji>');
         }
         return output;
       }).join("")
-    : body;
+    : sourceBody;
   const prepared = richBody.replace(emojiPattern, (_match, id, fallback) =>
-    available.has(String(id)) ? `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>` : fallback);
+    available.has(String(id)) ? '<tg-emoji emoji-id="' + id + '">' + fallback + '</tg-emoji>' : fallback);
   const payload: Record<string, unknown> = {
     ...(connectionId ? { business_connection_id: connectionId } : {}),
     chat_id: chatId,
     text: prepared,
-    ...(parseMode ? { parse_mode: parseMode } : {}),
+    ...(effectiveParseMode ? { parse_mode: effectiveParseMode } : {}),
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   };
   try {
