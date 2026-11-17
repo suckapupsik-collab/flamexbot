@@ -94,12 +94,13 @@ Deno.serve(async (req: Request) => {
     const targetUserId = String(body?.target_user_id ?? "");
     const action = String(body?.action ?? "");
     const badgeCode = String(body?.badge_code ?? "");
+    const auditId = String(body?.audit_id ?? "");
     const allowed = new Set([
       "ban", "unban", "verify", "unverify",
       "premium_grant", "premium_revoke", "pro_grant", "pro_revoke",
       "badge_grant", "badge_revoke",
     ]);
-    if (!/^[0-9a-f-]{36}$/i.test(targetUserId) || !allowed.has(action)) {
+    if (!/^[0-9a-f-]{36}$/i.test(targetUserId) || !/^[0-9a-f-]{36}$/i.test(auditId) || !allowed.has(action)) {
       return response({ error: "Invalid notification request" }, 400);
     }
 
@@ -115,6 +116,12 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const { data: audit, error: auditError } = await admin.from("flamexbot_admin_audit")
+      .select("id,target_user_id,action").eq("id", auditId).maybeSingle();
+    if (auditError) throw auditError;
+    if (!audit || audit.target_user_id !== targetUserId || audit.action !== action) {
+      return response({ error: "Admin action audit record does not match notification request" }, 403);
+    }
     const { data: profile, error: profileError } = await admin.from("profiles")
       .select("id,telegram_id,username,display_name,is_banned,ban_reason")
       .eq("id", targetUserId).maybeSingle();
@@ -181,8 +188,8 @@ Deno.serve(async (req: Request) => {
           .update({ telegram_delivered_at: new Date().toISOString() })
           .eq("user_id", targetUserId)
           .in("type", types)
-          .is("telegram_delivered_at", null)
-          .gte("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString());
+          .contains("data", { audit_id: auditId })
+          .is("telegram_delivered_at", null);
         if (markError) console.warn("Could not mark admin bot notice delivered:", markError.message);
       }
       return response({ ok: true, delivered: true });
