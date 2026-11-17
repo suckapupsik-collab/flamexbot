@@ -1060,7 +1060,7 @@ async function handleBusinessActionCallback(query: any) {
     const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
       .select("plan,expires_at").eq("user_id", chat.profile_id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
-    const premium = ["premium","pro","founder"].includes(subscription?.plan) &&
+    const premium = ["premium","founder"].includes(subscription?.plan) &&
       (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
     if (!premium) {
       await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Для включения этой функции нужна активная Premium-подписка." });
@@ -1099,14 +1099,9 @@ async function handleBusinessActionCallback(query: any) {
 }
 
 const PREMIUM_PRICE_STARS = 100;
-const PRO_PRICE_STARS = 250;
 const PREMIUM_PERIOD_DAYS = 30;
 function parsePremiumPayload(payload: string) {
   const match = /^flamexbot_premium:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(payload);
-  return match?.[1] ?? null;
-}
-function parseProPayload(payload: string) {
-  const match = /^flamexbot_pro:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(payload);
   return match?.[1] ?? null;
 }
 function parseCommandProtectionPayload(payload: string) {
@@ -1117,7 +1112,7 @@ function parseWheelPayload(payload: string) {
   const match = /^flamexbot_wheel:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(payload);
   return match?.[1] ?? null;
 }
-async function sendTierInvoice(chatId: number, telegramUserId: number, plan: "premium" | "pro") {
+async function sendTierInvoice(chatId: number, telegramUserId: number) {
   if (!admin) throw new Error("Database is unavailable");
   const { data: profile, error } = await admin.from("profiles").select("id,telegram_id,is_banned").eq("telegram_id", String(telegramUserId)).maybeSingle();
   if (error) throw error;
@@ -1130,15 +1125,11 @@ async function sendTierInvoice(chatId: number, telegramUserId: number, plan: "pr
     await sendRichTelegramMessage(chatId, `${tgEmoji("success")} <b>У тебя уже бессрочный тариф.</b> Покупка не требуется.`, "HTML");
     return;
   }
-  const price = plan === "pro" ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
-  const name = plan === "pro" ? "FLAMEX PRO" : "FLAMEXBOT Premium";
-  const description = plan === "pro"
-    ? "FLAMEX PRO на 30 дней: Premium-функции, 2 еженедельные прокрутки колеса, +10% к весам редких наград и экспорт переписки."
-    : "FLAMEXBOT Premium на 30 дней: Premium-инструменты и 1 бесплатная прокрутка колеса каждую неделю.";
-  const payload = `flamexbot_${plan}:${profile.id}:${crypto.randomUUID()}`;
+  const payload = `flamexbot_premium:${profile.id}:${crypto.randomUUID()}`;
   await telegram("sendInvoice", {
-    chat_id: chatId, title: name, description, payload, currency: "XTR",
-    prices: [{ label: (plan === "pro" ? "PRO" : "Premium") + " · 30 дней", amount: price }],
+    chat_id: chatId, title: "FLAMEXBOT Premium",
+    description: "FLAMEXBOT Premium на 30 дней: Premium-инструменты и 2 бесплатные прокрутки колеса каждую неделю.",
+    payload, currency: "XTR", prices: [{ label: "Premium · 30 дней", amount: PREMIUM_PRICE_STARS }],
   });
 }
 async function handlePreCheckout(query: any) {
@@ -1148,9 +1139,8 @@ async function handlePreCheckout(query: any) {
     if (admin && query.currency === "XTR") {
       const payload = String(query.invoice_payload ?? "");
       const premiumUserId = parsePremiumPayload(payload);
-      const proUserId = parseProPayload(payload);
-      const tierUserId = premiumUserId || proUserId;
-      const expectedTierAmount = proUserId ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
+      const tierUserId = premiumUserId;
+      const expectedTierAmount = PREMIUM_PRICE_STARS;
       if (tierUserId && query.total_amount === expectedTierAmount) {
         const { data: profile, error } = await admin.from("profiles")
           .select("id,telegram_id,is_banned").eq("id", tierUserId).maybeSingle();
@@ -1159,12 +1149,9 @@ async function handlePreCheckout(query: any) {
           .select("plan,expires_at").eq("user_id", tierUserId).maybeSingle();
         if (currentError) throw currentError;
         const currentActive = Boolean(current && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now()));
-        const isLifetime = Boolean(current && !current.expires_at && ["premium","pro"].includes(current.plan));
-        const isForbiddenDowngrade = Boolean(premiumUserId && currentActive && current.plan === "pro");
+        const isLifetime = Boolean(current && !current.expires_at && current.plan === "premium");
         if (isLifetime) rejectionMessage = "У тебя уже бессрочная подписка. Повторная покупка не требуется.";
-        else if (isForbiddenDowngrade) rejectionMessage = "У тебя активен PRO. Покупка Premium не нужна.";
-        ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id)
-          && !isForbiddenDowngrade && !isLifetime);
+        ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id) && !isLifetime);
       } else if (parseCommandProtectionPayload(payload) && query.total_amount === 15) {
         const { data: order, error: orderError } = await admin.from("flamexbot_addon_star_payments")
           .select("user_id,telegram_user_id,addon_code,currency,total_amount,period_days,status,valid_until")
@@ -1483,12 +1470,11 @@ async function handleSuccessfulPayment(message: any) {
   }
 
   const premiumUserId = parsePremiumPayload(invoicePayload);
-  const proUserId = parseProPayload(invoicePayload);
-  const userId = premiumUserId || proUserId;
-  const plan = proUserId ? "pro" : "premium";
-  const expectedAmount = plan === "pro" ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
+  const userId = premiumUserId;
+  const plan = "premium";
+  const expectedAmount = PREMIUM_PRICE_STARS;
   if (!userId || payment.currency !== "XTR" || payment.total_amount !== expectedAmount || !payment.telegram_payment_charge_id) {
-    throw new Error("Successful Telegram Stars payment did not match a Premium/PRO invoice");
+    throw new Error("Successful Telegram Stars payment did not match a Premium invoice");
   }
   const { data: profile, error: profileError } = await admin.from("profiles")
     .select("id,telegram_id,is_banned,ban_reason").eq("id", userId).maybeSingle();
@@ -1523,7 +1509,7 @@ async function handleSuccessfulPayment(message: any) {
   });
   if (applyError) {
     const reason = String(applyError.message ?? applyError);
-    if (/Active PRO cannot be downgraded by a Premium payment|Lifetime subscription is already active/i.test(reason)) {
+    if (/Lifetime subscription is already active/i.test(reason)) {
       await refundAndRecordStarsPayment({
         userId,
         telegramUserId: String(message.from.id),
@@ -1547,9 +1533,7 @@ async function handleSuccessfulPayment(message: any) {
       "subscription_activated",
       { payment_charge_id: payment.telegram_payment_charge_id },
       message.chat.id,
-      plan === "pro"
-        ? `${tgEmoji("diamond")} <b>Оплата прошла успешно!</b> FLAMEX PRO активирован на 30 дней. Тебе доступны 2 прокрутки каждую неделю и +10% к весам редких наград.`
-        : `${tgEmoji("star")} <b>Оплата прошла успешно!</b> FLAMEXBOT Premium активирован на 30 дней. Тебе доступна 1 прокрутка каждую неделю.`,
+      `${tgEmoji("star")} <b>Оплата прошла успешно!</b> FLAMEXBOT Premium активирован на 30 дней. Тебе доступны 2 бесплатные прокрутки каждую неделю.`,
     );
   }
 }
@@ -1566,8 +1550,6 @@ const TELEGRAM_DELIVERABLE_NOTIFICATION_TYPES = [
   "unverified",
   "premium_granted",
   "premium_revoked",
-  "pro_granted",
-  "pro_revoked",
   "badge_granted",
   "badge_revoked",
   "business_connected",
@@ -1773,7 +1755,7 @@ async function processTelegramUpdate(update: any) {
 
 Открой FLAMEXBOT, подключи Telegram Business и выдай необходимые разрешения. Затем отправь <code>.help</code> или <code>/help</code> в нужном диалоге.
 
-Команды без адреса собеседника и без @username — бот определит текущий чат автоматически. Статус подключения: /status. Тарифы: /premium. Все прежние PRO-возможности входят в Premium.`,
+Команды без адреса собеседника и без @username — бот определит текущий чат автоматически. Статус подключения: /status. Тарифы: /premium.`,
         "HTML",
         { inline_keyboard: [[{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
       );
