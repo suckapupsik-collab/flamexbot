@@ -7,7 +7,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const APP_URL = "https://flamexbot.pages.dev";
 const FOUNDER_TELEGRAM_ID = "7781170049";
 const WEBHOOK_URL = "https://yxmfhnbqzudoiwjlrpui.supabase.co/functions/v1/flamexbot-bot";
-const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "fxbot_whsec_6c2d9a7e4f1b8c3d5a0e7f9b2c4d6a8e";
+const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
 const API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : "";
 const admin = SUPABASE_URL && SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } }) : null;
 
@@ -1647,7 +1647,11 @@ Deno.serve(async (req: Request) => {
     }
   }
   if (req.method !== "POST") return new Response("OK", { status: 200 });
-  if (!WEBHOOK_SECRET || req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
+  if (!WEBHOOK_SECRET) {
+    console.error("TELEGRAM_WEBHOOK_SECRET is not configured");
+    return new Response("Webhook is not configured", { status: 503 });
+  }
+  if (req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
     return new Response("Unauthorized", { status: 401 });
   }
 
