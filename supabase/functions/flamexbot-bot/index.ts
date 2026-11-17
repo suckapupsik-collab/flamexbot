@@ -1854,14 +1854,17 @@ async function processTelegramUpdate(update: any) {
         console.warn("Ignored Business update for banned FLAMEXBOT owner", ownerConnection.telegram_user_id);
         return new Response("OK", { status: 200 });
       }
-      const isBusinessCommand = typeof update.business_message.text === "string" &&
+      const hasCommandPrefix = typeof update.business_message.text === "string" &&
         /^[./][a-z]/i.test(update.business_message.text.trim()) &&
         update.business_message.from?.id != null;
+      const isBusinessCommand = hasCommandPrefix &&
+        String(update.business_message.from.id) === String(ownerConnection?.telegram_user_id ?? "");
       const businessCommandText = String(update.business_message.text ?? "").trim().toLowerCase();
       const isSpamConsentCommand = [".spamallow", "/spamallow", ".spamstop", "/spamstop"].includes(businessCommandText) &&
         String(update.business_message.from?.id ?? "") !== String(ownerConnection?.telegram_user_id ?? "");
-      // Consent belongs to the recipient, not the account owner. Route these commands
-      // through the incoming-message handler even though they start with a command prefix.
+      // Only commands authored by the connected account owner are executable.
+      // Messages from the other participant (including dot-prefixed text) stay in the archive.
+      // Consent belongs to the recipient, so these two commands also go through the incoming handler.
       if (!isBusinessCommand || isSpamConsentCommand) {
         await saveBusinessMessage(update.business_message, ownerConnection);
       }
