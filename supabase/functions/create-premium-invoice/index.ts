@@ -66,17 +66,19 @@ Deno.serve(async (req: Request) => {
       .select("plan,expires_at").eq("user_id", authData.user.id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
     const currentIsActive = Boolean(current && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now()));
-    if (currentIsActive && current.plan === "pro") {
-      return response({ error: "У тебя уже активен FLAMEX PRO — продление или повторная покупка не требуются." }, 409);
+    const currentIsLifetime = Boolean(current && !current.expires_at
+      && ["premium","pro"].includes(current.plan));
+    if (currentIsLifetime) {
+      return response({ error: "У тебя уже бессрочный тариф — покупка не требуется." }, 409);
     }
-    if (currentIsActive && current.plan === "premium" && !current.expires_at) {
-      return response({ error: "У тебя уже бессрочный Premium — продление не требуется." }, 409);
+    if (currentIsActive && current.plan === "pro" && plan === "premium") {
+      return response({ error: "У тебя уже активен FLAMEX PRO. Покупка Premium не нужна." }, 409);
     }
 
     const payload = "flamexbot_" + plan + ":" + authData.user.id + ":" + crypto.randomUUID();
     const title = plan === "pro" ? "FLAMEXBOT PRO" : "FLAMEXBOT Premium";
     const description = plan === "pro"
-      ? "FLAMEX PRO на 30 дней: все функции Premium, 2 еженедельные прокрутки колеса и +10% к относительному шансу редких наград."
+      ? "FLAMEX PRO на 30 дней: все функции Premium, 2 еженедельные прокрутки колеса и +10% к весам редких наград."
       : "FLAMEXBOT Premium на 30 дней: 1 бесплатная прокрутка колеса каждую неделю и Premium-инструменты.";
     const invoiceLink = await telegram("createInvoiceLink", {
       title,
