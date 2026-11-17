@@ -1489,7 +1489,7 @@ async function renderFriends(host) {
   const outgoingIds=(outgoing.data||[]).map(x=>x.receiver_id);
   const ids=[...new Set([...friendIds,...incomingIds,...outgoingIds])];
   const [profileResult,badgeResult,searchResult]=await Promise.all([
-    ids.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url,telegram_username,telegram_id').in('id',ids):Promise.resolve({data:[],error:null}),
+    ids.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url,telegram_username,telegram_id,created_at').in('id',ids):Promise.resolve({data:[],error:null}),
     ids.length?supabase.from('profile_badges').select('user_id,badge_code').in('user_id',ids):Promise.resolve({data:[],error:null}),
     state.friendSearchQuery.length>=2
       ?supabase.rpc('search_flamexbot_profiles',{p_query:state.friendSearchQuery,p_limit:15})
