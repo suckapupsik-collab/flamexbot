@@ -93,7 +93,7 @@ Deno.serve(async (req: Request) => {
     const commandName = String(body?.command_name || commandMatch?.[1] || (action === "set_mute" ? (body.enabled ? "mute" : "unmute") : action === "set_antimute" ? "antimute" : "")).toLowerCase();
     const commandArgs = String(commandMatch?.[2] || "").trim().toLowerCase();
     const commandMode = body?.command_mode === true || settingAction || Boolean(commandMatch);
-    if (!["send","refresh_avatar","set_mute","set_antimute","set_preference"].includes(action)) return reply({ error: "Неизвестное действие Business-чата." }, 400);
+    if (!["send","refresh_avatar","set_mute","set_antimute","set_preference","list_chats","list_messages"].includes(action)) return reply({ error: "Неизвестное действие Business-чата." }, 400);
     if (antimutMode && action !== "send") return reply({ error: "Антимут применяется только к отправке сообщения." }, 400);
     if (settingAction && typeof body?.enabled !== "boolean") return reply({ error: "Для настройки укажи enabled: true или false." }, 400);
     const preferenceKeys: Record<string,string> = {
@@ -102,9 +102,9 @@ Deno.serve(async (req: Request) => {
     };
     const preferenceKey = action === "set_preference" ? preferenceKeys[String(body?.preference ?? "")] : null;
     if (action === "set_preference" && !preferenceKey) return reply({ error: "Неизвестная настройка." }, 400);
-    if (action !== "refresh_avatar" && !settingAction && (!chatId || (!text && !hasMedia) || text.length > 4096)) return reply({ error: "Укажи чат и текст или вложение." }, 400);
+    if (!["refresh_avatar","list_chats","list_messages"].includes(action) && !settingAction && (!chatId || (!text && !hasMedia) || text.length > 4096)) return reply({ error: "Укажи чат и текст или вложение." }, 400);
     if (settingAction && !chatId) return reply({ error: "Не указан диалог." }, 400);
-    if (action === "refresh_avatar" && !chatId) return reply({ error: "Не указан диалог." }, 400);
+    if (["refresh_avatar","list_messages"].includes(action) && !chatId) return reply({ error: "Не указан диалог." }, 400);
     if (hasMedia && !["photo", "video", "audio", "voice", "animation", "document"].includes(mediaType)) {
       return reply({ error: "Неподдерживаемый тип вложения." }, 400);
     }
@@ -123,6 +123,47 @@ Deno.serve(async (req: Request) => {
     if (moderation?.is_banned) {
       return reply({ error: moderation.ban_reason || "Этот аккаунт заблокирован администрацией FLAMEXBOT." }, 403);
     }
+
+    if (action === "list_chats") {
+      const { data: chats, error: chatsError } = await admin.from("flamexbot_business_chats")
+        .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name,photo_url,last_message_at,business_connection_id")
+        .eq("profile_id", profileId).order("last_message_at", { ascending: false }).limit(100);
+      if (chatsError) throw chatsError;
+      const ids = (chats ?? []).map((item: any) => item.id);
+      if (!ids.length) return reply({ chats: [] });
+      const [{ data: prefs, error: prefsError }, { data: messages, error: messagesError }] = await Promise.all([
+        admin.from("flamexbot_business_chat_settings")
+          .select("business_chat_id,is_favorite,is_pinned,is_muted,antimut_enabled,last_read_at").in("business_chat_id", ids),
+        admin.from("flamexbot_business_messages")
+          .select("business_chat_id,direction,created_at").in("business_chat_id", ids).eq("direction", "inbound")
+          .order("created_at", { ascending: false }).limit(5000),
+      ]);
+      if (prefsError) throw prefsError;
+      if (messagesError) throw messagesError;
+      const prefMap = new Map((prefs ?? []).map((item: any) => [item.business_chat_id, item]));
+      const unread = new Map<string, number>();
+      for (const message of messages ?? []) {
+        const pref: any = prefMap.get(message.business_chat_id);
+        if (!pref?.last_read_at || new Date(message.created_at).getTime() > new Date(pref.last_read_at).getTime()) {
+          unread.set(message.business_chat_id, (unread.get(message.business_chat_id) ?? 0) + 1);
+        }
+      }
+      return reply({ chats: (chats ?? []).map((item: any) => ({
+        ...item, ...(prefMap.get(item.id) ?? {}), unread_count: unread.get(item.id) ?? 0,
+      })) });
+    }
+    if (action === "list_messages") {
+      const { data: ownedChat, error: ownedChatError } = await admin.from("flamexbot_business_chats")
+        .select("id").eq("id", chatId).eq("profile_id", profileId).maybeSingle();
+      if (ownedChatError) throw ownedChatError;
+      if (!ownedChat) return reply({ error: "Чат не найден или у тебя нет доступа." }, 404);
+      const { data: messages, error: messagesError } = await admin.from("flamexbot_business_messages")
+        .select("id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at,raw")
+        .eq("business_chat_id", chatId).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(100);
+      if (messagesError) throw messagesError;
+      return reply({ messages: (messages ?? []).reverse(), has_more: (messages ?? []).length === 100 });
+    }
+
     const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats")
       .select("id,telegram_chat_id,telegram_user_id,business_connection_id")
       .eq("id", chatId).eq("profile_id", profileId).maybeSingle();
