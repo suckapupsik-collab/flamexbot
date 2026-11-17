@@ -275,6 +275,19 @@ Deno.serve(async (req: Request) => {
       /* Antimut sends from the bot account itself; Telegram still enforces blocks and bot-start requirements. */
     }
 
+    const { data: sendLimit, error: sendLimitError } = await admin.rpc(
+      "flamexbot_consume_business_send_limit",
+      { p_profile_id: profileId, p_business_chat_id: chat.id },
+    );
+    if (sendLimitError) throw sendLimitError;
+    if (sendLimit?.allowed !== true) {
+      const retryAfter = Math.max(1, Number(sendLimit?.retry_after) || 1);
+      return reply({
+        error: `Слишком частая отправка. Подожди ${retryAfter} сек. и попробуй снова.`,
+        retry_after: retryAfter,
+      }, 429);
+    }
+
     const telegramPayload = new FormData();
     if (!antimutMode) telegramPayload.append("business_connection_id", connection.connection_id);
     telegramPayload.append("chat_id", String(chat.telegram_chat_id));
