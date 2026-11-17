@@ -1071,6 +1071,39 @@ async function renderSupportInbox(host) {
   const list=host.querySelector('.support-chat-items');
   const thread=host.querySelector('.support-thread');
   let activeId=null;
+  const supportMediaInfo=raw=>{try{const value=JSON.parse(raw||"");return value&&value._fx_media===1?value:null;}catch{return null;}};
+  const renderSupportMessages=messages=>(messages||[]).map(msg=>{
+    const media=supportMediaInfo(msg.content);
+    const caption=media?.caption||(!media?msg.content:"");
+    const attachment=media?'<button type="button" class="support-attachment" data-support-media="'+esc(msg.telegram_message_id)+'">📎 '+esc(media.file_name||msg.message_type||"Вложение")+' · Открыть</button>':"";
+    return '<article class="support-message '+(msg.direction==='outgoing'?'outgoing':'incoming')+'">'+(caption?'<p>'+esc(caption)+'</p>':"")+attachment+'<time>'+formatMskDateTime(msg.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'</time></article>';
+  }).join('')||'<div class="empty-state">Сообщений пока нет.</div>';
+  const bindSupportMedia=root=>{
+    root.querySelectorAll('[data-support-media]').forEach(button=>button.addEventListener('click',async()=>{
+      if(button.dataset.loading==="1"||button.dataset.loaded==="1")return;
+      button.dataset.loading="1";button.disabled=true;button.textContent="Загружаем файл…";
+      try{
+        const {data:{session}}=await supabase.auth.getSession();
+        if(!session?.access_token)throw new Error("Сессия администратора истекла");
+        const response=await fetch(SUPABASE_URL+'/functions/v1/flamexbot-support-inbox',{
+          method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_KEY,Authorization:'Bearer '+session.access_token},
+          body:JSON.stringify({action:'media',chat_id:activeId,message_id:Number(button.dataset.supportMedia)})
+        });
+        if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'Не удалось загрузить файл');}
+        const blob=await response.blob(),url=URL.createObjectURL(blob),article=button.closest('.support-message');
+        const type=blob.type||"";
+        if(type.startsWith('image/')){
+          const image=document.createElement('img');image.src=url;image.alt='Вложение пользователя';image.className='support-media-preview';image.loading='lazy';article.insertBefore(image,button);
+        }else if(type.startsWith('video/')){
+          const video=document.createElement('video');video.src=url;video.controls=true;video.playsInline=true;video.className='support-media-preview';article.insertBefore(video,button);
+        }else{
+          const link=document.createElement('a');link.href=url;link.download='';link.textContent='Скачать файл';link.className='support-media-download';article.insertBefore(link,button);
+        }
+        button.textContent='Файл загружен';button.dataset.loaded="1";
+      }catch(error){toast(error.message||'Ошибка загрузки');button.textContent='Повторить загрузку';}
+      finally{button.disabled=false;button.dataset.loading="0";}
+    }));
+  };
   const loadList=async()=>{
     const {data,error}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'list'}});
     if(error||data?.error){list.innerHTML='<div class="empty-state">Не удалось загрузить входящие: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
@@ -1091,26 +1124,36 @@ async function renderSupportInbox(host) {
     const chat=data.chat||{};
     const name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id;
     thread.innerHTML=`<div class="support-thread-head"><button class="support-back outline small" id="support-back" type="button">← Диалоги</button><div><b>${esc(name)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}ID ${esc(chat.telegram_user_id||'')}</small></div></div>
-      <div class="support-message-list">${(data.messages||[]).map(msg=>`<article class="support-message ${msg.direction==='outgoing'?'outgoing':'incoming'}"><p>${esc(msg.content||'['+msg.message_type+']')}</p><time>${formatMskDateTime(msg.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</time></article>`).join('')||'<div class="empty-state">Сообщений пока нет.</div>'}</div>
-      <form class="support-reply-form" id="support-reply-form"><textarea name="content" rows="2" maxlength="4096" placeholder="Написать пользователю…" required></textarea><button class="primary" type="submit">Отправить ↗</button></form>`;
+      <div class="support-message-list">${renderSupportMessages(data.messages||[])}</div>
+      <form class="support-reply-form" id="support-reply-form"><label class="support-attach-label" title="Прикрепить файл">＋<input type="file" name="attachment" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.zip,.txt" hidden></label><textarea name="content" rows="2" maxlength="4096" placeholder="Сообщение или подпись к файлу…"></textarea><span class="support-selected-file" aria-live="polite"></span><button class="primary" type="submit">Отправить ↗</button></form>`;
     thread.classList.add('active');
     thread.querySelector('#support-back')?.addEventListener('click',()=>thread.classList.remove('active'));
     const messageList=thread.querySelector('.support-message-list');
     if(messageList)messageList.scrollTop=messageList.scrollHeight;
-    thread.querySelector('#support-reply-form')?.addEventListener('submit',async event=>{
+    bindSupportMedia(thread);
+    const replyForm=thread.querySelector('#support-reply-form');
+    const attachmentInput=replyForm?.elements.attachment;
+    const selectedFile=replyForm?.querySelector('.support-selected-file');
+    attachmentInput?.addEventListener('change',()=>{const file=attachmentInput.files?.[0];if(selectedFile)selectedFile.textContent=file?file.name+' · '+(file.size/1024/1024).toFixed(1)+' МБ':'';});
+    replyForm?.addEventListener('submit',async event=>{
       event.preventDefault();
-      const form=event.currentTarget;
-      const input=form.elements.content;
-      const content=String(input.value||'').trim();
-      const button=form.querySelector('button[type=submit]');
-      if(!content)return;
+      const form=event.currentTarget,input=form.elements.content,file=form.elements.attachment?.files?.[0];
+      const content=String(input.value||'').trim(),button=form.querySelector('button[type=submit]');
+      if(!content&&!file)return;
+      if(file&&file.size>20*1024*1024){toast('Максимальный размер файла — 20 МБ');return;}
       button.disabled=true;button.textContent='Отправляем…';
-      const {data:sent,error:sendError}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'send',chat_id:id,content}});
+      let result;
+      if(file){
+        try{
+          const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||''));reader.onerror=()=>reject(new Error('Не удалось прочитать файл'));reader.readAsDataURL(file);});
+          const base64=String(dataUrl).split(',')[1]||'';
+          result=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'send_media',chat_id:id,file_name:file.name,mime_type:file.type||'application/octet-stream',file_base64:base64,caption:content}});
+        }catch(error){result={data:{error:error.message}};}
+      }else result=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'send',chat_id:id,content}});
       button.disabled=false;button.textContent='Отправить ↗';
-      if(sendError||sent?.error){toast(sent?.error||sendError?.message||'Не удалось отправить сообщение');return;}
-      input.value='';
-      await openChat(id);
-      await loadList();
+      if(result.error||result.data?.error){toast(result.data?.error||result.error?.message||'Не удалось отправить');return;}
+      input.value='';if(attachmentInput)attachmentInput.value='';if(selectedFile)selectedFile.textContent='';
+      await openChat(id);await loadList();
     });
     await loadList();
   };
@@ -1128,7 +1171,8 @@ async function renderSupportInbox(host) {
         const messageList=thread.querySelector('.support-message-list');
         if(data?.messages&&messageList){
           const wasNearBottom=messageList.scrollHeight-messageList.scrollTop-messageList.clientHeight<90;
-          messageList.innerHTML=data.messages.map(msg=>`<article class="support-message ${msg.direction==='outgoing'?'outgoing':'incoming'}"><p>${esc(msg.content||'['+msg.message_type+']')}</p><time>${formatMskDateTime(msg.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</time></article>`).join('')||'<div class="empty-state">Сообщений пока нет.</div>';
+          messageList.innerHTML=renderSupportMessages(data.messages||[]);
+          bindSupportMedia(messageList);
           if(wasNearBottom)messageList.scrollTop=messageList.scrollHeight;
         }
       }
