@@ -1548,3 +1548,20 @@ body{
  .support-reply-form button{padding-inline:12px}
  .support-message{max-width:90%}
 }
+
+/* Support inbox media attachments */
+.support-attach-label{display:grid;place-items:center;flex:0 0 42px;height:42px;border:1px solid var(--line);border-radius:13px;background:#20232b;color:var(--orange);font-size:26px;line-height:1;cursor:pointer}
+.support-attach-label:active{transform:scale(.96)}
+.support-selected-file{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}
+.support-attachment{display:block;max-width:100%;margin-top:8px;padding:8px 11px;border:1px solid rgba(255,113,56,.3);border-radius:11px;background:rgba(255,113,56,.09);color:var(--text);text-align:left;overflow-wrap:anywhere;cursor:pointer}
+.support-media-preview{display:block;max-width:min(100%,420px);max-height:360px;object-fit:contain;margin-top:10px;border-radius:12px;background:#0c0d12}
+.support-media-download{display:inline-flex;margin-top:9px;color:var(--orange);text-decoration:underline}
+.support-reply-form{flex-wrap:wrap}
+.support-reply-form textarea{min-width:120px}
+@media(max-width:760px){
+ .support-attach-label{flex-basis:40px;height:42px}
+ .support-selected-file{order:3;max-width:100%;flex-basis:100%;padding-left:4px}
+ .support-reply-form textarea{flex:1 1 calc(100% - 110px)}
+ .support-reply-form button{flex:1 1 100%}
+ .support-media-preview{max-height:260px}
+}
