@@ -496,7 +496,7 @@ async function renderBusinessMessageEvents(host,eventType) {
         <div class="message-event-footer"><span>${deleted?'Удалено в Telegram':'Отредактировано в Telegram'}</span><small>Только входящее сообщение</small></div>
       </article>`;
     }).join('');
-    return `<details class="message-event-chat" open><summary>${avatar(chat.photo_url,chatName)}<span>${esc(chatName)}</span><small>${chatEvents.length} ${deleted?'удалённых':'изменённых'}</small></summary><div class="message-event-chat-list">${cards}</div></details>`;
+    return `<details class="message-event-chat"><summary>${avatar(chat.photo_url,chatName)}<span>${esc(chatName)}</span><small>${chatEvents.length} ${deleted?'удалённых':'изменённых'}</small></summary><div class="message-event-chat-list">${cards}</div></details>`;
   }).join('');
 }
 
