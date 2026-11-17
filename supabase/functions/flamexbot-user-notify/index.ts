@@ -25,7 +25,7 @@ function formatExpiry(value: string | null) {
   if (!value) return "бессрочно";
   return new Date(value).toLocaleString("ru-RU", {
     day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
-    timeZone: "Europe/Helsinki",
+    timeZone: "Europe/Moscow",
   });
 }
 async function sendBotMessage(chatId: string, messageText: string) {
