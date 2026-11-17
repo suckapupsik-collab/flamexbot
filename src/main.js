@@ -1048,7 +1048,7 @@ async function renderSupportInbox(host) {
     list.innerHTML=chats.length?chats.map(chat=>{
       const name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id;
       return `<button type="button" class="support-chat-choice ${activeId===chat.id?'selected':''}" data-support-chat="${esc(chat.id)}">
-        <span class="support-avatar">${esc((name||'U').slice(0,1).toUpperCase())}</span><span class="support-chat-copy"><b>${esc(name)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}${esc(chat.last_message_preview||'Новое сообщение')}</small></span>
+        <span class="support-avatar">${esc((name||'U').slice(0,1).toUpperCase())}</span><span class="support-chat-copy"><b>${esc(name)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}${esc(chat.last_message_preview||'Новое сообщение')} · ${chat.status==='closed'?'Закрыто':'Открыто'}</small></span>
         <span class="support-chat-meta">${chat.unread_count?'<i>'+Number(chat.unread_count)+'</i>':''}<time>${chat.last_message_at?formatMskTime(chat.last_message_at):''}</time></span></button>`;
     }).join(''):'<div class="empty-state">Пока нет входящих сообщений. Когда пользователь напишет боту, диалог появится здесь автоматически.</div>';
     list.querySelectorAll('[data-support-chat]').forEach(btn=>btn.addEventListener('click',()=>openChat(btn.dataset.supportChat)));
@@ -1060,11 +1060,18 @@ async function renderSupportInbox(host) {
     if(error||data?.error){thread.innerHTML='<div class="empty-state">Не удалось открыть диалог: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
     const chat=data.chat||{};
     const name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id;
-    thread.innerHTML=`<div class="support-thread-head"><button class="support-back outline small" id="support-back" type="button">← Диалоги</button><div><b>${esc(name)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}ID ${esc(chat.telegram_user_id||'')}</small></div></div>
+    thread.innerHTML=`<div class="support-thread-head"><button class="support-back outline small" id="support-back" type="button">← Диалоги</button><div><b>${esc(name)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}ID ${esc(chat.telegram_user_id||'')} · ${chat.status==='closed'?'Закрыто':'Открыто'}</small></div><button class="outline small" id="support-close-ticket" type="button">${chat.status==='closed'?'Закрыто':'Закрыть обращение'}</button></div>
       <div class="support-message-list">${renderSupportMessages(data.messages||[])}</div>
       <form class="support-reply-form" id="support-reply-form"><label class="support-attach-label" title="Прикрепить файл">＋<input type="file" name="attachment" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.zip,.txt" hidden></label><textarea name="content" rows="2" maxlength="4096" placeholder="Сообщение или подпись к файлу…"></textarea><span class="support-selected-file" aria-live="polite"></span><button class="primary" type="submit">Отправить ↗</button></form>`;
     thread.classList.add('active');
     thread.querySelector('#support-back')?.addEventListener('click',()=>thread.classList.remove('active'));
+    thread.querySelector('#support-close-ticket')?.addEventListener('click',async event=>{
+      if(chat.status==='closed')return;
+      const button=event.currentTarget;button.disabled=true;button.textContent='Закрываем…';
+      const result=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'close',chat_id:id}});
+      if(result.error||result.data?.error){button.disabled=false;button.textContent='Закрыть обращение';toast(result.data?.error||result.error?.message||'Не удалось закрыть обращение');return;}
+      toast('Обращение закрыто');await openChat(id);await loadList();
+    });
     const messageList=thread.querySelector('.support-message-list');
     if(messageList)messageList.scrollTop=messageList.scrollHeight;
     bindSupportMedia(thread);
