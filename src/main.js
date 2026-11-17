@@ -1503,7 +1503,12 @@ async function renderFriends(host) {
   const outgoingByUser=new Map((outgoing.data||[]).map(r=>[r.receiver_id,r]));
   const streakByFriend=new Map((streakResult.data||[]).map(s=>[s.user_low===uid?s.user_high:s.user_low,s]));
   const displayName=id=>{const p=profileMap.get(id);return p?.display_name||p?.username||'Пользователь';};
+  let favoriteIds=[];
+  try{favoriteIds=JSON.parse(localStorage.getItem('flamexbot-favorite-friends')||'[]');if(!Array.isArray(favoriteIds))favoriteIds=[];}catch{favoriteIds=[];}
+  const favoriteSet=new Set(favoriteIds);
   const sortedFriendIds=[...friendIds].sort((a,b)=>{
+    const favoriteDiff=Number(favoriteSet.has(b))-Number(favoriteSet.has(a));
+    if(favoriteDiff)return favoriteDiff;
     const sa=streakByFriend.get(a),sb=streakByFriend.get(b);
     const activeDiff=effectiveStreakDays(sb)-effectiveStreakDays(sa);
     if(activeDiff)return activeDiff;
@@ -1520,7 +1525,9 @@ async function renderFriends(host) {
     const handle=String(p.telegram_username||'').replace(/^@/,'').replace(/[^A-Za-z0-9_]/g,'');
     const link=handle?`<a class="friend-link" href="https://t.me/${handle}" target="_blank" rel="noopener noreferrer">Открыть Telegram ↗</a>`:'';
     const status=days>0?`🔥 Огонёк горит · ${days} дн.`:streak?.best_days?`Огонёк погас · рекорд ${streak.best_days} дн.`:'Огонёк ещё не зажжён';
-    return profileCard(p,`@${p.telegram_username||p.username} · ${status}`,link,badgeMap.get(id)||[]);
+    const favorite=favoriteSet.has(id);
+    const actions=`${link}<button class="outline small" type="button" data-friend-profile="${id}">Профиль</button><button class="outline small friend-favorite-button ${favorite?'is-favorite':''}" type="button" data-friend-favorite="${id}" aria-label="${favorite?'Убрать из избранного':'Закрепить друга'}">${favorite?'★ Закреплён':'☆ Закрепить'}</button>`;
+    return profileCard(p,`@${p.telegram_username||p.username} · ${status}`,actions,badgeMap.get(id)||[]);
   }).join('');
   const incomingCards=(incoming.data||[]).map(r=>{
     const p=profileMap.get(r.sender_id);if(!p)return '';
@@ -1554,7 +1561,44 @@ async function renderFriends(host) {
         <div class="outgoing-heading"><b>Отправленные</b><span>${(outgoing.data||[]).length}</span></div><div class="friend-list">${outgoingCards||'<div class="empty-state compact-empty">Ты пока никого не приглашал.</div>'}</div>
       </section>
     </div>
-    ${friendRows.error||incoming.error||outgoing.error||streakResult.error||profileResult.error||badgeResult.error?'<p class="business-warning">Не удалось загрузить часть данных друзей. Попробуй обновить раздел.</p>':''}`;
+    ${friendRows.error||incoming.error||outgoing.error||streakResult.error||profileResult.error||badgeResult.error?'<p class="business-warning">Не удалось загрузить часть данных друзей. Попробуй обновить раздел.</p>':''}
+    <section class="friend-profile-panel" id="friend-profile-panel" hidden></section>`;
+  host.querySelectorAll('[data-friend-profile]').forEach(btn=>btn.addEventListener('click',()=>openFriendProfile(btn.dataset.friendProfile)));
+  host.querySelectorAll('[data-friend-favorite]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const id=btn.dataset.friendFavorite;
+    const next=favoriteSet.has(id)?favoriteIds.filter(x=>x!==id):[...favoriteIds,id];
+    try{localStorage.setItem('flamexbot-favorite-friends',JSON.stringify(next));}catch{toast('Не удалось сохранить избранное на этом устройстве.');return;}
+    toast(favoriteSet.has(id)?'Друг убран из избранного':'Друг закреплён в избранном');
+    await renderFriends(host);
+  }));
+  async function openFriendProfile(friendId){
+    const friend=profileMap.get(friendId);
+    if(!friend||!friendSet.has(friendId))return;
+    const panel=host.querySelector('#friend-profile-panel');
+    if(!panel)return;
+    const streak=streakByFriend.get(friendId);
+    const {data:activity,error:activityError}=streak?.id
+      ?await supabase.from('streak_daily_activity').select('activity_date,message_count').eq('streak_id',streak.id).eq('user_id',uid).order('activity_date',{ascending:false}).limit(14)
+      :{data:[],error:null};
+    const myMessages=(activity||[]).reduce((sum,row)=>sum+(Number(row.message_count)||0),0);
+    const days=effectiveStreakDays(streak);
+    const handle=String(friend.telegram_username||'').replace(/^@/,'').replace(/[^A-Za-z0-9_]/g,'');
+    const isFavorite=favoriteSet.has(friendId);
+    panel.hidden=false;
+    panel.innerHTML=`<div class="friend-profile-top"><div class="friend-profile-identity">${avatar(friend.avatar_url||friend.telegram_photo_url,friend.display_name||friend.username,'avatar-xl')}<div><div class="eyebrow">ПРОФИЛЬ ДРУГА</div><h3>${esc(friend.display_name||friend.username||'Пользователь')} ${verifiedMarkMarkup((badgeMap.get(friendId)||[]).includes('verified')||isFounderProfile(friend))}</h3><p>${friend.telegram_username?'@'+esc(friend.telegram_username):'Telegram не указан'} ${badgeMarkup(badgeMap.get(friendId)||[],true,false)}</p></div></div><button class="outline small" type="button" id="close-friend-profile">Закрыть ×</button></div>
+      <div class="friend-profile-stats"><div><small>ОГОНЁК СЕЙЧАС</small><b>${days} дн.</b></div><div><small>ЛИЧНЫЙ РЕКОРД СЕРИИ</small><b>${Number(streak?.best_days)||0} дн.</b></div><div><small>ТВОИ СООБЩЕНИЯ В СЕРИИ</small><b>${myMessages}</b></div></div>
+      <div class="friend-profile-meta"><span>В FLAMEXBOT с <b>${friend.created_at?formatMskDate(friend.created_at):'дата неизвестна'}</b></span>${handle?`<a class="friend-link" href="https://t.me/${handle}" target="_blank" rel="noopener noreferrer">Открыть Telegram ↗</a>`:''}<button class="outline small ${isFavorite?'is-favorite':''}" type="button" id="friend-profile-favorite">${isFavorite?'★ В избранном':'☆ Закрепить друга'}</button></div>
+      <div class="friend-profile-history"><div class="eyebrow">ИСТОРИЯ ОГОНЬКА</div><p>${activityError?'Не удалось загрузить историю активности.':activity?.length?'Твои дни активности в этой совместной серии:':'История активности пока не появилась.'}</p><div class="friend-activity-days">${(activity||[]).map(row=>`<div><b>${formatMskDate(row.activity_date,{day:'numeric',month:'short'})}</b><small>${Number(row.message_count)||0} сообщ.</small></div>`).join('')}</div><small class="friend-profile-privacy">Показывается только твоя активность в общей серии. Личные достижения и статистика друга не раскрываются.</small></div>`;
+    panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+    panel.querySelector('#close-friend-profile')?.addEventListener('click',()=>{panel.hidden=true;panel.innerHTML='';});
+    panel.querySelector('#friend-profile-favorite')?.addEventListener('click',async()=>{
+      const next=favoriteSet.has(friendId)?favoriteIds.filter(x=>x!==friendId):[...favoriteIds,friendId];
+      try{localStorage.setItem('flamexbot-favorite-friends',JSON.stringify(next));}catch{toast('Не удалось сохранить избранное на этом устройстве.');return;}
+      await renderFriends(host);
+      const refreshed=host.querySelector(`[data-friend-profile="${friendId}"]`);
+      refreshed?.click();
+    });
+  }
   host.querySelector('#friend-list-filter')?.addEventListener('input',event=>{
     const query=String(event.currentTarget.value||'').trim().toLocaleLowerCase('ru');
     host.querySelectorAll('#my-friend-list .friend-card').forEach(card=>{
