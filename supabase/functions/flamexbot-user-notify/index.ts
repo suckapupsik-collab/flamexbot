@@ -173,28 +173,35 @@ Deno.serve(async (req: Request) => {
       message = "ℹ️ <b>Значок аккаунта изменён</b>\n\nАдминистрация обновила список твоих значков.";
     }
 
+    const claimToken = crypto.randomUUID();
+    const { data: claimed, error: claimError } = await admin.rpc("claim_flamexbot_telegram_admin_notification", {
+      p_user_id: targetUserId,
+      p_audit_id: auditId,
+      p_claim_token: claimToken,
+    });
+    if (claimError) throw claimError;
+    const notification = claimed?.[0];
+    if (!notification) {
+      const { data: existingNotice, error: existingNoticeError } = await admin.from("notifications")
+        .select("telegram_delivered_at,telegram_delivery_claimed_at")
+        .eq("user_id", targetUserId).contains("data", { audit_id: auditId }).maybeSingle();
+      if (existingNoticeError) throw existingNoticeError;
+      if (existingNotice?.telegram_delivered_at) return response({ ok: true, delivered: true, already_delivered: true });
+      if (existingNotice) return response({ ok: true, delivered: false, reason: "notification_queued" });
+      return response({ error: "Admin notification record was not created" }, 409);
+    }
+
     try {
       await sendBotMessage(String(profile.telegram_id), message);
-      const deliveredTypes: Record<string, string[]> = {
-        ban: ["account_banned"], unban: ["account_unbanned"],
-        verify: ["verified"], unverify: ["unverified"],
-        premium_grant: ["premium_granted"], premium_revoke: ["premium_revoked"],
-        pro_grant: ["pro_granted"], pro_revoke: ["pro_revoked"],
-        badge_grant: ["badge_granted"], badge_revoke: ["badge_revoked"],
-      };
-      const types = deliveredTypes[action] ?? [];
-      if (types.length) {
-        const { error: markError } = await admin.from("notifications")
-          .update({ telegram_delivered_at: new Date().toISOString() })
-          .eq("user_id", targetUserId)
-          .in("type", types)
-          .contains("data", { audit_id: auditId })
-          .is("telegram_delivered_at", null);
-        if (markError) console.warn("Could not mark admin bot notice delivered:", markError.message);
-      }
-      return response({ ok: true, delivered: true });
     } catch (error) {
       const reason = String((error as any)?.message ?? error);
+      const outcomeUnknown = error instanceof TypeError || /timeout|timed out|network|connection reset|aborted/i.test(reason);
+      if (!outcomeUnknown) {
+        const { error: releaseError } = await admin.rpc("release_flamexbot_telegram_notification_claims", {
+          p_claim_token: claimToken,
+        });
+        if (releaseError) console.warn("Could not release admin notification claim:", releaseError.message);
+      }
       console.warn("FLAMEXBOT notification delivery skipped:", reason);
       return response({
         ok: true,
@@ -203,6 +210,15 @@ Deno.serve(async (req: Request) => {
           ? "bot_not_started_or_blocked" : "telegram_unavailable",
       });
     }
+
+    const { data: marked, error: markError } = await admin.rpc("mark_flamexbot_telegram_notification_delivered", {
+      p_notification_id: notification.notification_id,
+      p_claim_token: claimToken,
+    });
+    if (markError || marked !== true) {
+      console.warn("Could not confirm admin notification delivery:", markError?.message ?? "claim token no longer owns notification");
+    }
+    return response({ ok: true, delivered: true, delivery_marked: marked === true });
   } catch (error) {
     console.error("flamexbot-user-notify:", (error as any)?.message ?? error);
     return response({ error: (error as any)?.message ?? "Could not send bot notification" }, 500);
