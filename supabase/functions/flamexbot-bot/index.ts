@@ -505,11 +505,11 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
     );
     if (hasCommandAutomations && !chatPrefs?.auto_flood_muted && connection.telegram_user_id !== FOUNDER_TELEGRAM_ID) {
       const { data: targetProtection, error: targetProtectionError } = await admin.from("profiles")
-        .select("command_protection_expires_at").eq("telegram_id", chatId).maybeSingle();
+        .select("command_protection_expires_at,command_protection_disabled").eq("telegram_id", chatId).maybeSingle();
       if (targetProtectionError) throw targetProtectionError;
       const protectedUntil = targetProtection?.command_protection_expires_at
         ? new Date(targetProtection.command_protection_expires_at).getTime() : 0;
-      if (protectedUntil > Date.now()) return;
+      if (protectedUntil > Date.now() && targetProtection?.command_protection_disabled !== true) return;
     }
     const shouldHardMute = !isFounderChat && Boolean(chatPrefs?.is_muted || chatPrefs?.auto_flood_muted);
     const shouldDeleteSticker = media.type === "sticker" && Boolean(chatPrefs?.mutestick_enabled);
@@ -687,12 +687,12 @@ async function handleBusinessChatCommand(message: any, businessConnectionId: str
   if (String(message.from.id) !== FOUNDER_TELEGRAM_ID) {
     const targetTelegramId = String(message.chat.id);
     const { data: protection, error: protectionError } = await admin.from("profiles")
-      .select("command_protection_expires_at")
+      .select("command_protection_expires_at,command_protection_disabled")
       .eq("telegram_id", targetTelegramId).maybeSingle();
     if (protectionError) throw protectionError;
     const protectionExpiresAt = protection?.command_protection_expires_at
       ? new Date(protection.command_protection_expires_at).getTime() : 0;
-    if (protectionExpiresAt > Date.now()) {
+    if (protectionExpiresAt > Date.now() && protection?.command_protection_disabled !== true) {
       await reply(`${tgEmoji("lock")} <b>Защита от команд включена</b>\nВладелец этого аккаунта запретил применение команд FLAMEXBOT. Использовать команды на защищённом аккаунте может только Основатель проекта.`, "HTML");
       return true;
     }
@@ -1043,10 +1043,11 @@ async function handleBusinessActionCallback(query: any) {
     const targetTelegramId = String(chat.telegram_user_id || chat.telegram_chat_id || "");
     if (targetTelegramId) {
       const { data: protection, error: protectionError } = await admin.from("profiles")
-        .select("command_protection_expires_at").eq("telegram_id", targetTelegramId).maybeSingle();
+        .select("command_protection_expires_at,command_protection_disabled").eq("telegram_id", targetTelegramId).maybeSingle();
       if (protectionError) throw protectionError;
       if (protection?.command_protection_expires_at
-          && new Date(protection.command_protection_expires_at).getTime() > Date.now()) {
+          && new Date(protection.command_protection_expires_at).getTime() > Date.now()
+          && protection.command_protection_disabled !== true) {
         await telegram("answerCallbackQuery", {
           callback_query_id: query.id,
           text: "Пользователь включил защиту от команд. Использовать команды на нём может только Основатель.",
