@@ -1274,7 +1274,7 @@ async function renderUsers(host) {
       p_user_id:userId,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days
     });
     if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
-    toast(({ban:'Пользователь заблокирован',unban:'Блокировка снята',verify:'Синяя галочка выдана',unverify:'Галочка снята',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',pro_grant:'PRO выдан или продлён',pro_revoke:'PRO снят',badge_grant:'Значок выдан',badge_revoke:'Значок снят'})[action]||'Изменения сохранены');
+    toast(({ban:'Пользователь заблокирован',unban:'Блокировка снята',verify:'Синяя галочка выдана',unverify:'Галочка снята',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',badge_grant:'Значок выдан',badge_revoke:'Значок снят'})[action]||'Изменения сохранены');
     await notifyTelegramAboutAdminAction(userId,action,badgeCode,data?.audit_id);
     await renderUsers(host);
   }));
