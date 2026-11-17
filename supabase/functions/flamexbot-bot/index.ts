@@ -1175,7 +1175,7 @@ async function sendTierInvoice(chatId: number, telegramUserId: number, plan: "pr
   const price = plan === "pro" ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
   const name = plan === "pro" ? "FLAMEX PRO" : "FLAMEXBOT Premium";
   const description = plan === "pro"
-    ? "FLAMEX PRO на 30 дней: Premium-функции, 2 еженедельные прокрутки колеса, +10% к относительному шансу редких наград и экспорт переписки."
+    ? "FLAMEX PRO на 30 дней: Premium-функции, 2 еженедельные прокрутки колеса, +10% к весам редких наград и экспорт переписки."
     : "FLAMEXBOT Premium на 30 дней: Premium-инструменты и 1 бесплатная прокрутка колеса каждую неделю.";
   const payload = `flamexbot_${plan}:${profile.id}:${crypto.randomUUID()}`;
   await telegram("sendInvoice", {
@@ -1185,6 +1185,7 @@ async function sendTierInvoice(chatId: number, telegramUserId: number, plan: "pr
 }
 async function handlePreCheckout(query: any) {
   let ok = false;
+  let rejectionMessage = "Счёт недействителен или устарел. Создай новый счёт в FLAMEXBOT.";
   try {
     if (admin && query.currency === "XTR") {
       const payload = String(query.invoice_payload ?? "");
@@ -1200,8 +1201,12 @@ async function handlePreCheckout(query: any) {
           .select("plan,expires_at").eq("user_id", tierUserId).maybeSingle();
         if (currentError) throw currentError;
         const currentActive = Boolean(current && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now()));
+        const isLifetime = Boolean(current && !current.expires_at && ["premium","pro"].includes(current.plan));
         const isForbiddenDowngrade = Boolean(premiumUserId && currentActive && current.plan === "pro");
-        ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id) && !isForbiddenDowngrade);
+        if (isLifetime) rejectionMessage = "У тебя уже бессрочная подписка. Повторная покупка не требуется.";
+        else if (isForbiddenDowngrade) rejectionMessage = "У тебя активен PRO. Покупка Premium не нужна.";
+        ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id)
+          && !isForbiddenDowngrade && !isLifetime);
       } else if (parseCommandProtectionPayload(payload) && query.total_amount === 15) {
         const { data: order, error: orderError } = await admin.from("flamexbot_addon_star_payments")
           .select("user_id,telegram_user_id,addon_code,currency,total_amount,period_days,status,valid_until")
@@ -1229,7 +1234,7 @@ async function handlePreCheckout(query: any) {
       }
     }
   } catch (error) { console.error("pre-checkout validation:", error?.message ?? error); }
-  await telegram("answerPreCheckoutQuery", { pre_checkout_query_id: query.id, ok, ...(!ok ? { error_message: "Счёт недействителен или устарел. Создай новый счёт в FLAMEXBOT." } : {}) });
+  await telegram("answerPreCheckoutQuery", { pre_checkout_query_id: query.id, ok, ...(!ok ? { error_message: rejectionMessage } : {}) });
 }
 async function refundTelegramStarsPayment(telegramUserId: number, chargeId: string) {
   try {
@@ -1585,7 +1590,7 @@ async function handleSuccessfulPayment(message: any) {
       { payment_charge_id: payment.telegram_payment_charge_id },
       message.chat.id,
       plan === "pro"
-        ? `${tgEmoji("diamond")} <b>Оплата прошла успешно!</b> FLAMEX PRO активирован на 30 дней. Тебе доступны 2 прокрутки каждую неделю и +10% к шансу редких наград.`
+        ? `${tgEmoji("diamond")} <b>Оплата прошла успешно!</b> FLAMEX PRO активирован на 30 дней. Тебе доступны 2 прокрутки каждую неделю и +10% к весам редких наград.`
         : `${tgEmoji("star")} <b>Оплата прошла успешно!</b> FLAMEXBOT Premium активирован на 30 дней. Тебе доступна 1 прокрутка каждую неделю.`,
     );
   }
