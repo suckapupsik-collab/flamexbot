@@ -221,7 +221,7 @@ async function sendRichTelegramMessage(
           .select("id").eq("telegram_chat_id", String(chatId)).maybeSingle();
         if (supportChat?.id) {
           const readable = String(body).replace(/<tg-emoji[^>]*>(.*?)<\/tg-emoji>/g, "$1")
-            .replace(/<\\/?[a-z][^>]*>/gi, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+            .replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
           const createdAt = new Date((sent.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
           await admin.from("flamexbot_support_messages").upsert({
             support_chat_id: supportChat.id, telegram_message_id: sent.message_id,
