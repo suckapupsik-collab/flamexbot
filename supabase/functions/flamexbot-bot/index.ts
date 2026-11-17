@@ -271,6 +271,16 @@ async function saveBusinessConnection(connection: any) {
       data: { connection_id: connection.id, telegram_user_id: telegramUserId, rights: connection.rights ?? {} },
     });
     if (noticeError) throw noticeError;
+    try {
+      await sendRichTelegramMessage(Number(telegramUserId),
+        `${tgEmoji(enabled ? "success" : "warning")} <b>${title}</b>\\n\\n${body}`,
+        "HTML",
+        { inline_keyboard: [[{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
+      );
+    } catch (deliveryError) {
+      // Telegram does not allow bot DMs before the user starts the bot; keep the in-app notice either way.
+      console.warn("Business connection notice could not be sent to bot DM:", (deliveryError as any)?.message ?? deliveryError);
+    }
   }
 }
 function messageContent(message: any) {
