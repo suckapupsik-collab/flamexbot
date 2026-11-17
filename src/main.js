@@ -109,7 +109,9 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
       return;
     }
     if(data?.delivered===false) {
-      toast('Изменение сохранено. Бот не смог написать пользователю — он должен хотя бы раз запустить FLAMEXBOT.');
+      toast(data.reason==='notification_queued'
+        ? 'Изменение сохранено. Уведомление уже обрабатывается и будет доставлено из очереди.'
+        : 'Изменение сохранено. Бот не смог написать пользователю — он должен хотя бы раз запустить FLAMEXBOT.');
     }
   } catch(error) {
     console.warn('Telegram admin notification:',error?.message||error);
