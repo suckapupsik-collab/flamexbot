@@ -132,6 +132,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const displayName = escapeHtml(profile.display_name || profile.username || "пользователь");
+    const adminComment = ["premium_grant","pro_grant"].includes(action) ? String(audit.reason ?? "").trim() : "";
     let message = "";
     if (action === "premium_grant" || action === "pro_grant" || action === "premium_revoke" || action === "pro_revoke") {
       const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
