@@ -1565,3 +1565,14 @@ body{
  .support-reply-form button{flex:1 1 100%}
  .support-media-preview{max-height:260px}
 }
+
+
+/* FLAMEXBOT mobile chat and badge selector stability fixes */
+.chat-layout.business-inbox{min-height:0;align-items:stretch}
+.chat-layout.business-inbox .chat-window{min-height:0;height:min(78vh,900px);display:flex;flex-direction:column;overflow:hidden}
+.chat-layout.business-inbox .message-list{flex:1 1 auto;min-height:0;height:auto;max-height:none;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
+.chat-layout.business-inbox .chat-head,.chat-layout.business-inbox .send-form{flex:0 0 auto}
+.admin-user-detail-card,.admin-detail-actions,.admin-detail-badge-form{overflow:visible;position:relative}
+.admin-detail-badge-form{z-index:30;display:flex;flex-wrap:wrap;align-items:end;gap:10px}
+.admin-detail-badge-form select{min-width:min(100%,260px);max-width:100%;position:relative;z-index:31}
+@media(max-width:760px){.chat-layout.business-inbox .chat-window{height:calc(100dvh - 220px);min-height:360px}.chat-layout.business-inbox .message-list{min-height:0;max-height:none}}
