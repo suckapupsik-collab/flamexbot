@@ -332,6 +332,26 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
   }, { onConflict: "business_chat_id,telegram_message_id" });
   if (messageError) throw messageError;
   if (direction === "inbound") {
+    const consentCommand = content.trim().toLowerCase();
+    if (consentCommand === ".spamallow" || consentCommand === "/spamallow") {
+      const { error: consentError } = await admin.from("flamexbot_business_spam_consents").upsert({
+        profile_id: connection.profile_id, business_chat_id: chat.id, telegram_chat_id: chatId,
+        consented_at: new Date().toISOString(), revoked_at: null,
+      }, { onConflict: "profile_id,business_chat_id" });
+      if (consentError) throw consentError;
+      await sendBusinessReply(connection.connection_id, chatId,
+        "Согласие на получение повторных тестовых сообщений сохранено. Отказаться можно командой .spamstop.");
+      return;
+    }
+    if (consentCommand === ".spamstop" || consentCommand === "/spamstop") {
+      const { error: consentError } = await admin.from("flamexbot_business_spam_consents")
+        .update({ revoked_at: new Date().toISOString() })
+        .eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).eq("telegram_chat_id", chatId);
+      if (consentError) throw consentError;
+      await sendBusinessReply(connection.connection_id, chatId,
+        "Согласие отозвано. Повторные сообщения больше отправляться не будут.");
+      return;
+    }
     if (isFounderTarget(chatId)) return;
     const { data: chatPrefs, error: chatSettingsError } = await admin.from("flamexbot_business_chat_settings")
       .select("is_muted,antimut_enabled,afk_enabled,afk_message,autoread_enabled,autotyping_enabled,autovoice_enabled,mutestick_enabled,antimat_enabled")
@@ -555,7 +575,9 @@ ${tgEmoji("lock")} <b>Текущий диалог</b>
 <code>.ping</code> / <code>/ping</code> — проверить ответы Business-команд\n<code>.help</code> / <code>/help</code> / <code>.commands</code> — полный список команд\n<code>.streak 1-3650</code> — мгновенно установить серию (только администрация)\n<code>.mute</code> / <code>/mute</code> — удалять новые входящие сообщения
 <code>.unmute</code> — остановить удаление сообщений
 <code>.antimute</code> / <code>.unantimute</code> — отправлять новые сообщения от имени бота FLAMEXBOT (собеседник должен открыть бота и нажать Start)
-<code>.spam 2-5 текст</code> — отправить от 2 до 5 копий сообщения
+<code>.spam 2-5 текст</code> — отправить до 5 копий при согласии собеседника
+<code>.spamallow</code> / <code>.spamstop</code> — дать или отозвать согласие
+<code>.dokc</code> — анимированный поиск публичной информации
 
 ${tgEmoji("edit")} <b>Дополнительно</b>
 <code>.timeprofile</code> — закрепить московское время (UTC+3)
@@ -604,13 +626,21 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(`${tgEmoji("sparkles")} <b>Огонёк установлен мгновенно!</b>\nСерия: <b>${days} дн.</b>\nПользователь добавлен в друзья, если вы ещё не были друзьями. Дальше огонёк будет продлеваться обычной взаимной перепиской.`, "HTML");
     return true;
   }
-  const commandNeedsPremium = ["mute","spam","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
+  const proOnlyCommands = ["spam","dokc"];
+  const commandNeedsPremium = ["mute","spam","dokc","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
   let premium = false;
+  let pro = false;
   if (commandNeedsPremium) {
     const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
       .select("plan,expires_at").eq("user_id", profile.id).maybeSingle();
     if (subscriptionError) throw subscriptionError;
-    premium = ["premium","pro","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+    const active = !subscription?.expires_at || new Date(subscription.expires_at).getTime() > Date.now();
+    premium = ["premium","pro","founder"].includes(subscription?.plan) && active;
+    pro = (subscription?.plan === "pro" || String(message.from.id) === FOUNDER_TELEGRAM_ID) && active;
+  }
+  if (proOnlyCommands.includes(command) && !pro) {
+    await reply(`${tgEmoji("diamond")} Для команды <b>.${escapeHtml(command)}</b> нужна активная подписка <b>FLAMEX PRO</b>.`, "HTML");
+    return true;
   }
   if (!premium && commandNeedsPremium) {
     await reply(`${tgEmoji("star")} Для этой команды нужна активная подписка <b>Premium</b>. Команды отключения и размут доступны и без неё.`, "HTML");
@@ -746,12 +776,28 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
         "HTML", markup);
       return true;
     }
-    if (command === "copyp") {
+    if (command === "copyp" || command === "dokc") {
       const username = String(chat.username || "").replace(/^@/, "").replace(/[^A-Za-z0-9_]/g, "");
       const fullName = [chat.first_name, chat.last_name].filter(Boolean).join(" ") || "Telegram-пользователь";
       const telegramId = String(chat.telegram_user_id || chat.telegram_chat_id);
-      const profileLink = username ? `<a href="https://t.me/${username}">Открыть профиль</a>` : "Публичная ссылка недоступна";
-      await reply(`${tgEmoji("users")} <b>Профиль собеседника</b>\nИмя: <b>${escapeHtml(fullName)}</b>\nЮзернейм: ${username ? "@" + escapeHtml(username) : "не указан"}\nTelegram ID: <code>${escapeHtml(telegramId)}</code>\n${profileLink}`, "HTML");
+      const profileLink = username ? `<a href="https://t.me/${username}">Открыть публичный профиль</a>` : "Публичная ссылка недоступна";
+      const report = `${tgEmoji("users")} <b>Публичная карточка собеседника</b>\nИмя: <b>${escapeHtml(fullName)}</b>\nЮзернейм: ${username ? "@" + escapeHtml(username) : "не указан"}\nTelegram ID: <code>${escapeHtml(telegramId)}</code>\n${profileLink}\n\n<i>Показаны только сведения, доступные FLAMEXBOT из текущего Telegram-диалога. Закрытые базы и частные данные не запрашиваются.</i>`;
+      if (command === "dokc") {
+        const progress = await sendBusinessReply(businessConnectionId, message.chat.id,
+          `${tgEmoji("search")} <b>FLAMEXBOT · поиск профиля</b>\n\n① Определяю собеседника…`, "HTML");
+        const frames = [
+          `${tgEmoji("search")} <b>FLAMEXBOT · поиск профиля</b>\n\n✓ Собеседник определён\n② Проверяю публичные данные…`,
+          `${tgEmoji("search")} <b>FLAMEXBOT · поиск профиля</b>\n\n✓ Собеседник определён\n✓ Публичные данные проверены\n③ Формирую карточку…`,
+        ];
+        for (const frame of frames) {
+          await new Promise(resolve => setTimeout(resolve, 450));
+          await telegram("editMessageText", { business_connection_id: businessConnectionId, chat_id: message.chat.id,
+            message_id: progress.message_id, text: frame, parse_mode: "HTML" });
+        }
+        await telegram("editMessageText", { business_connection_id: businessConnectionId, chat_id: message.chat.id,
+          message_id: progress.message_id, text: report, parse_mode: "HTML",
+          link_preview_options: { is_disabled: true } });
+      } else await reply(report, "HTML");
       return true;
     }
     if (command === "qr") {
@@ -774,8 +820,16 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     }
     const count = Number(args[0]);
     const spamText = args.slice(1).join(" ").trim();
-    if (!Number.isInteger(count) || count < 2 || count > 5 || !spamText) {
-      await reply("Формат: .spam 2-5 текст сообщения");
+    if (!Number.isInteger(count) || count < 2 || count > 5 || !spamText || spamText.length > 1000) {
+      await reply("Формат: .spam 2-5 текст сообщения. Максимум 5 сообщений и 1000 символов.");
+      return true;
+    }
+    const { data: consent, error: consentError } = await admin.from("flamexbot_business_spam_consents")
+      .select("consented_at,revoked_at").eq("profile_id", profile.id)
+      .eq("business_chat_id", chat.id).eq("telegram_chat_id", String(message.chat.id)).maybeSingle();
+    if (consentError) throw consentError;
+    if (!consent?.consented_at || consent.revoked_at) {
+      await reply("⛔ Собеседник ещё не дал согласие. Он должен отправить в этом диалоге команду .spamallow. Отказ — .spamstop.");
       return true;
     }
     let connection = connectionOverride;
