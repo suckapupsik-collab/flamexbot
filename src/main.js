@@ -161,7 +161,7 @@ function updateHeaderProfile() {
   if(top)top.innerHTML=avatar(url,p.display_name||p.username);
   if(menu)menu.innerHTML=avatar(url,p.display_name||p.username,'avatar-lg');
   const name=document.querySelector('#menu-display-name');
-  if(name)name.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'));
+  if(name)name.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false);
   const triggerName=document.querySelector('.profile-trigger-name');
   if(triggerName)triggerName.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'));
   const badges=document.querySelector('#menu-profile-badges');
@@ -223,7 +223,7 @@ function renderApp() {
             <div class="profile-menu-wrap">
               <button type="button" class="profile-menu-trigger" id="profile-menu-trigger" aria-expanded="false" aria-label="Открыть меню профиля">
                 <span id="top-avatar">${avatar(profileAvatar,p.display_name||p.username)}</span>
-                <span class="profile-trigger-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p))}</span>
+                <span class="profile-trigger-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p)&&p.show_badges!==false)}</span>
                 <span id="top-profile-badges">${badgeMarkup(state.profileBadges,true)}</span>
                 <span class="profile-chevron">⌄</span>
               </button>
@@ -1744,7 +1744,7 @@ async function renderFriends(host) {
   const outgoingIds=(outgoing.data||[]).map(x=>x.receiver_id);
   const ids=[...new Set([...friendIds,...incomingIds,...outgoingIds])];
   const [profileResult,badgeResult,searchResult]=await Promise.all([
-    ids.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url,telegram_username,telegram_id,created_at').in('id',ids):Promise.resolve({data:[],error:null}),
+    ids.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url,telegram_username,telegram_id,created_at,show_subscription,show_role,show_badges,show_activity').in('id',ids):Promise.resolve({data:[],error:null}),
     ids.length?supabase.from('profile_badges').select('user_id,badge_code').in('user_id',ids):Promise.resolve({data:[],error:null}),
     state.friendSearchQuery.length>=2
       ?supabase.rpc('search_flamexbot_profiles',{p_query:state.friendSearchQuery,p_limit:15})
@@ -1773,7 +1773,11 @@ async function renderFriends(host) {
   });
   const activeFriendCount=friendIds.filter(id=>effectiveStreakDays(streakByFriend.get(id))>0).length;
 
-  const profileCard=(p,subline,actions='',badges=[])=>`<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url||p.telegram_photo_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${verifiedMarkMarkup((badges||[]).includes('verified')||isFounderProfile(p))} ${badgeMarkup(badges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
+  const profileCard=(p,subline,actions='',badges=[])=>{
+    const shownBadges=p.show_badges===false?[]:p.show_role===false?(badges||[]).filter(code=>code==='verified'||(code==='premium'&&p.show_subscription!==false)):(badges||[]).filter(code=>p.show_subscription!==false||code!=='premium');
+    const verified=(badges||[]).includes('verified')||isFounderProfile(p);
+    return `<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url||p.telegram_photo_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${verifiedMarkMarkup(verified&&p.show_badges!==false)} ${badgeMarkup(shownBadges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
+  };
   const friendCards=sortedFriendIds.map(id=>{
     const p=profileMap.get(id);if(!p)return '';
     const streak=streakByFriend.get(id),days=effectiveStreakDays(streak);
@@ -1840,8 +1844,11 @@ async function renderFriends(host) {
     const handle=String(friend.telegram_username||'').replace(/^@/,'').replace(/[^A-Za-z0-9_]/g,'');
     const isFavorite=favoriteSet.has(friendId);
     panel.hidden=false;
-    panel.innerHTML=`<div class="friend-profile-top"><div class="friend-profile-identity">${avatar(friend.avatar_url||friend.telegram_photo_url,friend.display_name||friend.username,'avatar-xl')}<div><div class="eyebrow">ПРОФИЛЬ ДРУГА</div><h3>${esc(friend.display_name||friend.username||'Пользователь')} ${verifiedMarkMarkup((badgeMap.get(friendId)||[]).includes('verified')||isFounderProfile(friend))}</h3><p>${friend.telegram_username?'@'+esc(friend.telegram_username):'Telegram не указан'} ${badgeMarkup(badgeMap.get(friendId)||[],true,false)}</p></div></div><button class="outline small" type="button" id="close-friend-profile">Закрыть ×</button></div>
-      <div class="friend-profile-stats"><div><small>ОГОНЁК СЕЙЧАС</small><b>${days} дн.</b></div><div><small>ЛИЧНЫЙ РЕКОРД СЕРИИ</small><b>${Number(streak?.best_days)||0} дн.</b></div><div><small>ТВОИ СООБЩЕНИЯ В СЕРИИ</small><b>${myMessages}</b></div></div>
+    const friendBadges=badgeMap.get(friendId)||[];
+    const publicBadges=friend.show_badges===false?[]:friend.show_role===false?friendBadges.filter(code=>code==='verified'||(code==='premium'&&friend.show_subscription!==false)):friendBadges.filter(code=>friend.show_subscription!==false||code!=='premium');
+    const showActivity=friend.show_activity!==false;
+    panel.innerHTML=`<div class="friend-profile-top"><div class="friend-profile-identity">${avatar(friend.avatar_url||friend.telegram_photo_url,friend.display_name||friend.username,'avatar-xl')}<div><div class="eyebrow">ПРОФИЛЬ ДРУГА</div><h3>${esc(friend.display_name||friend.username||'Пользователь')} ${verifiedMarkMarkup((friendBadges.includes('verified')||isFounderProfile(friend))&&friend.show_badges!==false)}</h3><p>${friend.telegram_username?'@'+esc(friend.telegram_username):'Telegram не указан'} ${badgeMarkup(publicBadges,false,false)}</p></div></div><button class="outline small" type="button" id="close-friend-profile">Закрыть ×</button></div>
+      ${showActivity?`<div class="friend-profile-stats"><div><small>ОГОНЁК СЕЙЧАС</small><b>${days} дн.</b></div><div><small>ЛИЧНЫЙ РЕКОРД СЕРИИ</small><b>${Number(streak?.best_days)||0} дн.</b></div><div><small>ТВОИ СООБЩЕНИЯ В СЕРИИ</small><b>${myMessages}</b></div></div>`:''}
       <div class="friend-profile-meta"><span>В FLAMEXBOT с <b>${friend.created_at?formatMskDate(friend.created_at):'дата неизвестна'}</b></span>${handle?`<a class="friend-link" href="https://t.me/${handle}" target="_blank" rel="noopener noreferrer">Открыть Telegram ↗</a>`:''}<button class="outline small ${isFavorite?'is-favorite':''}" type="button" id="friend-profile-favorite">${isFavorite?'★ В избранном':'☆ Закрепить друга'}</button></div>
       <div class="friend-profile-history"><div class="eyebrow">ИСТОРИЯ ОГОНЬКА</div><p>${activityError?'Не удалось загрузить историю активности.':activity?.length?'Твои дни активности в этой совместной серии:':'История активности пока не появилась.'}</p><div class="friend-activity-days">${(activity||[]).map(row=>`<div><b>${formatMskDate(row.activity_date,{day:'numeric',month:'short'})}</b><small>${Number(row.message_count)||0} сообщ.</small></div>`).join('')}</div><small class="friend-profile-privacy">Показывается только твоя активность в общей серии. Личные достижения и статистика друга не раскрываются.</small></div>`;
     panel.scrollIntoView({behavior:'smooth',block:'nearest'});
