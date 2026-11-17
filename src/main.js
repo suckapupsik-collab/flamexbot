@@ -1116,6 +1116,25 @@ async function renderSupportInbox(host) {
   };
   host.querySelector('#support-refresh')?.addEventListener('click',loadList);
   await loadList();
+  let polling=false;
+  const refreshTimer=setInterval(async()=>{
+    if(!host.isConnected||state.page!=='support'){clearInterval(refreshTimer);return;}
+    if(polling)return;
+    polling=true;
+    try{
+      await loadList();
+      if(activeId){
+        const {data}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'messages',chat_id:activeId}});
+        const messageList=thread.querySelector('.support-message-list');
+        if(data?.messages&&messageList){
+          const wasNearBottom=messageList.scrollHeight-messageList.scrollTop-messageList.clientHeight<90;
+          messageList.innerHTML=data.messages.map(msg=>`<article class="support-message ${msg.direction==='outgoing'?'outgoing':'incoming'}"><p>${esc(msg.content||'['+msg.message_type+']')}</p><time>${formatMskDateTime(msg.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</time></article>`).join('')||'<div class="empty-state">Сообщений пока нет.</div>';
+          if(wasNearBottom)messageList.scrollTop=messageList.scrollHeight;
+        }
+      }
+    }catch(error){console.warn('Support inbox refresh skipped:',error?.message||error);}
+    finally{polling=false;}
+  },6000);
 }
 
 async function renderAdmin(host) {
