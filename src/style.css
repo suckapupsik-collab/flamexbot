@@ -1324,7 +1324,6 @@ body{
 @media(prefers-reduced-motion:reduce){.home-archive-card{transition:none}.home-archive-card:hover{transform:none}}
 
 /* Membership additions */
-.pro-card{border-color:rgba(255,145,91,.42);background:radial-gradient(ellipse at 100% 0%,rgba(255,100,60,.15),transparent 55%),linear-gradient(145deg,rgba(255,255,255,.05),rgba(255,255,255,.015))}
 .trial-card,.wheel-card{margin-top:18px;padding:22px;border:1px solid rgba(255,145,91,.22);border-radius:18px;background:linear-gradient(145deg,rgba(255,125,75,.08),rgba(255,255,255,.02))}
 .trial-card h2,.wheel-card h2{margin:8px 0}
 .wheel-odds{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0;color:var(--muted);font-size:12px}
@@ -1335,8 +1334,6 @@ body{
 .event-sticker{display:block;max-width:180px;max-height:180px;object-fit:contain;margin:12px auto}
 @media(max-width:650px){.home-referral-card{grid-template-columns:1fr}.home-referral-actions{max-width:none}.wheel-odds{display:grid;grid-template-columns:1fr}}
 
-.badge-pro{border-color:rgba(255,119,64,.42);background:linear-gradient(135deg,rgba(255,112,61,.18),rgba(255,184,105,.07));color:#ffad7e}
-.admin-action.pro{border-color:rgba(255,133,78,.38);color:#ffad7e}
 
 
 /* FLAMEXBOT update: multi-tier fortune wheel and standalone add-ons */
@@ -1352,9 +1349,6 @@ body{
 .wheel-prize-premium7{top:65%;left:87%;transform:translate(-50%,-50%)}
 .wheel-prize-premium30{top:87%;left:65%;transform:translate(-50%,-50%)}
 .wheel-prize-premium90{top:87%;left:35%;transform:translate(-50%,-50%)}
-.wheel-prize-pro7{top:65%;left:13%;transform:translate(-50%,-50%)}
-.wheel-prize-pro30{top:35%;left:13%;transform:translate(-50%,-50%)}
-.wheel-prize-pro90{top:14%;left:35%;transform:translate(-50%,-50%)}
 .fortune-wheel-center{position:absolute;z-index:2;left:50%;top:50%;display:grid;place-items:center;width:54px;height:54px;border:5px solid #202938;border-radius:50%;background:#f4f0e9;color:#e97850;font-size:22px;font-weight:950;transform:translate(-50%,-50%);box-shadow:0 3px 12px rgba(0,0,0,.3)}
 .addon-feature-heading{margin:26px 0 14px}
 .addon-feature-heading h2{margin:7px 0;font-size:19px}
@@ -1381,7 +1375,6 @@ body{
 
 .streak-person-avatar{width:52px;height:52px;flex:none;display:grid;place-items:center}
 .streak-person-avatar .avatar{width:52px;height:52px;margin:0;border:1px solid #4a3930}
-.command-access.pro{color:#e6b4ff;background:#33223d;border-color:#624078}
 
 /* Friends and streaks: quick filtering and clearer activity hierarchy */
 .friend-list-filter{display:flex;align-items:center;gap:9px;margin:0 0 12px;padding:0 12px;border:1px solid rgba(255,255,255,.09);border-radius:11px;background:rgba(255,255,255,.025);color:#8291a5}
@@ -1576,3 +1569,16 @@ body{
 .admin-detail-badge-form{z-index:30;display:flex;flex-wrap:wrap;align-items:end;gap:10px}
 .admin-detail-badge-form select{min-width:min(100%,260px);max-width:100%;position:relative;z-index:31}
 @media(max-width:760px){.chat-layout.business-inbox .chat-window{height:calc(100dvh - 220px);min-height:360px}.chat-layout.business-inbox .message-list{min-height:0;max-height:none}}
+
+
+/* Founder privacy controls and split inbox layouts */
+.admin-owner-settings{margin:18px 0;padding:18px;border:1px solid rgba(91,160,255,.22);border-radius:18px;background:linear-gradient(145deg,rgba(65,115,190,.10),rgba(255,255,255,.018))}
+.admin-owner-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:14px}
+.admin-owner-setting{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.13);cursor:pointer}
+.admin-owner-setting span{display:grid;gap:5px;min-width:0}.admin-owner-setting b{font-size:12px;color:var(--text)}.admin-owner-setting small,.admin-owner-settings-note{font-size:10px;line-height:1.45;color:var(--muted)}
+.admin-owner-setting input{width:19px;height:19px;flex:none;accent-color:#66a9ff}.admin-owner-settings-note{display:block;margin-top:12px}
+.bot-private-inbox .support-thread{min-height:430px}.bot-private-inbox .support-message-list{display:flex;flex-direction:column;gap:9px;max-height:calc(100dvh - 350px);overflow-y:auto;overscroll-behavior:contain}
+.bot-private-inbox .support-message{max-width:min(84%,560px);padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(255,255,255,.035);overflow-wrap:anywhere}
+.bot-private-inbox .support-message.outgoing{align-self:flex-end;background:rgba(75,135,220,.12);border-color:rgba(75,135,220,.25)}
+.bot-private-inbox .support-message p{margin:0 0 5px;white-space:pre-wrap}.bot-private-inbox .support-message time{display:block;text-align:right;color:var(--muted);font-size:9px}.bot-private-inbox .support-attachment{margin:5px 0;color:#9fc8ff;font-size:11px}
+@media(max-width:700px){.admin-owner-settings-grid{grid-template-columns:1fr}.bot-private-inbox .support-thread{min-height:60dvh}.bot-private-inbox .support-message-list{max-height:calc(100dvh - 290px)}}
