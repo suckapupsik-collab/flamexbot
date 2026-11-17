@@ -34,3 +34,12 @@
 ## Current disposition
 
 **No production migration was reset, replayed, or rewritten during this audit.** The gap remains open pending recovery of original SQL sources.
+
+
+## Follow-up check — 2026-11-17
+
+A later check after the notification/webhook and Stars-refund work found **77 applied migrations** and **30 tracked SQL files**. The original 75/28 figures above are the earlier audit snapshot, not the current count. Two additional migration sources are now tracked:
+- `20261117133242_telegram_update_claim_status.sql`
+- `20261117133649_flamexbot_refunded_star_payment_ledger.sql`
+
+The migration history gap is still open. The new files document only the changes applied during this follow-up; they do not reconstruct the missing historical SQL. Continue to avoid production resets, replaying old migrations, and `db push` until all version/name mismatches have been reconciled.
