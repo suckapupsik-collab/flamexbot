@@ -713,6 +713,13 @@ ${tgEmoji("edit")} <b>Дополнительно</b>
 <code>.time</code> / <code>.untime</code> — показать или скрыть время профиля
 <code>.bold текст</code> / <code>.dumb текст</code> — изменить оформление текста
 <code>.link текст</code> — создать ссылку на этот диалог\n<code>.copyp</code> — скопировать публичную карточку собеседника\n<code>.qr текст</code> — создать QR-код для текста или ссылки\n<code>.id</code> / <code>.chatid</code> — ID собеседника и чата\n<code>.date</code> — дата и время по Москве\n<code>.calc выражение</code> — калькулятор со скобками\n<code>.upper</code> / <code>.lower</code> / <code>.reverse</code> — обработка текста\n<code>.count</code> / <code>.wordcount</code> — подсчёт символов и слов\n<code>.choose A | B</code> — случайный выбор\n<code>.roll 100</code> — случайное число от 1 до 100
+<code>.spamallow</code> / <code>.spamstop</code> — дать или отозвать согласие на тестовые повторные сообщения
+<code>.antimat</code> / <code>.unantimat</code> — включить или выключить фильтр ненормативной лексики
+
+${tgEmoji("star")} <b>Подписка и тарифы · личный чат с ботом</b>
+<code>/premium</code> — счёт на FLAMEXBOT Premium на 30 дней
+<code>/pro</code> — счёт на FLAMEX PRO на 30 дней
+Подписки оплачиваются разово через Telegram Stars и не продлеваются автоматически. Проверить текущий тариф и срок действия можно в Mini App → «Тарифы».
 
 ${tgEmoji("help")} <b>Как пользоваться</b>
 Отправляй команду прямо в переписке с нужным человеком. FLAMEXBOT сам определит текущий диалог — <b>@username и ID указывать не нужно</b>. Для команд включения Premium-функций нужна активная подписка; команды отключения доступны бесплатно.
