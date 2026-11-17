@@ -437,7 +437,7 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
     const { data: currentPrefs, error: currentPrefsError } = await admin.from("flamexbot_business_chat_settings")
       .select("is_muted,auto_flood_muted").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
     if (currentPrefsError) throw currentPrefsError;
-    if (!currentPrefs?.is_muted && !currentPrefs?.auto_flood_muted && senderId) {
+    if (!currentPrefs?.is_muted && !currentPrefs?.auto_flood_muted && senderId && !isFounderTarget(chatId)) {
       const { data: floodData, error: floodError } = await admin.rpc("record_flamexbot_business_flood", {
         p_profile_id: connection.profile_id,
         p_business_chat_id: chat.id,
