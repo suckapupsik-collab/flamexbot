@@ -97,7 +97,7 @@ Deno.serve(async (req: Request) => {
     const auditId = String(body?.audit_id ?? "");
     const allowed = new Set([
       "ban", "unban", "verify", "unverify",
-      "premium_grant", "premium_revoke", "pro_grant", "pro_revoke",
+      "premium_grant", "premium_revoke",
       "badge_grant", "badge_revoke",
     ]);
     if (!/^[0-9a-f-]{36}$/i.test(targetUserId) || !/^[0-9a-f-]{36}$/i.test(auditId) || !allowed.has(action)) {
@@ -132,25 +132,23 @@ Deno.serve(async (req: Request) => {
     }
 
     const displayName = escapeHtml(profile.display_name || profile.username || "пользователь");
-    const adminComment = ["premium_grant","pro_grant"].includes(action) ? String(audit.reason ?? "").trim() : "";
+    const adminComment = action === "premium_grant" ? String(audit.reason ?? "").trim() : "";
     let message = "";
-    if (action === "premium_grant" || action === "pro_grant" || action === "premium_revoke" || action === "pro_revoke") {
+    if (action === "premium_grant" || action === "premium_revoke") {
       const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
         .select("plan,expires_at").eq("user_id", targetUserId).maybeSingle();
       if (subscriptionError) throw subscriptionError;
-      const active = Boolean(subscription && ["premium", "pro"].includes(subscription.plan)
+      const active = Boolean(subscription && subscription.plan === "premium"
         && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now()));
       if (active) {
-        const planName = subscription.plan === "pro" ? "🔥 <b>FLAMEX PRO</b>" : "⭐ <b>FLAMEX Premium</b>";
-        const perks = subscription.plan === "pro"
-          ? "\n• 2 бесплатные прокрутки колеса каждую неделю\n• +10% к относительному шансу редких наград"
-          : "\n• 1 бесплатная прокрутка колеса каждую неделю";
+        const planName = "⭐ <b>FLAMEX Premium</b>";
+        const perks = "\n• 2 бесплатные прокрутки колеса каждую неделю\n• +10% к относительному шансу редких наград";
         message = "🎉 <b>Тариф твоего аккаунта обновлён!</b>\n\nПривет, " + displayName +
           "!\nТвой текущий тариф: " + planName + "\nСрок действия: <b>" +
           formatExpiry(subscription.expires_at) + "</b>" + perks;
       } else {
         message = "ℹ️ <b>Изменение подписки FLAMEXBOT</b>\n\nПривет, " + displayName +
-          "!\nТариф Premium/PRO был снят администрацией. Сейчас у тебя Free.";
+          "!\nТариф был снят администрацией. Сейчас у тебя Free.";
       }
     } else if (action === "ban") {
       message = "⛔ <b>Аккаунт FLAMEXBOT заблокирован</b>\n\nПричина: " +
