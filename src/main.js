@@ -346,7 +346,7 @@ async function loadPage() {
 }
 
 function refreshMissingBusinessAvatars(host) {
-  const missing=state.businessChats.filter(chat=>!chat.photo_url&&!state.avatarRefreshAttempted.has(chat.id)).slice(0,4);
+  const missing=state.businessChats.filter(chat=>!chat.photo_url&&!state.avatarRefreshAttempted.has(chat.id)).slice(0,40);
   if(!missing.length)return;
   missing.forEach(chat=>state.avatarRefreshAttempted.add(chat.id));
   Promise.all(missing.map(async chat=>{
@@ -1589,7 +1589,7 @@ async function renderStreaks(host) {
       const id=s.user_low===uid?s.user_high:s.user_low,p=profileMap.get(id),days=effectiveStreakDays(s),name=p?.display_name||p?.username||'Друг';
       const waiting=!s.last_activity_date;
       const status=days>0?'СЕРИЯ ГОРИТ':waiting?'ОЖИДАЕМ ПЕРВЫЙ ОБМЕН':'СЕРИЯ ПОГАСЛА';
-      return `<div class="streak-card ${days>0?'streak-active':'streak-expired'}"><div class="streak-symbol">${days>0?'🔥':waiting?'✨':'🕯️'}</div><div class="streak-card-main"><div class="eyebrow">${status}</div><h3>${esc(name)} · ${days} ${days===1?'день':'дн.'}</h3><p class="muted">Личный рекорд: ${s.best_days||0} дн. · ${s.last_activity_date?'Последний общий день: '+formatMskDate(s.last_activity_date):'Один из вас уже начал общение — нужен ответ друга'}</p></div><div class="streak-days-badge">${days>0?'🔥 '+days:'—'}</div></div>`;
+      return `<div class="streak-card ${days>0?'streak-active':'streak-expired'}"><div class="streak-symbol streak-person-avatar">${avatar(p?.avatar_url||p?.telegram_photo_url,name,'avatar-lg')}</div><div class="streak-card-main"><div class="eyebrow">${status}</div><h3>${esc(name)} · ${days} ${days===1?'день':'дн.'}</h3><p class="muted">Личный рекорд: ${s.best_days||0} дн. · ${s.last_activity_date?'Последний общий день: '+formatMskDate(s.last_activity_date):'Один из вас уже начал общение — нужен ответ друга'}</p></div><div class="streak-days-badge">${days>0?'🔥 '+days:'—'}</div></div>`;
     }).join(''):'<div class="empty-state">Огоньков пока нет. Добавь друга и начните переписываться каждый день.</div>'}</div>
     <button class="outline" data-go="friends">Найти друзей <b>→</b></button>
     ${profiles.error||badges.error?'<p class="business-warning">Не удалось загрузить имена или значки участников.</p>':''}`;
@@ -1765,9 +1765,22 @@ async function renderCommands(host) {
     {syntax:'.link текст',title:'Ссылка на диалог',description:'Создаёт ссылку на текущий Telegram-диалог.',access:'premium',group:'Оформление'},
     {syntax:'.copyp',title:'Копировать профиль',description:'Показывает имя, юзернейм, Telegram ID и ссылку на профиль собеседника.',access:'premium',group:'Профиль'},
     {syntax:'.qr текст',title:'QR-код',description:'Создаёт изображение QR-кода для ссылки или текста до 512 символов.',access:'free',group:'Утилиты'},
+    {syntax:'.id',title:'ID собеседника',description:'Показывает Telegram ID, ID чата и username собеседника.',access:'free',group:'Утилиты'},
+    {syntax:'.chatid',title:'ID диалога',description:'Показывает идентификатор текущего Business-чата.',access:'free',group:'Утилиты'},
+    {syntax:'.date',title:'Дата и время',description:'Показывает текущую дату и время по Москве.',access:'free',group:'Утилиты'},
+    {syntax:'.calc выражение',title:'Калькулятор',description:'Считает выражения со скобками и операциями +, −, ×, ÷, %.',access:'free',group:'Утилиты'},
+    {syntax:'.upper текст',title:'В верхний регистр',description:'Преобразует текст в заглавные буквы.',access:'free',group:'Работа с текстом'},
+    {syntax:'.lower текст',title:'В нижний регистр',description:'Преобразует текст в строчные буквы.',access:'free',group:'Работа с текстом'},
+    {syntax:'.reverse текст',title:'Перевернуть текст',description:'Меняет порядок символов в тексте.',access:'free',group:'Работа с текстом'},
+    {syntax:'.count текст',title:'Подсчёт символов',description:'Считает количество символов в тексте.',access:'free',group:'Работа с текстом'},
+    {syntax:'.wordcount текст',title:'Подсчёт слов',description:'Считает количество слов в тексте.',access:'free',group:'Работа с текстом'},
+    {syntax:'.choose A | B',title:'Случайный выбор',description:'Выбирает один из вариантов, разделённых символом |.',access:'free',group:'Утилиты'},
+    {syntax:'.roll 100',title:'Случайное число',description:'Выдаёт случайное число от 1 до заданного максимума.',access:'free',group:'Утилиты'},
+    {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Только согласованные тестовые сообщения; команда требует PRO.',access:'pro',group:'PRO'},
+    {syntax:'.dokc',title:'Публичная карточка',description:'Анимированно показывает открытые сведения текущего Telegram-диалога. Не обращается к утечкам и закрытым базам.',access:'pro',group:'PRO'},
     {syntax:'.streak 7',title:'Установить огонёк',description:'Мгновенно создаёт или устанавливает серию на указанное число дней (1–3650). Только владелец и администраторы.',access:'admin',group:'Администрация'}
   ];
-  const filters=[['all','Все'],['free','Бесплатные'],['premium','Premium'],['admin','Администрация']];
+  const filters=[['all','Все'],['free','Бесплатные'],['premium','Premium'],['pro','PRO'],['admin','Администрация']];
   host.innerHTML='<div class="page-heading"><div class="eyebrow">FLAMEXBOT COMMAND CENTER</div><h1>Все команды <span>⌘</span></h1><p class="muted">Полный справочник команд. Отправляй их прямо в нужной Telegram Business-переписке — без @username и ID. Команды управления не применяются к диалогам владельца FLAMEXBOT.</p></div>'+
     '<section class="commands-toolbar"><label class="commands-search"><span>⌕</span><input id="commands-search" type="search" placeholder="Найти команду или функцию…"/></label><div class="commands-filters">'+filters.map(([key,label])=>'<button type="button" class="command-filter '+key+'" data-command-filter="'+key+'">'+label+'</button>').join('')+'</div></section>'+
     '<div class="commands-result-meta"><span id="commands-count">'+entries.length+' команд и вариантов</span><span>Префикс: <code>.</code> или <code>/</code></span></div>'+
@@ -1781,7 +1794,7 @@ async function renderCommands(host) {
     const visible=entries.filter(item=>(activeFilter==='all'||item.access===activeFilter)&&(!query||[item.syntax,item.title,item.description,item.group].join(' ').toLowerCase().includes(query)));
     host.querySelector('#commands-count').textContent='Показано '+visible.length+' из '+entries.length;
     const groups=[...new Set(visible.map(item=>item.group))];
-    list.innerHTML=groups.map(group=>'<section class="commands-group"><div class="commands-group-title">'+esc(group)+'<span>'+visible.filter(item=>item.group===group).length+'</span></div><div class="commands-group-grid">'+visible.filter(item=>item.group===group).map(item=>'<article class="command-card command-'+item.access+'"><div class="command-card-top"><code>'+esc(item.syntax)+'</code><span class="command-access '+item.access+'">'+(item.access==='premium'?'✦ PREMIUM':item.access==='admin'?'♛ АДМИН':'FREE')+'</span></div><b>'+esc(item.title)+'</b><p>'+esc(item.description)+'</p><button type="button" class="command-copy" data-copy-command="'+esc(item.syntax)+'">Скопировать команду</button></article>').join('')+'</div></section>').join('')||'<div class="empty-state">По запросу ничего не найдено. Попробуй другое название.</div>';
+    list.innerHTML=groups.map(group=>'<section class="commands-group"><div class="commands-group-title">'+esc(group)+'<span>'+visible.filter(item=>item.group===group).length+'</span></div><div class="commands-group-grid">'+visible.filter(item=>item.group===group).map(item=>'<article class="command-card command-'+item.access+'"><div class="command-card-top"><code>'+esc(item.syntax)+'</code><span class="command-access '+item.access+'">'+(item.access==='premium'?'✦ PREMIUM':item.access==='pro'?'✦ PRO':item.access==='admin'?'♛ АДМИН':'FREE')+'</span></div><b>'+esc(item.title)+'</b><p>'+esc(item.description)+'</p><button type="button" class="command-copy" data-copy-command="'+esc(item.syntax)+'">Скопировать команду</button></article>').join('')+'</div></section>').join('')||'<div class="empty-state">По запросу ничего не найдено. Попробуй другое название.</div>';
     list.querySelectorAll('[data-copy-command]').forEach(button=>button.addEventListener('click',async()=>{
       const value=button.dataset.copyCommand;
       try{await navigator.clipboard.writeText(value);toast('Команда скопирована: '+value);}
