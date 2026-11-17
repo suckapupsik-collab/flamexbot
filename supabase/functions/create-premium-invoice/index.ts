@@ -34,7 +34,6 @@ Deno.serve(async (req: Request) => {
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return response({ error: "Unauthorized" }, 401);
   const body = await req.json().catch(() => ({}));
-  if (body?.plan === "pro") return response({ error: "Тариф PRO упразднён. Все его функции входят в Premium." }, 410);
   const plan = "premium";
   const priceStars = PREMIUM_PRICE_STARS;
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY || !BOT_TOKEN) {
@@ -67,14 +66,14 @@ Deno.serve(async (req: Request) => {
     if (subscriptionError) throw subscriptionError;
     const currentIsActive = Boolean(current && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now()));
     const currentIsLifetime = Boolean(current && !current.expires_at
-      && ["premium","pro"].includes(current.plan));
+      && current.plan === "premium");
     if (currentIsLifetime) {
       return response({ error: "У тебя уже бессрочный тариф — покупка не требуется." }, 409);
     }
 
     const payload = "flamexbot_" + plan + ":" + authData.user.id + ":" + crypto.randomUUID();
-    const title = plan === "pro" ? "FLAMEXBOT PRO" : "FLAMEXBOT Premium";
-    const description = "FLAMEXBOT Premium на 30 дней: все возможности прежнего PRO, 2 еженедельные прокрутки колеса, +10% к весам редких наград, экспорт переписки и Premium-инструменты.";
+    const title = "FLAMEXBOT Premium";
+    const description = "FLAMEXBOT Premium на 30 дней: расширенные инструменты Telegram Business, две бесплатные прокрутки колеса каждую неделю, экспорт переписки и дополнительные настройки.";
     const invoiceLink = await telegram("createInvoiceLink", {
       title,
       description,
