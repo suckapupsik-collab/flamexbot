@@ -1737,15 +1737,22 @@ Deno.serve(async (req: Request) => {
   const hasUpdateId = Number.isSafeInteger(updateId) && updateId >= 0;
   let claimed = false;
   if (hasUpdateId && admin) {
-    const { data: claimResult, error: claimError } = await admin.rpc("claim_flamexbot_telegram_update", {
+    const { data: claimResult, error: claimError } = await admin.rpc("claim_flamexbot_telegram_update_v2", {
       p_update_id: updateId,
     });
     if (claimError) {
       console.error("Telegram update claim failed:", claimError.message);
       return new Response("Webhook temporarily unavailable", { status: 500 });
     }
-    claimed = claimResult === true;
-    if (!claimed) return new Response("OK", { status: 200 });
+    if (claimResult === "completed") return new Response("OK", { status: 200 });
+    claimed = claimResult === "claimed";
+    if (!claimed) {
+      // Keep Telegram retrying an in-flight or uncertain update; only completed updates get 200.
+      return new Response("Update is still processing; retry later", {
+        status: 503,
+        headers: { "Retry-After": "2" },
+      });
+    }
   }
 
   try {
