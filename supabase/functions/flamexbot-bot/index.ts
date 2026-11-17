@@ -1753,7 +1753,7 @@ async function processTelegramUpdate(update: any) {
     }
 
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
-        /^[./](mute|unmute|spam|profile|afk|unafk|antimute|antimut|unantimute|unantimut|autoread|unautoread|autotyping|unautotyping|autovoice|unautovoice|mutestick|unmutestick|antimat|unantimat|timeprofile|bold|dumb|link|time|untime|streak)(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
+        /^[./](ping|help|inf|commands|mute|unmute|profile|afk|unafk|antimute|antimut|unantimute|unantimut|autoread|unautoread|autotyping|unautotyping|autovoice|unautovoice|mutestick|unmutestick|antimat|unantimat|timeprofile|bold|dumb|link|time|untime|streak|copyp|qr|id|chatid|date|calc|upper|lower|reverse|count|wordcount|choose|roll)(?:@\\w+)?(?:\\s|$)/i.test(update.message.text.trim())) {
       await sendRichTelegramMessage(
         update.message.chat.id,
         "Эта команда выполняется не в чате с ботом, а прямо в нужной личной переписке Telegram Business.\n\nОткрой диалог с человеком и отправь команду там. Для проверки бота используй /ping, для статуса подключения — /status.",
@@ -1864,6 +1864,20 @@ async function processTelegramUpdate(update: any) {
         if(referralError)console.warn("Referral link processing skipped:",referralError.message);
       }
       await enableBusinessUpdates();
+      await telegram("setMyCommands", {
+        scope: { type: "all_private_chats" },
+        language_code: "ru",
+        commands: [
+          { command: "start", description: "Запустить FLAMEXBOT" },
+          { command: "app", description: "Открыть Mini App" },
+          { command: "ping", description: "Проверить связь с ботом" },
+          { command: "status", description: "Статус Telegram Business" },
+          { command: "help", description: "Справка и команды" },
+          { command: "commands", description: "Список доступных команд" },
+          { command: "premium", description: "Купить или продлить Premium" },
+          { command: "pro", description: "Купить или продлить FLAMEX PRO" },
+        ],
+      });
       await telegram("setChatMenuButton", {
         chat_id: chatId,
         menu_button: { type: "web_app", text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } },
