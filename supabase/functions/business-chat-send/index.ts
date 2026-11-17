@@ -247,7 +247,7 @@ Deno.serve(async (req: Request) => {
         const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
           .select("plan,expires_at").eq("user_id", profileId).maybeSingle();
         if (subscriptionError) throw subscriptionError;
-        const premium = ["premium","pro","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+        const premium = ["premium","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
         if (!premium) return reply({ error: "Включение этой функции доступно только в Premium. Отключение остаётся бесплатным." }, 403);
       }
       if (action === "set_mute" && enabled && connection.rights?.can_delete_all_messages !== true) {
@@ -277,7 +277,7 @@ Deno.serve(async (req: Request) => {
       const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
         .select("plan,expires_at").eq("user_id", profileId).maybeSingle();
       if (subscriptionError) throw subscriptionError;
-      const premium = ["premium","pro","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+      const premium = ["premium","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
       if (!premium) return reply({ error: "Эта команда доступна только в Premium." }, 403);
     }
 
@@ -310,7 +310,7 @@ Deno.serve(async (req: Request) => {
       }
       const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions").select("plan,expires_at").eq("user_id", profileId).maybeSingle();
       if (subscriptionError) throw subscriptionError;
-      const premium = ["premium","pro","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+      const premium = ["premium","founder"].includes(subscription?.plan) && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
       if (!premium) return reply({ error: "Антимут доступен только в Premium." }, 403);
       const { data: settings, error: settingsError } = await admin.from("flamexbot_business_chat_settings").select("antimut_enabled").eq("profile_id", profileId).eq("business_chat_id", chat.id).maybeSingle();
       if (settingsError) throw settingsError;
