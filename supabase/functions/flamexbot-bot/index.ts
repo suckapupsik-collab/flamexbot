@@ -1240,6 +1240,41 @@ async function refundTelegramStarsPayment(telegramUserId: number, chargeId: stri
   }
 }
 
+async function refundAndRecordStarsPayment(args: {
+  userId: string;
+  telegramUserId: string;
+  invoicePayload: string;
+  paymentKind: "premium" | "pro" | "wheel" | "command_protection";
+  currency: string;
+  totalAmount: number;
+  chargeId: string;
+  providerChargeId?: string | null;
+  reason: string;
+}) {
+  if (!admin) throw new Error("Database is unavailable while recording Stars refund");
+  const { error: prepareError } = await admin.rpc("prepare_flamexbot_star_refund", {
+    p_telegram_payment_charge_id: args.chargeId,
+    p_user_id: args.userId,
+    p_telegram_user_id: args.telegramUserId,
+    p_invoice_payload: args.invoicePayload,
+    p_payment_kind: args.paymentKind,
+    p_currency: args.currency,
+    p_total_amount: args.totalAmount,
+    p_provider_payment_charge_id: args.providerChargeId ?? null,
+    p_reason: args.reason,
+  });
+  if (prepareError) throw prepareError;
+
+  // Persist refund intent before contacting Telegram. A retry can safely resume it.
+  await refundTelegramStarsPayment(Number(args.telegramUserId), args.chargeId);
+  const { data: completed, error: completeError } = await admin.rpc("complete_flamexbot_star_refund", {
+    p_telegram_payment_charge_id: args.chargeId,
+  });
+  if (completeError || completed !== true) {
+    throw completeError ?? new Error("Could not finalize Stars refund record");
+  }
+}
+
 async function sendPaymentNotificationOnce(
   userId: string,
   notificationType: string,
@@ -1305,6 +1340,27 @@ async function handleSuccessfulPayment(message: any) {
   if (!admin || !message?.from?.id || !message?.successful_payment) return;
   const payment = message.successful_payment;
   const invoicePayload = String(payment.invoice_payload ?? "");
+  const chargeId = String(payment.telegram_payment_charge_id ?? "");
+  if (chargeId) {
+    const { data: refundRows, error: refundLookupError } = await admin.rpc("get_flamexbot_star_refund_status", {
+      p_telegram_payment_charge_id: chargeId,
+    });
+    if (refundLookupError) throw refundLookupError;
+    const recordedRefund = Array.isArray(refundRows) ? refundRows[0] : null;
+    if (recordedRefund) {
+      if (recordedRefund.invoice_payload !== invoicePayload
+          || recordedRefund.telegram_user_id !== String(message.from.id)) {
+        throw new Error("Refunded Telegram charge does not match the repeated payment update");
+      }
+      await refundTelegramStarsPayment(Number(message.from.id), chargeId);
+      const { error: completeError } = await admin.rpc("complete_flamexbot_star_refund", {
+        p_telegram_payment_charge_id: chargeId,
+      });
+      if (completeError) throw completeError;
+      console.log("Resumed previously recorded Stars refund", chargeId);
+      return;
+    }
+  }
   const wheelUserId = parseWheelPayload(invoicePayload);
   if (wheelUserId) {
     if (payment.currency !== "XTR" || payment.total_amount !== 5 || !payment.telegram_payment_charge_id) throw new Error("Wheel payment mismatch");
@@ -1318,8 +1374,27 @@ async function handleSuccessfulPayment(message: any) {
     if (profileError) throw profileError;
     if (!profile || profile.telegram_id !== String(message.from.id)) throw new Error("Wheel payer does not match profile");
     if (profile.is_banned) {
-      await refundTelegramStarsPayment(Number(message.from.id),payment.telegram_payment_charge_id);
-      await sendRichTelegramMessage(message.chat.id,"Оплата возвращена: аккаунт заблокирован.","HTML");
+      const { error: refundOrderError } = await admin.from("flamexbot_wheel_orders")
+        .update({
+          status: "refunded",
+          telegram_payment_charge_id: payment.telegram_payment_charge_id,
+          provider_payment_charge_id: payment.provider_payment_charge_id ?? null,
+          paid_at: new Date().toISOString(),
+        }).eq("id", order.id).eq("status", "pending");
+      if (refundOrderError) throw refundOrderError;
+      await refundAndRecordStarsPayment({
+        userId: wheelUserId,
+        telegramUserId: String(message.from.id),
+        invoicePayload,
+        paymentKind: "wheel",
+        currency: payment.currency,
+        totalAmount: payment.total_amount,
+        chargeId: payment.telegram_payment_charge_id,
+        providerChargeId: payment.provider_payment_charge_id ?? null,
+        reason: "account_banned",
+      });
+      try { await sendRichTelegramMessage(message.chat.id,"Оплата возвращена: аккаунт заблокирован.","HTML"); }
+      catch (notifyError) { console.warn("Could not send wheel refund notice:", (notifyError as any)?.message ?? notifyError); }
       return;
     }
     const {data:prize,error:prizeError}=await admin.rpc("apply_flamexbot_wheel_payment",{
@@ -1360,21 +1435,30 @@ async function handleSuccessfulPayment(message: any) {
       throw new Error("Telegram payment sender does not match the command protection account");
     }
     if (order.status === "paid") return;
-    if (order.status === "refunded") {
-      await refundTelegramStarsPayment(Number(message.from.id), payment.telegram_payment_charge_id);
-      return;
-    }
-    if (addonProfile.is_banned || order.status !== "pending") {
-      await refundTelegramStarsPayment(Number(message.from.id), payment.telegram_payment_charge_id);
-      const { error: refundRecordError } = await admin.from("flamexbot_addon_star_payments")
-        .update({
-          status: "refunded",
-          telegram_payment_charge_id: payment.telegram_payment_charge_id,
-          provider_payment_charge_id: payment.provider_payment_charge_id ?? null,
-          paid_at: new Date().toISOString(),
-        }).eq("invoice_payload", invoicePayload).in("status", ["pending","failed"]);
-      if (refundRecordError) throw refundRecordError;
-      await sendRichTelegramMessage(message.chat.id, "⛔ Оплата дополнения возвращена: аккаунт заблокирован или счёт недействителен.", "HTML");
+    if (order.status === "refunded" || addonProfile.is_banned || order.status !== "pending") {
+      if (order.status !== "refunded") {
+        const { error: refundRecordError } = await admin.from("flamexbot_addon_star_payments")
+          .update({
+            status: "refunded",
+            telegram_payment_charge_id: payment.telegram_payment_charge_id,
+            provider_payment_charge_id: payment.provider_payment_charge_id ?? null,
+            paid_at: new Date().toISOString(),
+          }).eq("invoice_payload", invoicePayload).in("status", ["pending","failed"]);
+        if (refundRecordError) throw refundRecordError;
+      }
+      await refundAndRecordStarsPayment({
+        userId: addonUserId,
+        telegramUserId: String(message.from.id),
+        invoicePayload,
+        paymentKind: "command_protection",
+        currency: payment.currency,
+        totalAmount: payment.total_amount,
+        chargeId: payment.telegram_payment_charge_id,
+        providerChargeId: payment.provider_payment_charge_id ?? null,
+        reason: addonProfile.is_banned ? "account_banned" : "invoice_not_payable",
+      });
+      try { await sendRichTelegramMessage(message.chat.id, "⛔ Оплата дополнения возвращена: аккаунт заблокирован или счёт недействителен.", "HTML"); }
+      catch (notifyError) { console.warn("Could not send add-on refund notice:", (notifyError as any)?.message ?? notifyError); }
       return;
     }
     const { data: applied, error: applyError } = await admin.rpc("apply_flamexbot_command_protection_payment", {
@@ -1385,7 +1469,34 @@ async function handleSuccessfulPayment(message: any) {
       p_currency: payment.currency,
       p_total_amount: payment.total_amount,
     });
-    if (applyError) throw applyError;
+    if (applyError) {
+      const reason = String(applyError.message ?? applyError);
+      if (/Command protection account is unavailable|Command protection invoice is not payable/i.test(reason)) {
+        const { error: refundRecordError } = await admin.from("flamexbot_addon_star_payments")
+          .update({
+            status: "refunded",
+            telegram_payment_charge_id: payment.telegram_payment_charge_id,
+            provider_payment_charge_id: payment.provider_payment_charge_id ?? null,
+            paid_at: new Date().toISOString(),
+          }).eq("invoice_payload", invoicePayload).eq("status", "pending");
+        if (refundRecordError) throw refundRecordError;
+        await refundAndRecordStarsPayment({
+          userId: addonUserId,
+          telegramUserId: String(message.from.id),
+          invoicePayload,
+          paymentKind: "command_protection",
+          currency: payment.currency,
+          totalAmount: payment.total_amount,
+          chargeId: payment.telegram_payment_charge_id,
+          providerChargeId: payment.provider_payment_charge_id ?? null,
+          reason: "account_or_invoice_unavailable",
+        });
+        try { await sendRichTelegramMessage(message.chat.id, "⛔ Счёт больше недействителен. Оплата возвращена.", "HTML"); }
+        catch (notifyError) { console.warn("Could not send add-on refund notice:", (notifyError as any)?.message ?? notifyError); }
+        return;
+      }
+      throw applyError;
+    }
     if (applied === true) {
       await sendRichTelegramMessage(message.chat.id,
         `${tgEmoji("success")} <b>Защита от команд активирована!</b>\nНа ваш аккаунт нельзя применять команды FLAMEXBOT в течение 5 дней. Основатель проекта сохраняет доступ к командам на всех аккаунтах.`,
@@ -1407,8 +1518,19 @@ async function handleSuccessfulPayment(message: any) {
   if (profileError) throw profileError;
   if (!profile || profile.telegram_id !== String(message.from.id)) throw new Error("Telegram payment sender does not match the FLAMEXBOT account");
   if (profile.is_banned) {
-    await refundTelegramStarsPayment(Number(message.from.id), payment.telegram_payment_charge_id);
-    await sendRichTelegramMessage(message.chat.id, "⛔ Аккаунт заблокирован. Оплата тарифа автоматически возвращена.", "HTML");
+    await refundAndRecordStarsPayment({
+      userId,
+      telegramUserId: String(message.from.id),
+      invoicePayload,
+      paymentKind: plan,
+      currency: payment.currency,
+      totalAmount: payment.total_amount,
+      chargeId: payment.telegram_payment_charge_id,
+      providerChargeId: payment.provider_payment_charge_id ?? null,
+      reason: "account_banned",
+    });
+    try { await sendRichTelegramMessage(message.chat.id, "⛔ Аккаунт заблокирован. Оплата тарифа автоматически возвращена.", "HTML"); }
+    catch (notifyError) { console.warn("Could not send subscription refund notice:", (notifyError as any)?.message ?? notifyError); }
     return;
   }
   const { data: applied, error: applyError } = await admin.rpc("apply_flamexbot_tier_payment", {
@@ -1422,7 +1544,26 @@ async function handleSuccessfulPayment(message: any) {
     p_period_days: PREMIUM_PERIOD_DAYS,
     p_plan: plan,
   });
-  if (applyError) throw applyError;
+  if (applyError) {
+    const reason = String(applyError.message ?? applyError);
+    if (/Active PRO cannot be downgraded by a Premium payment|Lifetime subscription is already active/i.test(reason)) {
+      await refundAndRecordStarsPayment({
+        userId,
+        telegramUserId: String(message.from.id),
+        invoicePayload,
+        paymentKind: plan,
+        currency: payment.currency,
+        totalAmount: payment.total_amount,
+        chargeId: payment.telegram_payment_charge_id,
+        providerChargeId: payment.provider_payment_charge_id ?? null,
+        reason: "subscription_state_changed_after_precheckout",
+      });
+      try { await sendRichTelegramMessage(message.chat.id, "⛔ Состояние тарифа изменилось до завершения оплаты. Деньги автоматически возвращены.", "HTML"); }
+      catch (notifyError) { console.warn("Could not send subscription refund notice:", (notifyError as any)?.message ?? notifyError); }
+      return;
+    }
+    throw applyError;
+  }
   if (applied === true) {
     await sendPaymentNotificationOnce(
       userId,
