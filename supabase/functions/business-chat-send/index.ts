@@ -272,7 +272,7 @@ Deno.serve(async (req: Request) => {
       const { data: settings, error: settingsError } = await admin.from("flamexbot_business_chat_settings").select("antimut_enabled").eq("profile_id", profileId).eq("business_chat_id", chat.id).maybeSingle();
       if (settingsError) throw settingsError;
       if (!settings?.antimut_enabled) return reply({ error: "Сначала включи антимут в настройках этого чата." }, 409);
-      /* Antimut sends from the bot account itself; Telegram still enforces blocks and bot-start requirements. */
+      /* Antimut is still a Telegram Business reply: send through the connected account, never the bot private chat. */
     }
 
     const { data: sendLimit, error: sendLimitError } = await admin.rpc(
@@ -289,7 +289,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const telegramPayload = new FormData();
-    if (!antimutMode) telegramPayload.append("business_connection_id", connection.connection_id);
+    telegramPayload.append("business_connection_id", connection.connection_id);
     telegramPayload.append("chat_id", String(chat.telegram_chat_id));
     if (replyTo) telegramPayload.append("reply_parameters", JSON.stringify({ message_id: replyTo }));
     let method = "sendMessage";
