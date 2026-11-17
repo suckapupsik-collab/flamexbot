@@ -1679,6 +1679,38 @@ async function deliverPendingTelegramNotifications(telegramUserId: number | stri
   }
 }
 
+async function saveSupportInboxMessage(message: any) {
+  if (!admin || message?.chat?.type !== "private" || !message?.chat?.id || !message?.message_id || !message?.from?.id || message.from.is_bot) return;
+  const media = messageMedia(message);
+  const content = messageContent(message) || (media.type === "text" ? "" : `[${media.type}]`);
+  const telegramChatId = String(message.chat.id);
+  const now = new Date((message.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
+  const { data: chat, error: chatError } = await admin.from("flamexbot_support_chats").upsert({
+    telegram_chat_id: telegramChatId,
+    telegram_user_id: String(message.from.id),
+    username: message.from.username ?? null,
+    first_name: message.from.first_name ?? null,
+    last_name: message.from.last_name ?? null,
+    last_message_preview: content.slice(0, 240),
+    last_message_at: now,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "telegram_chat_id" }).select("id,unread_count").single();
+  if (chatError) throw chatError;
+  const { error: messageError } = await admin.from("flamexbot_support_messages").upsert({
+    support_chat_id: chat.id,
+    telegram_message_id: message.message_id,
+    direction: "incoming",
+    content,
+    message_type: media.type,
+    created_at: now,
+  }, { onConflict: "support_chat_id,telegram_message_id", ignoreDuplicates: true });
+  if (messageError) throw messageError;
+  const { error: unreadError } = await admin.from("flamexbot_support_chats")
+    .update({ unread_count: Number(chat.unread_count || 0) + 1, updated_at: new Date().toISOString() })
+    .eq("id", chat.id);
+  if (unreadError) throw unreadError;
+}
+
 async function processTelegramUpdate(update: any) {
   const startedAt=Date.now();
   try {
@@ -1712,6 +1744,9 @@ async function processTelegramUpdate(update: any) {
     }
     if (update.message?.chat?.type === "private" && update.message.from?.id) {
       await deliverPendingTelegramNotifications(update.message.from.id, update.message.chat.id);
+    }
+    if (update.message?.chat?.type === "private" && update.message.from?.id && !update.message.from.is_bot && !update.message.successful_payment) {
+      await saveSupportInboxMessage(update.message);
     }
     if (update.callback_query?.data === "fx:connect_guide") {
       await telegram("answerCallbackQuery",{callback_query_id:update.callback_query.id});
