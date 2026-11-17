@@ -1797,7 +1797,6 @@ async function processTelegramUpdate(update: any) {
         update.business_message.from?.id != null;
       const isBusinessCommand = hasCommandPrefix &&
         String(update.business_message.from.id) === String(ownerConnection?.telegram_user_id ?? "");
-      const businessCommandText = String(update.business_message.text ?? "").trim().toLowerCase();
       if (!isBusinessCommand) {
         await saveBusinessMessage(update.business_message, ownerConnection);
       }
