@@ -1414,7 +1414,7 @@ async function renderAdminUser(host) {
 function animateFortuneWheel(prizeType) {
  const wheel=document.querySelector('#fortune-wheel');
  if(!wheel)return Promise.resolve();
- const centers={free_spin:30,addon:90,premium_7d:150,premium_30d:210,premium_90d:270,premium_day:150};
+ const centers={free_spin:36,addon:108,premium_7d:180,premium_30d:252,premium_90d:324,premium_day:180};
  const target=centers[prizeType]??252;
  if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
    wheel.style.transform='rotate('+((360-target)%360)+'deg)';
