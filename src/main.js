@@ -749,7 +749,7 @@ async function openBusinessChat(id) {
     if(query.length<2){toast('Введи минимум 2 символа для поиска по всей истории.');input?.focus();return;}
     searchAllButton.disabled=true;searchAllButton.textContent='Ищем…';
     try{
-      const escapedQuery=query.replace(/[\\%_]/g,'\\\\  const exportButton=box.querySelector('#export-business-chat');');
+      const escapedQuery=query.replace(/[\\%_]/g, char=>'\\'+char);
       const {data:matches,error:searchError}=await supabase.from('flamexbot_business_messages')
         .select('id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at,raw')
         .eq('business_chat_id',id).ilike('content','%'+escapedQuery+'%')
