@@ -420,21 +420,16 @@ function scheduleBusinessChatListRefresh(host,delay=240) {
 
 async function refreshBusinessChatList(host) {
   if (!host.querySelector('.business-inbox')) return;
-  const { data, error } = await supabase.from('flamexbot_business_chats')
-    .select('id,telegram_chat_id,telegram_user_id,username,first_name,last_name,photo_url,last_message_at,business_connection_id')
-    .eq('profile_id', state.session.user.id).order('last_message_at', { ascending: false }).limit(100);
-  if (error) { toast('Не удалось обновить список переписок'); return; }
-  const chats=data||[];const ids=chats.map(x=>x.id);
-  const [prefs,unreadResult]=ids.length?await Promise.all([
-    supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,is_muted,antimut_enabled,last_read_at').in('business_chat_id',ids),
-    supabase.rpc('flamexbot_business_unread_counts')
-  ]):[{data:[]},{data:[]}];
-  const prefMap=Object.fromEntries((prefs.data||[]).map(x=>[x.business_chat_id,x]));
-  const unread=Object.fromEntries((unreadResult.data||[]).map(x=>[x.business_chat_id,Number(x.unread_count)||0]));
-  state.businessChats=chats.map(x=>({...x,...(prefMap[x.id]||{}),unread_count:unread[x.id]||0}));
-  const list = host.querySelector('.business-inbox .chat-list');
-  if (!list) return;
-  list.innerHTML = renderBusinessChatChoices(state.businessChats);
+  const {data,error}=await supabase.functions.invoke('business-chat-send',{body:{action:'list_chats'}});
+  if(error||data?.error){
+    const list=host.querySelector('.business-inbox .chat-list');
+    if(list)list.innerHTML='<div class="empty-state">Не удалось получить чаты: '+esc(data?.error||error?.message||'ошибка')+'</div>';
+    return;
+  }
+  state.businessChats=data?.chats||[];
+  const list=host.querySelector('.business-inbox .chat-list');
+  if(!list)return;
+  list.innerHTML=renderBusinessChatChoices(state.businessChats);
   bindBusinessChatChoices(list);bindBusinessChatPreferences(list);
 }
 
@@ -509,24 +504,13 @@ async function renderBusinessMessages(host) {
     state.businessListChannel = null;
   }
   const uid = state.session.user.id;
-  const { data: chats, error } = await supabase.from('flamexbot_business_chats')
-    .select('id,telegram_chat_id,telegram_user_id,username,first_name,last_name,photo_url,last_message_at,business_connection_id')
-    .eq('profile_id', uid).order('last_message_at', { ascending: false }).limit(100);
-  if (error) {
-    host.innerHTML = `<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS</div><h1>Переписки</h1></div><div class="empty-state">${esc(error.message)}</div>`;
+  const {data:chatData,error}=await supabase.functions.invoke('business-chat-send',{body:{action:'list_chats'}});
+  if(error||chatData?.error){
+    host.innerHTML = `<div class="page-heading"><div class="eyebrow">TELEGRAM BUSINESS</div><h1>Переписки</h1></div><div class="empty-state">${esc(chatData?.error||error?.message||'Не удалось загрузить чаты')}</div>`;
     return;
   }
-  state.businessChats = chats || [];
-  const chatIds=state.businessChats.map(x=>x.id);
-  const [prefsResult,unreadResult,connectionResult]=await Promise.all([
-    chatIds.length?supabase.from('flamexbot_business_chat_settings').select('business_chat_id,is_favorite,is_pinned,is_muted,antimut_enabled,last_read_at').in('business_chat_id',chatIds):Promise.resolve({data:[]}),
-    chatIds.length?supabase.rpc('flamexbot_business_unread_counts'):Promise.resolve({data:[]}),
-    supabase.from('flamexbot_business_connections').select('is_enabled,rights').eq('profile_id',uid).maybeSingle()
-  ]);
-  const prefMap=Object.fromEntries((prefsResult.data||[]).map(x=>[x.business_chat_id,x]));
-  const unreadMap=Object.fromEntries((unreadResult.data||[]).map(x=>[x.business_chat_id,Number(x.unread_count)||0]));
-  state.businessChats=state.businessChats.map(x=>({...x,...(prefMap[x.id]||{}),unread_count:unreadMap[x.id]||0}));
-  const connection=connectionResult.data;
+  state.businessChats=chatData?.chats||[];
+  const connection=chatData?.connection;
   const connected = Boolean(connection?.is_enabled);
   state.businessRights = connection?.rights || {};
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">ПЕРЕПИСКИ TELEGRAM BUSINESS</div><h1>Переписки</h1><p class="muted">Все диалоги синхронизируются через Telegram Business. Сообщения отправляются от имени подключённого аккаунта — только в пределах выданных Telegram разрешений.</p></div>
@@ -652,17 +636,15 @@ async function refreshBusinessMessagesNow(chatId) {
   const initialLoad=!state.businessMessagesInitialLoaded;
   const oldScrollTop=list.scrollTop;
   const wasNearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<140;
-  const {data,error}=await supabase.from("flamexbot_business_messages")
-    .select("id,telegram_message_id,direction,content,message_type,media_file_id,media_url,reply_to_message_id,created_at,deleted_at,raw")
-    .eq("business_chat_id",chatId)
-    .order("created_at",{ascending:false}).order("id",{ascending:false}).limit(100);
+  const {data:messageData,error}=await supabase.functions.invoke('business-chat-send',{body:{action:'list_messages',chat_id:chatId}});
   if(state.activeBusinessChat!==chatId)return;
-  if(error){list.innerHTML='<div class="empty-state">'+esc(error.message)+'</div>';return;}
-  const newest=(data||[]).reverse();
+  if(error||messageData?.error){list.innerHTML='<div class="empty-state">'+esc(messageData?.error||error?.message||'Не удалось загрузить сообщения')+'</div>';return;}
+  const newest=messageData?.messages||[];
+  const data=newest;
   const byId=new Map();
   [...(state.businessMessages||[]),...newest].forEach(message=>byId.set(message.id,message));
   state.businessMessages=[...byId.values()].sort(compareBusinessMessages);
-  if(initialLoad)state.businessMessagesHasMore=(data||[]).length===100;
+  if(initialLoad)state.businessMessagesHasMore=Boolean(messageData?.has_more);
   state.businessMessagesOldestAt=state.businessMessages[0]?.created_at||null;
   state.businessMessagesInitialLoaded=true;
 
