@@ -1430,10 +1430,10 @@ async function renderTariffs(host, initialTab='premium') {
  const weeklySpins=premium?2:0;
   const rareLuck=premium?10:0;
   const rareWeightBoost=premium?1.1:1;
-  const wheelOddsTotal=100;
+  const wheelOddsTotal=92+8*rareWeightBoost;
  const wheelOddsHtml=[
   ['Прокрутка',55],['Защита 5 дней',25],['Premium 7 дней',12],
-  ['Premium 30 дней',5.5*rareWeightBoost],['Premium 90 дней',2.5*rareWeightBoost]
+  ['Premium 30 дней',5*rareWeightBoost],['Premium 90 дней',3*rareWeightBoost]
  ].map(([label,weight])=>'<span>'+((weight/wheelOddsTotal)*100).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+label+'</span>').join('');
  const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
  const [{data:subscriptionPayments,error:subscriptionPaymentError},{data:addonPayments,error:addonPaymentError}]=await Promise.all([
@@ -1850,7 +1850,7 @@ async function renderFriends(host) {
     panel.innerHTML=`<div class="friend-profile-top"><div class="friend-profile-identity">${avatar(friend.avatar_url||friend.telegram_photo_url,friend.display_name||friend.username,'avatar-xl')}<div><div class="eyebrow">ПРОФИЛЬ ДРУГА</div><h3>${esc(friend.display_name||friend.username||'Пользователь')} ${verifiedMarkMarkup((friendBadges.includes('verified')||isFounderProfile(friend))&&friend.show_badges!==false)}</h3><p>${friend.telegram_username?'@'+esc(friend.telegram_username):'Telegram не указан'} ${badgeMarkup(publicBadges,false,false)}</p></div></div><button class="outline small" type="button" id="close-friend-profile">Закрыть ×</button></div>
       ${showActivity?`<div class="friend-profile-stats"><div><small>ОГОНЁК СЕЙЧАС</small><b>${days} дн.</b></div><div><small>ЛИЧНЫЙ РЕКОРД СЕРИИ</small><b>${Number(streak?.best_days)||0} дн.</b></div><div><small>ТВОИ СООБЩЕНИЯ В СЕРИИ</small><b>${myMessages}</b></div></div>`:''}
       <div class="friend-profile-meta"><span>В FLAMEXBOT с <b>${friend.created_at?formatMskDate(friend.created_at):'дата неизвестна'}</b></span>${handle?`<a class="friend-link" href="https://t.me/${handle}" target="_blank" rel="noopener noreferrer">Открыть Telegram ↗</a>`:''}<button class="outline small ${isFavorite?'is-favorite':''}" type="button" id="friend-profile-favorite">${isFavorite?'★ В избранном':'☆ Закрепить друга'}</button></div>
-      <div class="friend-profile-history"><div class="eyebrow">ИСТОРИЯ ОГОНЬКА</div><p>${activityError?'Не удалось загрузить историю активности.':activity?.length?'Твои дни активности в этой совместной серии:':'История активности пока не появилась.'}</p><div class="friend-activity-days">${(activity||[]).map(row=>`<div><b>${formatMskDate(row.activity_date,{day:'numeric',month:'short'})}</b><small>${Number(row.message_count)||0} сообщ.</small></div>`).join('')}</div><small class="friend-profile-privacy">Показывается только твоя активность в общей серии. Личные достижения и статистика друга не раскрываются.</small></div>`;
+      ${showActivity?`<div class="friend-profile-history"><div class="eyebrow">ИСТОРИЯ ОГОНЬКА</div><p>${activityError?'Не удалось загрузить историю активности.':activity?.length?'Твои дни активности в этой совместной серии:':'История активности пока не появилась.'}</p><div class="friend-activity-days">${(activity||[]).map(row=>`<div><b>${formatMskDate(row.activity_date,{day:'numeric',month:'short'})}</b><small>${Number(row.message_count)||0} сообщ.</small></div>`).join('')}</div><small class="friend-profile-privacy">Показывается только твоя активность в общей серии. Личные достижения и статистика друга не раскрываются.</small></div>`:''}`;
     panel.scrollIntoView({behavior:'smooth',block:'nearest'});
     panel.querySelector('#close-friend-profile')?.addEventListener('click',()=>{panel.hidden=true;panel.innerHTML='';});
     panel.querySelector('#friend-profile-favorite')?.addEventListener('click',async()=>{
