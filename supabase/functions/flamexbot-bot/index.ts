@@ -1410,15 +1410,15 @@ async function deliverPendingTelegramNotifications(telegramUserId: number | stri
   }
   if (!profile?.id) return;
 
-  const { data: pending, error: pendingError } = await admin.from("notifications")
-    .select("id,title,body")
-    .eq("user_id", profile.id)
-    .is("telegram_delivered_at", null)
-    .in("type", TELEGRAM_DELIVERABLE_NOTIFICATION_TYPES)
-    .order("created_at", { ascending: true })
-    .limit(8);
+  // Atomically reserve pending notifications so concurrent Telegram updates cannot send the same rows.
+  const claimToken = crypto.randomUUID();
+  const { data: pending, error: pendingError } = await admin.rpc("claim_flamexbot_telegram_notifications", {
+    p_user_id: profile.id,
+    p_claim_token: claimToken,
+    p_limit: 8,
+  });
   if (pendingError) {
-    console.warn("Could not load pending bot notifications:", pendingError.message);
+    console.warn("Could not claim pending bot notifications:", pendingError.message);
     return;
   }
 
@@ -1427,13 +1427,19 @@ async function deliverPendingTelegramNotifications(telegramUserId: number | stri
       const title = String(item.title ?? "Уведомление FLAMEXBOT");
       const body = String(item.body ?? "");
       await sendRichTelegramMessage(privateChatId, "📬 " + title + (body ? "\n\n" + body : ""));
-      const { error: markError } = await admin.from("notifications")
-        .update({ telegram_delivered_at: new Date().toISOString() })
-        .eq("id", item.id)
-        .is("telegram_delivered_at", null);
-      if (markError) console.warn("Could not mark bot notification delivered:", markError.message);
     } catch (error) {
-      console.warn("Bot notification delivery stopped:", (error as any)?.message ?? error);
+      // Keep the failed row leased for two minutes: a network timeout may happen after Telegram accepted the message.
+      console.warn("Bot notification delivery stopped; claim will expire:", (error as any)?.message ?? error);
+      break;
+    }
+
+    const { data: marked, error: markError } = await admin.rpc("mark_flamexbot_telegram_notification_delivered", {
+      p_notification_id: item.notification_id,
+      p_claim_token: claimToken,
+    });
+    if (markError || marked !== true) {
+      // Do not release the claim after a successful send: that could cause an immediate duplicate.
+      console.warn("Could not confirm bot notification delivery:", markError?.message ?? "claim token no longer owns notification");
       break;
     }
   }
