@@ -29,6 +29,8 @@ FLAMEXBOT — Telegram Mini App для общения, общих огонько
 - `20261116016000_enforced_bans_and_admin_audit.sql` — enforces bans in Supabase Auth and user-scoped RLS policies, and adds an owner-only moderation audit log.
 - `20261116035000_flamexbot_command_protection_addon_and_webhook_reliability.sql` — adds the five-day command-protection entitlement, private Stars payment ledger, and durable Telegram update receipts with retry-safe processing.
 
+- `20261117003000_flamexbot_trigger_acl_and_fk_indexes.sql` — restricts direct execution of trigger-only SECURITY DEFINER functions and indexes Business-chat foreign keys.
+
 These migrations have been applied to the connected Supabase project. The owner account has the protected Founder, Verified, Developer and Administrator badges.
 
 ## Telegram Business
@@ -51,7 +53,7 @@ FLAMEXBOT работает только с диалогами и разреше�
 | `/ping` | Проверить, что бот отвечает в личном чате или Business-диалоге |
 | `/status` | Проверить состояние Telegram Business и выданные разрешения |
 | `/commands` | Получить справку по командам в личном чате с ботом |
-| `/premium` | Создать счёт на Premium в Telegram Stars |
+| `/premium` | Создать счёт на Premium в Telegram Stars на 30 дней; продление вручную |
 | `.ping` / `/ping` | Проверить обработчик Business-команд в текущем диалоге |
 | `.help` | Показать список Business-команд в текущем диалоге |
 | `.mute` | Включить удаление новых входящих сообщений в текущем диалоге |
