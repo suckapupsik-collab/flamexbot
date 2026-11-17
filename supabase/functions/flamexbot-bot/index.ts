@@ -1639,7 +1639,7 @@ async function saveSupportRequestMessage(message: any,content: string) {
   const {data:chat,error:chatError}=await admin.from("flamexbot_support_chats").upsert({
     telegram_chat_id:String(message.chat.id),telegram_user_id:String(message.from.id),username:message.from.username??null,
     first_name:message.from.first_name??null,last_name:message.from.last_name??null,last_message_preview:content.slice(0,240),
-    last_message_at:now,updated_at:new Date().toISOString()
+    last_message_at:now,status:"open",closed_at:null,updated_at:new Date().toISOString()
   },{onConflict:"telegram_chat_id"}).select("id,unread_count").single();
   if(chatError)throw chatError;
   const {data:inserted,error:messageError}=await admin.from("flamexbot_support_messages").upsert({
@@ -1689,12 +1689,24 @@ async function processTelegramUpdate(update: any) {
       await deliverPendingTelegramNotifications(update.message.from.id, update.message.chat.id);
     }
     if (update.message?.chat?.type === "private" && update.message.from?.id && !update.message.from.is_bot && !update.message.successful_payment) {
-      const supportMatch=typeof update.message.text==="string"?update.message.text.match(/^\/support(?:@\w+)?(?:\s+([\s\S]+))?$/i):null;
-      if(supportMatch){
-        const requestText=String(supportMatch[1]||"").trim();
-        if(!requestText) await sendRichTelegramMessage(update.message.chat.id,"🛟 <b>Техподдержка FLAMEXBOT</b>\n\nОтправь обращение командой:\n<code>/support Текст обращения</code>\n\nЛичные сообщения боту и обращения в поддержку хранятся отдельно.","HTML");
-        else { await saveSupportRequestMessage(update.message,requestText); await sendRichTelegramMessage(update.message.chat.id,"✅ Обращение отправлено в техподдержку. Ответ придёт сюда в личный чат с ботом.","HTML"); }
-      } else await saveBotInboxMessage(update.message);
+      const directText=String(update.message.text??"").trim();
+      const supportMatch=directText.match(/^\/support(?:@\w+)?(?:\s+([\s\S]+))?$/i);
+      const cancelSupport=/^\/cancel_support(?:@\w+)?(?:\s|$)/i.test(directText);
+      if(cancelSupport){
+        const {error:closeError}=await admin.from("flamexbot_support_chats").update({status:"closed",closed_at:new Date().toISOString()}).eq("telegram_chat_id",String(update.message.chat.id)).eq("status","open");
+        if(closeError)throw closeError;
+        await sendRichTelegramMessage(update.message.chat.id,"✅ Обращение закрыто. Чтобы создать новое, отправь /support.","HTML");
+      }else if(supportMatch){
+        const requestText=String(supportMatch[1]||"").trim()||"Обращение открыто. Ожидается описание проблемы.";
+        await saveSupportRequestMessage(update.message,requestText);
+        await sendRichTelegramMessage(update.message.chat.id,requestText.startsWith("Обращение открыто")?"🛟 <b>Чат техподдержки открыт.</b>\n\nОпиши проблему следующим сообщением. Для закрытия отправь /cancel_support.":"✅ Обращение отправлено в техподдержку. Можешь продолжать переписку здесь. Для закрытия отправь /cancel_support.","HTML");
+      }else{
+        const {data:activeTicket,error:ticketError}=await admin.from("flamexbot_support_chats").select("id").eq("telegram_chat_id",String(update.message.chat.id)).eq("status","open").maybeSingle();
+        if(ticketError)throw ticketError;
+        const isSlashCommand=/^\/[a-z_]+(?:@\w+)?(?:\s|$)/i.test(directText);
+        if(activeTicket&&!isSlashCommand)await saveSupportRequestMessage(update.message,messageContent(update.message));
+        else await saveBotInboxMessage(update.message);
+      }
     }
     if (update.callback_query?.data === "fx:connect_guide") {
       await telegram("answerCallbackQuery",{callback_query_id:update.callback_query.id});
@@ -1705,7 +1717,7 @@ async function processTelegramUpdate(update: any) {
     if (update.message?.successful_payment) await handleSuccessfulPayment(update.message);
     if (update.message?.chat?.type === "private" && update.message.from?.id
         && /^\/premium(?:@\w+)?(?:\s|$)/i.test((update.message.text ?? "").trim())) {
-      await sendTierInvoice(update.message.chat.id, update.message.from.id, "premium");
+      await sendTierInvoice(update.message.chat.id, update.message.from.id);
     }
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
         /^\/ping(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
@@ -1859,6 +1871,7 @@ async function processTelegramUpdate(update: any) {
           { command: "commands", description: "Список доступных команд" },
           { command: "premium", description: "Купить или продлить Premium" },
           { command: "support", description: "Написать в техподдержку" },
+          { command: "cancel_support", description: "Закрыть обращение в поддержку" },
         ],
       });
       await telegram("setChatMenuButton", {
