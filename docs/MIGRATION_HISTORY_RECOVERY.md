@@ -43,3 +43,17 @@ A later check after the notification/webhook and Stars-refund work found **77 ap
 - `20261117133649_flamexbot_refunded_star_payment_ledger.sql`
 
 The migration history gap is still open. The new files document only the changes applied during this follow-up; they do not reconstruct the missing historical SQL. Continue to avoid production resets, replaying old migrations, and `db push` until all version/name mismatches have been reconciled.
+
+
+## Follow-up check — 2026-11-17 (Stars grant serialization)
+
+The production migration ledger now contains **78 applied migrations** and GitHub `main` contains **31 SQL migration files**. The raw count difference remains 47; it is not proof that exactly 47 individual source files are missing because historical version/name mismatches remain.
+
+New migration tracked and applied:
+- `20261117134151_serialize_stars_grants_with_bans_and_refunds.sql`
+
+This migration updates the Premium/PRO, paid-wheel, and command-protection payment RPCs to lock and validate the user's profile row (including Telegram ID and `is_banned=false`) inside the transaction. It also serializes grant processing with refund preparation using a transaction-scoped advisory lock keyed by Telegram's payment charge ID, and rejects a charge already present in the refund ledger.
+
+The paid-wheel RPC now validates and locks the profile before drawing/awarding the prize. The free-wheel redemption path already decrements spins through an update constrained by `is_banned=false`, which locks the profile row before calling the prize routine.
+
+The migration preserves the existing service-role-only EXECUTE grants on payment/refund RPCs. No production payment, refund, or prize redemption was executed during this audit.
