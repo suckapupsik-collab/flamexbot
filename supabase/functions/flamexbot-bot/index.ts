@@ -1270,7 +1270,9 @@ async function sendPaymentNotificationOnce(
     p_user_id: userId,
     p_claim_token: claimToken,
   });
-  if (claimError || claimed !== true) {
+  const ownsClaim = Array.isArray(claimed)
+    && claimed.some((item: any) => item?.notification_id === notice.id);
+  if (claimError || !ownsClaim) {
     if (claimError) console.warn("Could not claim payment notification:", claimError.message);
     return;
   }
