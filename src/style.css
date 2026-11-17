@@ -1378,3 +1378,7 @@ body{
 /* Avoid browser autofill chips in Business message composer. */
 .send-form input[name="content"]:-webkit-autofill{-webkit-box-shadow:0 0 0 1000px var(--input-bg,transparent) inset;-webkit-text-fill-color:var(--text);}
 .send-form input[name="content"]{autocomplete:off;}
+
+.streak-person-avatar{width:52px;height:52px;flex:none;display:grid;place-items:center}
+.streak-person-avatar .avatar{width:52px;height:52px;margin:0;border:1px solid #4a3930}
+.command-access.pro{color:#e6b4ff;background:#33223d;border-color:#624078}
