@@ -1340,11 +1340,12 @@ async function renderTariffs(host, initialTab='premium') {
   </div>
   <section class="business-card payment-history-card" aria-labelledby="payment-history-title">
    <div class="payment-history-heading"><div><div class="eyebrow">BILLING</div><h2 id="payment-history-title">История оплат</h2></div><span class="payment-history-count">${paymentHistory?.length||0}/10</span></div>
-   ${paymentHistoryError
-     ? '<p class="muted">Не удалось загрузить историю оплат. Попробуй обновить раздел позже.</p>'
-     : paymentHistory?.length
-       ? '<div class="payment-history-list">'+paymentHistory.map(payment=>'<div class="payment-history-row"><div><b>'+(payment.kind==='addon'?(payment.addon_code==='command_protection'?'Защита от команд':'Дополнение FLAMEXBOT'):(payment.plan==='pro'?'FLAMEX PRO':'FLAMEX Premium'))+'</b><small>'+esc(formatMskDateTime(payment.history_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}))+' · '+esc(String(payment.period_days))+' дней</small></div><strong>'+esc(String(payment.total_amount))+' '+(payment.currency==='XTR'?'⭐':esc(String(payment.currency)))+'</strong></div>').join('')+'</div>'
+   ${paymentHistory?.length
+     ? '<div class="payment-history-list">'+paymentHistory.map(payment=>'<div class="payment-history-row"><div><b>'+(payment.kind==='addon'?(payment.addon_code==='command_protection'?'Защита от команд':'Дополнение FLAMEXBOT'):(payment.plan==='pro'?'FLAMEX PRO':'FLAMEX Premium'))+'</b><small>'+esc(formatMskDateTime(payment.history_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}))+' · '+esc(String(payment.period_days))+' дней</small></div><strong>'+esc(String(payment.total_amount))+' '+(payment.currency==='XTR'?'⭐':esc(String(payment.currency)))+'</strong></div>').join('')+'</div>'
+     : paymentHistoryError
+       ? '<p class="muted">Не удалось загрузить историю оплат. Попробуй обновить раздел позже.</p>'
        : '<p class="muted payment-history-empty">Пока нет завершённых оплат подписки. После первой покупки здесь появится история последних 10 платежей.</p>'}
+   ${paymentHistoryError&&paymentHistory?.length?'<p class="premium-payment-note">Показана доступная часть истории; некоторые платежи временно не загрузились.</p>':''}
    <small class="premium-payment-note">Показываются только подтверждённые оплаты подписки. Платежи за отдельные дополнения учитываются отдельно.</small>
   </section>
   <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
