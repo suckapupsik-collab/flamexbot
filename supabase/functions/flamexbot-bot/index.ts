@@ -1016,11 +1016,6 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       await reply(`${tgEmoji("star")} Выпало: <b>${result}</b> (1–${max})`, "HTML");
       return true;
     }
-  await reply("Неизвестная команда. Напиши .help");
-  return true;
-}
-
-
 async function handleBusinessActionCallback(query: any) {
   const match = /^fb:(mute|antimut)_(on|off):([0-9a-f-]{36})$/i.exec(String(query?.data ?? ""));
   if (!match || !admin || !query?.from?.id) return;
@@ -1797,6 +1792,8 @@ async function processTelegramUpdate(update: any) {
         update.business_message.from?.id != null;
       const isBusinessCommand = hasCommandPrefix &&
         String(update.business_message.from.id) === String(ownerConnection?.telegram_user_id ?? "");
+      // Only commands authored by the connected account owner are executable.
+      // Messages from the other participant (including dot-prefixed text) stay in the archive.
       if (!isBusinessCommand) {
         await saveBusinessMessage(update.business_message, ownerConnection);
       }
