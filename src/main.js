@@ -163,7 +163,7 @@ function updateHeaderProfile() {
   const name=document.querySelector('#menu-display-name');
   if(name)name.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false);
   const triggerName=document.querySelector('.profile-trigger-name');
-  if(triggerName)triggerName.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'));
+  if(triggerName)triggerName.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false);
   const badges=document.querySelector('#menu-profile-badges');
   if(badges)badges.innerHTML=badgeMarkup(state.profileBadges);
   const triggerBadges=document.querySelector('#top-profile-badges');
@@ -230,7 +230,7 @@ function renderApp() {
               <div class="profile-menu" id="profile-menu">
                 <div class="profile-menu-head">
                   <span id="menu-avatar">${avatar(profileAvatar,p.display_name||p.username,'avatar-lg')}</span>
-                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p))}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${state.profile?.show_subscription===false?'':isPremium()?'✦ '+planLabel()+' MEMBER':'FREE MEMBER'}</small></div>
+                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p)&&p.show_badges!==false)}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${state.profile?.show_subscription===false?'':isPremium()?'✦ '+planLabel()+' MEMBER':'FREE MEMBER'}</small></div>
                 </div>
                 <div class="profile-menu-label">РАЗДЕЛЫ</div>
                 <nav class="profile-menu-nav">${items.map(([key,icon,label,sub])=>`<button type="button" class="profile-menu-item ${state.page===key?'selected':''}" data-page="${key}"><span class="menu-item-icon">${icon}</span><span><b>${label}</b><small>${sub}</small></span><i>›</i></button>`).join('')}</nav>
@@ -295,7 +295,7 @@ async function loadPage() {
         supabase.from('flamexbot_referrals').select('id',{count:'exact',head:true}).eq('referrer_id',state.session.user.id)
       ]);
       const referralCode=referralLinkData?.code||null;
-      host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'))} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
+      host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false)} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
         <div class="section-heading archive-section-heading"><div><div class="eyebrow">TELEGRAM BUSINESS</div><h3>История сообщений</h3></div><span class="archive-section-note">Архив переписок</span></div>
@@ -1751,6 +1751,10 @@ async function renderFriends(host) {
       :Promise.resolve({data:[],error:null})
   ]);
   const profileMap=new Map((profileResult.data||[]).map(p=>[p.id,p]));
+  const searchIds=(searchResult.data||[]).map(p=>p.id);
+  const searchPrivacy=searchIds.length?await supabase.from('profiles').select('id,show_subscription,show_role,show_badges,show_activity').in('id',searchIds):{data:[]};
+  const searchPrivacyMap=new Map((searchPrivacy.data||[]).map(p=>[p.id,p]));
+  const publicSearchResults=(searchResult.data||[]).map(p=>({...p,...(searchPrivacyMap.get(p.id)||{})}));
   const badgeMap=new Map();
   (badgeResult.data||[]).forEach(b=>{if(!badgeMap.has(b.user_id))badgeMap.set(b.user_id,[]);badgeMap.get(b.user_id).push(b.badge_code);});
   const friendSet=new Set(friendIds);
@@ -1800,7 +1804,7 @@ async function renderFriends(host) {
       `<button class="outline small" data-friend-cancel="${r.id}">Отменить заявку</button>`,
       badgeMap.get(r.receiver_id)||[]);
   }).join('');
-  const searchCards=(searchResult.data||[]).map(p=>{
+  const searchCards=publicSearchResults.map(p=>{
     const isFriend=friendSet.has(p.id),inRequest=incomingByUser.get(p.id),outRequest=outgoingByUser.get(p.id);
     let action=isFriend?'<span class="friend-state-pill">✓ Вы друзья</span>'
       :inRequest?'<span class="friend-state-pill">Заявка уже у тебя</span>'
@@ -1820,7 +1824,7 @@ async function renderFriends(host) {
         <div class="outgoing-heading"><b>Отправленные</b><span>${(outgoing.data||[]).length}</span></div><div class="friend-list">${outgoingCards||'<div class="empty-state compact-empty">Ты пока никого не приглашал.</div>'}</div>
       </section>
     </div>
-    ${friendRows.error||incoming.error||outgoing.error||streakResult.error||profileResult.error||badgeResult.error?'<p class="business-warning">Не удалось загрузить часть данных друзей. Попробуй обновить раздел.</p>':''}
+    ${friendRows.error||incoming.error||outgoing.error||streakResult.error||profileResult.error||badgeResult.error||searchPrivacy.error?'<p class="business-warning">Не удалось загрузить часть данных друзей. Попробуй обновить раздел.</p>':''}
     <section class="friend-profile-panel" id="friend-profile-panel" hidden></section>`;
   host.querySelectorAll('[data-friend-profile]').forEach(btn=>btn.addEventListener('click',()=>openFriendProfile(btn.dataset.friendProfile)));
   host.querySelectorAll('[data-friend-favorite]').forEach(btn=>btn.addEventListener('click',async()=>{
@@ -1934,7 +1938,7 @@ async function renderProfile(host) {
   const businessConnected = Boolean(businessConnection?.is_enabled);
   const rights = businessConnection?.rights || {};
   const grantedRights = Object.entries(rights).filter(([, value]) => value === true).map(([key]) => key);
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль ${verifiedMarkMarkup(isFounderProfile(p)||state.profileBadges.includes('verified'))}</h1><div class="profile-badge-row">${badgeMarkup(state.profileBadges)}</div><p class="muted">Управляй именем, оформлением, значками и подключением Telegram Business.</p></div>
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль ${verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false)}</h1><div class="profile-badge-row">${badgeMarkup(state.profileBadges)}</div><p class="muted">Управляй именем, оформлением, значками и подключением Telegram Business.</p></div>
     <form class="profile-card" id="profile-form">${avatar(profileAvatar,p.display_name||p.username,'avatar-xl')}
       <label>Отображаемое имя<input name="display_name" value="${esc(p.display_name || '')}" placeholder="Как тебя называть" maxlength="48"/></label>
       <label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label>
