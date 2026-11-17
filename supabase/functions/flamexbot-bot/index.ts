@@ -187,6 +187,7 @@ async function sendRichTelegramMessage(
   parseMode?: string,
   replyMarkup?: Record<string, unknown>,
   connectionId?: string,
+  archiveInbox = true,
 ) {
   const available = await getAvailablePremiumEmojiIds();
   const emojiPattern = new RegExp('<tg-emoji emoji-id="([0-9]+)">([^<]*)</tg-emoji>', 'g');
@@ -215,7 +216,7 @@ async function sendRichTelegramMessage(
   };
   try {
     const sent = await telegram("sendMessage", payload);
-    if (!connectionId && admin && /^\\d+$/.test(String(chatId)) && sent?.message_id) {
+    if (archiveInbox && !connectionId && admin && /^\\d+$/.test(String(chatId)) && sent?.message_id) {
       try {
         const { data: supportChat } = await admin.from("flamexbot_bot_inbox_chats")
           .select("id").eq("telegram_chat_id", String(chatId)).maybeSingle();
@@ -226,13 +227,13 @@ async function sendRichTelegramMessage(
           await admin.from("flamexbot_bot_inbox_messages").upsert({
             inbox_chat_id: supportChat.id, telegram_message_id: sent.message_id,
             direction: "outgoing", content: readable, message_type: "text", created_at: createdAt,
-          }, { onConflict: "support_chat_id,telegram_message_id" });
+          }, { onConflict: "inbox_chat_id,telegram_message_id" });
           await admin.from("flamexbot_bot_inbox_chats").update({
             last_message_preview: readable.slice(0, 240), last_message_at: createdAt, updated_at: new Date().toISOString(),
           }).eq("id", supportChat.id);
         }
       } catch (logError) {
-        console.warn("Support inbox outgoing message archive skipped:", (logError as any)?.message ?? logError);
+        console.warn("Bot inbox outgoing message archive skipped:", (logError as any)?.message ?? logError);
       }
     }
     return sent;
@@ -1695,11 +1696,11 @@ async function processTelegramUpdate(update: any) {
       if(cancelSupport){
         const {error:closeError}=await admin.from("flamexbot_support_chats").update({status:"closed",closed_at:new Date().toISOString()}).eq("telegram_chat_id",String(update.message.chat.id)).eq("status","open");
         if(closeError)throw closeError;
-        await sendRichTelegramMessage(update.message.chat.id,"✅ Обращение закрыто. Чтобы создать новое, отправь /support.","HTML");
+        await sendRichTelegramMessage(update.message.chat.id,"✅ Обращение закрыто. Чтобы создать новое, отправь /support.","HTML",undefined,undefined,false);
       }else if(supportMatch){
         const requestText=String(supportMatch[1]||"").trim()||"Обращение открыто. Ожидается описание проблемы.";
         await saveSupportRequestMessage(update.message,requestText);
-        await sendRichTelegramMessage(update.message.chat.id,requestText.startsWith("Обращение открыто")?"🛟 <b>Чат техподдержки открыт.</b>\n\nОпиши проблему следующим сообщением. Для закрытия отправь /cancel_support.":"✅ Обращение отправлено в техподдержку. Можешь продолжать переписку здесь. Для закрытия отправь /cancel_support.","HTML");
+        await sendRichTelegramMessage(update.message.chat.id,requestText.startsWith("Обращение открыто")?"🛟 <b>Чат техподдержки открыт.</b>\n\nОпиши проблему следующим сообщением. Для закрытия отправь /cancel_support.":"✅ Обращение отправлено в техподдержку. Можешь продолжать переписку здесь. Для закрытия отправь /cancel_support.","HTML",undefined,undefined,false);
       }else{
         const {data:activeTicket,error:ticketError}=await admin.from("flamexbot_support_chats").select("id").eq("telegram_chat_id",String(update.message.chat.id)).eq("status","open").maybeSingle();
         if(ticketError)throw ticketError;
