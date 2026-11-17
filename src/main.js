@@ -146,7 +146,8 @@ function verifiedMarkMarkup(verified=false) {
 }
 function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
   const ownPlan=state.subscription?.plan;
-  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&ownPlan==='premium'&&isPremium()&&state.profile?.show_subscription!==false?['premium']:[])])];
+  const ownCodes=includeOwnPremium&&state.profile?.show_badges===false?[]:includeOwnPremium&&state.profile?.show_role===false?(codes||[]).filter(code=>code==='verified'):(codes||[]);
+  const unique=[...new Set([...ownCodes,...(includeOwnPremium&&ownPlan==='premium'&&isPremium()&&state.profile?.show_subscription!==false?['premium']:[])])];
   return unique.filter(code=>code!=='verified'&&BADGE_META[code]).map(code=>{
     const b=BADGE_META[code];
     return `<span class="role-badge badge-${b.className} ${compact?'compact':''}" title="${esc(b.label)}"><i>${b.icon}</i>${compact?'':`<span>${esc(b.label)}</span>`}</span>`;
@@ -229,7 +230,7 @@ function renderApp() {
               <div class="profile-menu" id="profile-menu">
                 <div class="profile-menu-head">
                   <span id="menu-avatar">${avatar(profileAvatar,p.display_name||p.username,'avatar-lg')}</span>
-                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p))}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${isPremium()?'✦ '+planLabel()+' MEMBER':'FREE MEMBER'}</small></div>
+                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p))}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${state.profile?.show_subscription===false?'':isPremium()?'✦ '+planLabel()+' MEMBER':'FREE MEMBER'}</small></div>
                 </div>
                 <div class="profile-menu-label">РАЗДЕЛЫ</div>
                 <nav class="profile-menu-nav">${items.map(([key,icon,label,sub])=>`<button type="button" class="profile-menu-item ${state.page===key?'selected':''}" data-page="${key}"><span class="menu-item-icon">${icon}</span><span><b>${label}</b><small>${sub}</small></span><i>›</i></button>`).join('')}</nav>
@@ -1251,11 +1252,37 @@ async function renderAdmin(host) {
       <button class="admin-module" data-admin-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
     </div>
     <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки, снятия Premium, синей галочки и значков ролей. Значки администратора и разработчика не выдают доступ к панели.</small></div></div><span class="business-status is-connected">SECURE</span></section>
+    <section class="admin-owner-settings">
+      <div class="section-heading"><div><div class="eyebrow">FOUNDER SETTINGS</div><h3>Моя приватность и защита</h3></div><span class="admin-secure">Только владелец</span></div>
+      <p class="muted">Настройки применяются к публичному отображению твоего профиля и защите от команд других Business-аккаунтов.</p>
+      <div class="admin-owner-settings-grid">
+        <label class="admin-owner-setting"><span><b>Скрыть подписку</b><small>Premium не показывается в публичных элементах профиля</small></span><input type="checkbox" data-founder-setting="hide_subscription" ${state.profile?.show_subscription===false?'checked':''}></label>
+        <label class="admin-owner-setting"><span><b>Скрыть роль</b><small>Скрыть значок роли рядом с профилем</small></span><input type="checkbox" data-founder-setting="hide_role" ${state.profile?.show_role===false?'checked':''}></label>
+        <label class="admin-owner-setting"><span><b>Скрыть все бейджи</b><small>Скрыть значки профиля, включая Premium и роль</small></span><input type="checkbox" data-founder-setting="hide_badges" ${state.profile?.show_badges===false?'checked':''}></label>
+        <label class="admin-owner-setting"><span><b>Скрыть активность</b><small>Не показывать публичную статистику активности</small></span><input type="checkbox" data-founder-setting="hide_activity" ${state.profile?.show_activity===false?'checked':''}></label>
+        <label class="admin-owner-setting"><span><b>Отключить защиту от команд</b><small>Разрешить другим пользователям применять к тебе команды FLAMEXBOT</small></span><input type="checkbox" data-founder-setting="disable_command_protection" ${state.profile?.command_protection_disabled===true?'checked':''}></label>
+      </div>
+      <small class="admin-owner-settings-note">Отключение защиты не отключает защиту аккаунта от блокировки и не меняет права администратора.</small>
+    </section>
     <section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">SECURITY HISTORY</div><h3>Журнал действий</h3></div><span class="admin-secure">Последние 10 событий</span></div>
       <div class="admin-audit-list">${auditRows||'<div class="empty-state">Административных действий пока нет. Здесь появится история блокировок, галочек и Premium.</div>'}</div>
       ${audit.error?'<p class="business-warning">Не удалось загрузить журнал действий: '+esc(audit.error.message)+'</p>':''}
     </section>
     ${all.error||verified.error||premium.error||banned.error?'<p class="business-warning">Не удалось загрузить часть административной статистики.</p>':''}`;
+  if(isFounderProfile(state.profile)){
+    host.querySelectorAll('[data-founder-setting]').forEach(input=>input.addEventListener('change',async()=>{
+      const key=input.dataset.founderSetting,checked=input.checked;
+      const column=key==='hide_subscription'?'show_subscription':key==='hide_role'?'show_role':key==='hide_badges'?'show_badges':key==='hide_activity'?'show_activity':'command_protection_disabled';
+      const value=key==='disable_command_protection'?checked:!checked;
+      input.disabled=true;
+      const {error}=await supabase.from('profiles').update({[column]:value}).eq('id',state.session.user.id);
+      input.disabled=false;
+      if(error){input.checked=!checked;toast('Не удалось сохранить настройку: '+error.message);return;}
+      state.profile={...state.profile,[column]:value};
+      updateHeaderProfile();
+      toast('Настройка приватности сохранена');
+    }));
+  }
   host.querySelectorAll('[data-admin-filter]').forEach(btn=>btn.addEventListener('click',()=>{
     const filter=btn.dataset.adminFilter;
     state.userFilters={...state.userFilters,verified:filter==='verified'?'verified':'all',premium:filter==='premium'?'premium':'all',banned:filter==='banned'?'banned':'all',offset:0};
