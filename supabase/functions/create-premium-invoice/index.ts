@@ -6,7 +6,6 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const PREMIUM_PRICE_STARS = 100;
-const PRO_PRICE_STARS = 250;
 const PERIOD_DAYS = 30;
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,8 +34,9 @@ Deno.serve(async (req: Request) => {
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return response({ error: "Unauthorized" }, 401);
   const body = await req.json().catch(() => ({}));
-  const plan = body?.plan === "pro" ? "pro" : "premium";
-  const priceStars = plan === "pro" ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
+  if (body?.plan === "pro") return response({ error: "Тариф PRO упразднён. Все его функции входят в Premium." }, 410);
+  const plan = "premium";
+  const priceStars = PREMIUM_PRICE_STARS;
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY || !BOT_TOKEN) {
     return response({ error: "Payment service is not configured" }, 503);
   }
@@ -71,21 +71,16 @@ Deno.serve(async (req: Request) => {
     if (currentIsLifetime) {
       return response({ error: "У тебя уже бессрочный тариф — покупка не требуется." }, 409);
     }
-    if (currentIsActive && current.plan === "pro" && plan === "premium") {
-      return response({ error: "У тебя уже активен FLAMEX PRO. Покупка Premium не нужна." }, 409);
-    }
 
     const payload = "flamexbot_" + plan + ":" + authData.user.id + ":" + crypto.randomUUID();
     const title = plan === "pro" ? "FLAMEXBOT PRO" : "FLAMEXBOT Premium";
-    const description = plan === "pro"
-      ? "FLAMEX PRO на 30 дней: все функции Premium, 2 еженедельные прокрутки колеса и +10% к весам редких наград."
-      : "FLAMEXBOT Premium на 30 дней: 1 бесплатная прокрутка колеса каждую неделю и Premium-инструменты.";
+    const description = "FLAMEXBOT Premium на 30 дней: все возможности прежнего PRO, 2 еженедельные прокрутки колеса, +10% к весам редких наград, экспорт переписки и Premium-инструменты.";
     const invoiceLink = await telegram("createInvoiceLink", {
       title,
       description,
       payload,
       currency: "XTR",
-      prices: [{ label: (plan === "pro" ? "PRO" : "Premium") + " · 30 дней", amount: priceStars }],
+      prices: [{ label: "Premium · 30 дней", amount: priceStars }],
     });
     return response({
       ok: true,
