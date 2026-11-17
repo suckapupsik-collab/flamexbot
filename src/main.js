@@ -368,7 +368,10 @@ function refreshMissingBusinessAvatars(host) {
       if(active&&head)head.innerHTML=avatar(active.photo_url,[active.first_name,active.last_name].filter(Boolean).join(' ')||active.username,'chat-avatar')+head.querySelector('div')?.outerHTML;
       if(state.activeBusinessChat)scheduleBusinessMessagesRefresh(state.activeBusinessChat,120);
     }
-  }).catch(error=>console.warn('Business avatar refresh skipped:',error?.message||error));
+       if(host.isConnected&&state.businessChats.some(chat=>!chat.photo_url&&!state.avatarRefreshAttempted.has(chat.id))){
+       refreshMissingBusinessAvatars(host);
+     }
+   }).catch(error=>console.warn('Business avatar refresh skipped:',error?.message||error));
 }
 
 function renderBusinessChatChoices(chats) {
