@@ -1016,6 +1016,11 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       await reply(`${tgEmoji("star")} Выпало: <b>${result}</b> (1–${max})`, "HTML");
       return true;
     }
+  await reply("Неизвестная команда. Напиши .help");
+  return true;
+}
+
+
 async function handleBusinessActionCallback(query: any) {
   const match = /^fb:(mute|antimut)_(on|off):([0-9a-f-]{36})$/i.exec(String(query?.data ?? ""));
   if (!match || !admin || !query?.from?.id) return;
