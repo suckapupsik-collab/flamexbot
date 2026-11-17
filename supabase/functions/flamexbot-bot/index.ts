@@ -40,8 +40,8 @@ async function telegram(method: string, body: Record<string, unknown>) {
         search: "search", folder: "folder", profile: "user",
       };
       const stripButtonEmoji = (value: string) => value
-        .replace(/[\\p{Emoji_Presentation}\\p{Extended_Pictographic}\\uFE0F\\u200D]/gu, "")
-        .replace(/\\s{2,}/g, " ").trim();
+        .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D]/gu, "")
+        .replace(/\s{2,}/g, " ").trim();
       const enrich = (rows: unknown) => Array.isArray(rows) ? rows.map((row: any) =>
         Array.isArray(row) ? row.map((button: any) => {
           if (!button || typeof button !== "object") return button;
@@ -291,8 +291,8 @@ function containsBusinessProfanity(value: string) {
   return /(^|[^а-яёa-z0-9_])(?:бля[а-яё]*|хуй[а-яё]*|хуе[а-яё]*|пизд[а-яё]*|еб[а-яё]*|муд[а-яё]*|сука[а-яё]*|пидор[а-яё]*|fuck[a-z]*|shit[a-z]*|bitch[a-z]*|asshole[a-z]*)(?=$|[^а-яёa-z0-9_])/i.test(value);
 }
 function calculateBusinessExpression(input: string): number | null {
-  const source = String(input ?? "").replace(/\\s+/g, "");
-  if (!source || source.length > 120 || !/^[0-9.+*/%()\\-]+$/.test(source)) return null;
+  const source = String(input ?? "").replace(/\s+/g, "");
+  if (!source || source.length > 120 || !/^[0-9.+*/%()\-]+$/.test(source)) return null;
   let index = 0;
   const parsePrimary = (): number => {
     if (source[index] === "+") { index++; return parsePrimary(); }
@@ -304,7 +304,7 @@ function calculateBusinessExpression(input: string): number | null {
       index++;
       return value;
     }
-    const match = /^(?:\\d+(?:\\.\\d*)?|\\.\\d+)/.exec(source.slice(index));
+    const match = /^(?:\d+(?:\.\d*)?|\.\d+)/.exec(source.slice(index));
     if (!match) throw new Error("number");
     index += match[0].length;
     return Number(match[0]);
@@ -838,7 +838,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(enabled ? "🕒 Время в профиле включено." : "Время в профиле скрыто.");
     return true;
   }
-  if (command === "mute" || command === "unmute" || command === "spam") {
+  if (["mute","unmute","spam","copyp","dokc","qr","id","chatid","date","calc","upper","lower","reverse","count","wordcount","choose","roll"].includes(command)) {
     if (!businessConnectionId) { await reply("Эту команду нужно писать в личной переписке с собеседником."); return true; }
     const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats")
       .select("id,telegram_chat_id,telegram_user_id,business_connection_id,username,first_name,last_name,photo_url")
@@ -943,7 +943,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
         return true;
       }
       if (command === "count") await reply(`Символов: <b>${value.length}</b>`, "HTML");
-      else if (command === "wordcount") await reply(`Слов: <b>${(value.match(/[^\\s]+/g) || []).length}</b>`, "HTML");
+      else if (command === "wordcount") await reply(`Слов: <b>${(value.match(/[^\s]+/g) || []).length}</b>`, "HTML");
       else {
         const transformed = command === "upper" ? value.toLocaleUpperCase("ru-RU")
           : command === "lower" ? value.toLocaleLowerCase("ru-RU")
@@ -969,7 +969,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
         return true;
       }
       const result = Math.floor(Math.random() * max) + 1;
-      await reply(`${tgEmoji("dice" in PREMIUM_EMOJI ? "dice" : "star")} Выпало: <b>${result}</b> (1–${max})`, "HTML");
+      await reply(`${tgEmoji("star")} Выпало: <b>${result}</b> (1–${max})`, "HTML");
       return true;
     }
     const count = Number(args[0]);
