@@ -1038,6 +1038,10 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       await reply(`${tgEmoji("star")} Выпало: <b>${result}</b> (1–${max})`, "HTML");
       return true;
     }
+    if (command !== "spam") {
+      await reply(`Неизвестная команда: <code>.${escapeHtml(command)}</code>. Напиши <code>.help</code>, чтобы увидеть поддерживаемые команды.`, "HTML");
+      return true;
+    }
     const count = Number(args[0]);
     const spamText = args.slice(1).join(" ").trim();
     if (!Number.isInteger(count) || count < 2 || count > 5 || !spamText || spamText.length > 1000) {
