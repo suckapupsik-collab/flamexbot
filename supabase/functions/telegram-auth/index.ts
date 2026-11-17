@@ -47,6 +47,9 @@ async function verifyTelegramInitData(initData: string, botToken: string) {
   return user;
 }
 
+let admin: any = null;
+let reservedInitHash: string | null = null;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return response({ error: "Method not allowed" }, 405);
@@ -59,14 +62,15 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const initData = typeof body?.initData === "string" ? body.initData : "";
     const user = await verifyTelegramInitData(initData, botToken);
-    const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const initHash = await sha256(initData);
     await admin.from("telegram_init_data_uses").delete().lt("used_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
     const { error: replayError } = await admin.from("telegram_init_data_uses").insert({ init_data_hash: initHash });
     if (replayError) {
-      if (replayError.code === "23505") return response({ error: "Эти данные Telegram уже использованы. Перезапусти мини-приложение." }, 409);
+      if (replayError.code === "23505") return response({ error: "Эти данные Telegram уже используются. Повтори попытку через несколько секунд." }, 409);
       throw replayError;
     }
+    reservedInitHash = initHash;
 
     const telegramId = String(user.id);
     const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ").slice(0, 80);
@@ -137,7 +141,11 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
       userId = data.user.id;
       const { error: profileError } = await admin.from("profiles").update(profileUpdate).eq("id", userId);
-      if (profileError) throw profileError;
+      if (profileError) {
+        const { error: rollbackError } = await admin.auth.admin.deleteUser(userId);
+        if (rollbackError) console.error("telegram-auth: could not roll back incomplete account:", rollbackError.message);
+        throw profileError;
+      }
     }
 
     const { data: pendingConnection, error: pendingError } = await admin
@@ -185,6 +193,11 @@ Deno.serve(async (req: Request) => {
     if (!tokenHash) throw new Error("Supabase не вернул одноразовый токен входа.");
     return response({ token_hash: tokenHash, email: authUser.user.email, linked_existing_session: false, telegram });
   } catch (error) {
+    if (admin && reservedInitHash) {
+      const { error: releaseError } = await admin.from("telegram_init_data_uses")
+        .delete().eq("init_data_hash", reservedInitHash);
+      if (releaseError) console.error("telegram-auth: could not release failed initData reservation:", releaseError.message);
+    }
     console.error("telegram-auth:", error?.message || "unknown error");
     return response({ error: error?.message || "Не удалось выполнить вход через Telegram." }, 400);
   }
