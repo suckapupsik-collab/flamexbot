@@ -13,7 +13,8 @@ const state = { session: null, profile: null, profileBadges: [], subscription: n
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
-const toast = message => { const el = document.querySelector('.toast'); if (!el) return; el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3000); };
+let toastTimer = null;
+const toast = message => { const el = document.querySelector('.toast'); if (!el) return; clearTimeout(toastTimer); el.textContent = String(message || ''); el.classList.toggle('show', Boolean(message)); if (!message) return; toastTimer = setTimeout(() => { el.classList.remove('show'); el.textContent = ''; }, 3000); };
 const applyTheme = theme => { document.documentElement.dataset.theme = ['orange','blue','green','red','violet'].includes(theme) ? theme : 'orange'; };
 const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" />` : `<span class="avatar avatar-fallback ${size}">${esc(initials(name))}</span>`;
 const mskDateObject = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value+'T12:00:00Z') : new Date(value);
@@ -583,7 +584,8 @@ function renderBusinessBubble(message, mediaUrl = '') {
   const chat=state.businessChats.find(item=>item.id===state.activeBusinessChat);
   const chatName=[chat?.first_name,chat?.last_name].filter(Boolean).join(' ')||chat?.username||'Telegram-пользователь';
   const senderAvatar=mine?avatar(state.profile?.avatar_url||state.profile?.telegram_photo_url,state.profile?.display_name||state.profile?.username||'Ты','message-avatar mine-avatar'):avatar(chat?.photo_url,chatName,'message-avatar');
-  const content = message.deleted_at ? 'Сообщение удалено в Telegram' : (message.content || '');
+  if (message.deleted_at) return '';
+  const content = message.content || '';
   const raw = message.raw || {};
   const mediaName = raw.document?.file_name || raw.audio?.file_name || raw.video?.file_name || raw.animation?.file_name || 'Вложение';
   const mediaSize = [raw.document?.file_size,raw.audio?.file_size,raw.video?.file_size,raw.animation?.file_size].find(Boolean);
@@ -714,7 +716,7 @@ async function renderBusinessMessagesList(chatId,scrollOptions={}) {
   const list=document.querySelector("#business-message-list");
   if(!list)return;
   const query=(document.querySelector("#business-message-search")?.value||"").trim().toLowerCase();
-  const visible=state.businessMessages.filter(message=>{
+  const visible=state.businessMessages.filter(message=>!message.deleted_at).filter(message=>{
     if(!query)return true;
     const raw=message.raw||{};
     const fileName=raw.document?.file_name||raw.audio?.file_name||raw.video?.file_name||raw.animation?.file_name||"";
@@ -807,7 +809,7 @@ async function openBusinessChat(id) {
       const found=matches||[];const paths=[...new Set(found.map(message=>message.media_url).filter(Boolean))];const mediaMap={};
       if(paths.length){const {data:signed,error:signedError}=await supabase.storage.from('flamex-business-media').createSignedUrls(paths,3600);if(!signedError)for(const item of signed||[])if(item.path&&item.signedUrl)mediaMap[item.path]=item.signedUrl;}
       const list=box.querySelector('#business-message-list');if(!list)return;
-      list.innerHTML='<div class="business-search-results"><b>Результаты по всей сохранённой истории: '+found.length+'</b><small>Показаны последние совпадения, максимум 100.</small><button type="button" class="outline small" id="business-search-restore">Вернуться к переписке</button></div>'+(found.length?found.reverse().map(message=>renderBusinessBubble(message,mediaMap[message.media_url]||'')).join(''):'<div class="chat-placeholder"><b>Совпадений не найдено</b><small>Попробуй изменить поисковый запрос.</small></div>');
+      list.innerHTML='<div class="business-search-results"><b>Результаты по всей сохранённой истории: '+found.length+'</b><small>Показаны последние совпадения, максимум 100.</small><button type="button" class="outline small" id="business-search-restore">Вернуться к переписке</button></div>'+(found.length?found.filter(message=>!message.deleted_at).reverse().map(message=>renderBusinessBubble(message,mediaMap[message.media_url]||'')).join(''):'<div class="chat-placeholder"><b>Совпадений не найдено</b><small>Попробуй изменить поисковый запрос.</small></div>');
       list.querySelector('#business-search-restore')?.addEventListener('click',()=>refreshBusinessMessages(id));
       bindBusinessMessageActions(list);
       bindBusinessMediaViewer(list);
@@ -1382,7 +1384,7 @@ async function renderTariffs(host, initialTab='premium') {
     </div>
    </div>
    <p class="muted">Прокрутка стоит 5 ⭐. Можно выиграть Premium или PRO на 7, 30 и 90 дней, защиту от команд либо ещё одну прокрутку.</p>
-   <div class="wheel-odds">${wheelOddsHtml}</div>${isPro?'<small class="premium-payment-note">Вероятности пересчитаны с учётом бонуса PRO к весам редких наград.</small>':''}
+   <div class="wheel-odds-controls"><button class="outline small" type="button" id="toggle-wheel-odds" aria-expanded="false">Показать шансы</button><div class="wheel-odds" id="wheel-odds-panel" hidden>${wheelOddsHtml}</div></div>${isPro?'<small class="premium-payment-note">Вероятности пересчитаны с учётом бонуса PRO к весам редких наград.</small>':''}
    <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐'}</button>
    <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${weeklySpins} для текущего тарифа${rareLuck?' · веса редких наград +' + rareLuck + '%':''}.</small>
   </section>
@@ -1493,6 +1495,8 @@ async function renderTariffs(host, initialTab='premium') {
      await renderTariffs(host,'premium');
    }catch(error){toast('Не удалось активировать пробный период: '+(error.message||'ошибка'));trialButton.disabled=false;trialButton.textContent='Активировать 3 дня Premium';}
  });
+ const oddsToggle=host.querySelector('#toggle-wheel-odds');
+ if(oddsToggle)oddsToggle.addEventListener('click',()=>{const panel=host.querySelector('#wheel-odds-panel');if(!panel)return;const opening=panel.hidden;panel.hidden=!opening;oddsToggle.textContent=opening?'Скрыть шансы':'Показать шансы';oddsToggle.setAttribute('aria-expanded',String(opening));});
  const wheelButton=host.querySelector('#spin-wheel');
  wheelButton?.addEventListener('click',async()=>{
    const freeSpin=(state.profile?.wheel_free_spins||0)>0;
@@ -1796,9 +1800,8 @@ async function renderProfile(host) {
     <section class="business-card">
       <div class="business-card-head"><div><div class="eyebrow">ПОДКЛЮЧЕНИЕ TELEGRAM</div><h2>Telegram Business</h2><p class="muted">Подключи Telegram Business и выбери разрешения, с которыми FLAMEXBOT сможет работать в твоих диалогах.</p></div><span class="business-status ${businessConnected ? 'is-connected' : ''}">${businessConnected ? 'Активен' : 'Неактивен'}</span></div>
       <div class="business-steps">
-        <div><b>1.</b><span>В <strong>@BotFather</strong> включи Business Mode для бота FLAMEXBOT.</span></div>
-        <div><b>2.</b><span>В Telegram открой <strong>Настройки → Telegram Business → Чат-боты</strong>.</span></div>
-        <div><b>3.</b><span>Добавь FLAMEXBOT и самостоятельно выбери, к каким диалогам и данным открыть доступ.</span></div>
+        <div><b>1.</b><span>В Telegram открой <strong>Настройки → Telegram Business → Чат-боты</strong>.</span></div>
+        <div><b>2.</b><span>Добавь FLAMEXBOT и самостоятельно выбери, к каким диалогам и данным открыть доступ.</span></div>
       </div>
       <div class="business-connection-info">
         ${businessConnected ? `<b>Бот активен</b><small>Подключено: ${businessConnection.connected_at ? formatMskDateTime(businessConnection.connected_at,{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
