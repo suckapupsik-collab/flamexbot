@@ -441,17 +441,17 @@ async function renderBusinessMessageEvents(host,eventType) {
   const deleted=eventType==='deleted';
   const title=deleted?'Удалённые сообщения':'Изменённые сообщения';
   const icon=deleted?'🗑️':'✏️';
-  host.innerHTML=`<div class="page-heading"><button class="outline small" type="button" data-go="home">← Назад</button><div class="eyebrow">TELEGRAM BUSINESS · ИСТОРИЯ</div><h1>${icon} ${title}</h1><p class="muted">Здесь сохраняются удалённые и изменённые сообщения обеих сторон диалога.</p></div><div class="message-events-list"><div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем историю</strong></div></div>`;
+  host.innerHTML=`<div class="page-heading"><button class="outline small" type="button" data-go="home">← Назад</button><div class="eyebrow">TELEGRAM BUSINESS · ИСТОРИЯ</div><h1>${icon} ${title}</h1><p class="muted">История сгруппирована по отдельным перепискам.</p></div><div class="message-events-list"><div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем историю</strong></div></div>`;
   const list=host.querySelector('.message-events-list');
   const {data:events,error}=await supabase.from('flamexbot_business_message_events')
     .select('id,business_chat_id,telegram_message_id,event_type,original_content,message_type,media_file_id,media_url,original_raw,occurred_at')
     .eq('profile_id',uid).eq('event_type',eventType).order('occurred_at',{ascending:false}).limit(100);
   if(error){list.innerHTML=`<div class="empty-state">Не удалось загрузить историю: ${esc(error.message)}</div>`;return;}
-  if(!events?.length){list.innerHTML=`<div class="empty-state">${deleted?'Удалённых сообщений собеседников пока нет.':'Изменённых сообщений собеседников пока нет.'}</div>`;return;}
+  if(!events?.length){list.innerHTML=`<div class="empty-state">${deleted?'Удалённых сообщений пока нет.':'Изменённых сообщений пока нет.'}</div>`;return;}
   const chatIds=[...new Set(events.map(e=>e.business_chat_id))];
   const {data:chats,error:chatError}=await supabase.from('flamexbot_business_chats')
     .select('id,telegram_chat_id,username,first_name,last_name,photo_url').eq('profile_id',uid).in('id',chatIds);
-  if(chatError){list.innerHTML=`<div class="empty-state">Не удалось загрузить собеседников: ${esc(chatError.message)}</div>`;return;}
+  if(chatError){list.innerHTML=`<div class="empty-state">Не удалось загрузить переписки: ${esc(chatError.message)}</div>`;return;}
   const chatMap=new Map((chats||[]).map(c=>[c.id,c]));
   const currentMessageMap=new Map();
   if(!deleted){
@@ -459,7 +459,7 @@ async function renderBusinessMessageEvents(host,eventType) {
     const {data:currentMessages,error:currentError}=await supabase.from('flamexbot_business_messages')
       .select('business_chat_id,telegram_message_id,content,message_type')
       .eq('direction','inbound').in('business_chat_id',chatIds).in('telegram_message_id',messageIds);
-    if(currentError){list.innerHTML=`<div class="empty-state">Не удалось загрузить актуальные версии сообщений: ${esc(currentError.message)}</div>`;return;}
+    if(currentError){list.innerHTML=`<div class="empty-state">Не удалось загрузить актуальные версии: ${esc(currentError.message)}</div>`;return;}
     (currentMessages||[]).forEach(m=>currentMessageMap.set(m.business_chat_id+':'+m.telegram_message_id,m));
   }
   const paths=[...new Set(events.map(e=>e.media_url).filter(Boolean))];
@@ -470,29 +470,32 @@ async function renderBusinessMessageEvents(host,eventType) {
       if(!signedError)for(const item of signed||[])if(item.path&&item.signedUrl)mediaUrlMap[item.path]=item.signedUrl;
     }catch(error){console.warn('Message event media preview:',error?.message||error);}
   }
-  list.innerHTML=events.map(event=>{
-    const chat=chatMap.get(event.business_chat_id)||{};
+  const grouped=new Map();
+  events.forEach(event=>{if(!grouped.has(event.business_chat_id))grouped.set(event.business_chat_id,[]);grouped.get(event.business_chat_id).push(event);});
+  list.innerHTML=[...grouped.entries()].map(([chatId,chatEvents])=>{
+    const chat=chatMap.get(chatId)||{};
     const chatName=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||(chat.username?'@'+chat.username:'Telegram-пользователь');
-    const raw=event.original_raw||{};
-    const mediaType=event.message_type||'text';
-    const mediaUrl=mediaUrlMap[event.media_url]||'';
-    const mediaName=raw.document?.file_name||raw.audio?.file_name||raw.video?.file_name||raw.animation?.file_name||'Вложение';
-    let media='';
-    if(mediaUrl&&mediaType==='photo')media=`<a class="event-media" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="Фото из сообщения"/></a>`;
-    else if(mediaUrl&&['video','video_note','animation'].includes(mediaType))media=`<video class="event-video" controls preload="metadata" src="${esc(mediaUrl)}"></video>`;
-    else if(mediaUrl&&['voice','audio'].includes(mediaType))media=`<audio class="event-audio" controls preload="metadata" src="${esc(mediaUrl)}"></audio>`;
-    else if(mediaUrl&&mediaType==='sticker')media=`<img class="event-sticker" src="${esc(mediaUrl)}" loading="lazy" alt="Стикер из сообщения"/>`;
-    else if(mediaType!=='text')media=`<div class="event-attachment">📎 ${esc(mediaName)} · ${esc(mediaType)}${!mediaUrl?' · файл недоступен':''}</div>`;
-    const text=event.original_content||raw.text||raw.caption||'';
-    const current=currentMessageMap.get(event.business_chat_id+':'+event.telegram_message_id);
-    const currentMarkup=!deleted&&current
-      ? `<div class="message-event-current"><small>Текущая версия</small><div>${current.content?esc(current.content):'<span class="muted">Текст отсутствует</span>'}</div></div>`
-      : '';
-    return `<article class="message-event-card ${deleted?'is-deleted':'is-edited'}">
-      <div class="message-event-top">${avatar(chat.photo_url,chatName,'message-event-avatar')}<span class="message-event-icon">${deleted?'🗑️':'✏️'}</span><div><b>${esc(chatName)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}${deleted?'Сообщение удалено':'Сохранена предыдущая версия'} · #${esc(event.telegram_message_id)}</small></div><time>${formatMskDateTime(event.occurred_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</time></div>
-      <div class="message-event-content"><small>${deleted?'Удалённое сообщение':'Было'}</small><div>${text?esc(text):'<span class="muted">Текст отсутствует</span>'}</div></div>${media}${currentMarkup}
-      <div class="message-event-footer"><span>${deleted?'Удалено в Telegram':'Отредактировано в Telegram'}</span><small>Только входящее сообщение</small></div>
-    </article>`;
+    const cards=chatEvents.map(event=>{
+      const raw=event.original_raw||{};
+      const mediaType=event.message_type||'text';
+      const mediaUrl=mediaUrlMap[event.media_url]||'';
+      const mediaName=raw.document?.file_name||raw.audio?.file_name||raw.video?.file_name||raw.animation?.file_name||'Вложение';
+      let media='';
+      if(mediaUrl&&mediaType==='photo')media=`<a class="event-media" href="${esc(mediaUrl)}" target="_blank" rel="noopener"><img src="${esc(mediaUrl)}" loading="lazy" alt="Фото из сообщения"/></a>`;
+      else if(mediaUrl&&['video','video_note','animation'].includes(mediaType))media=`<video class="event-video" controls preload="metadata" src="${esc(mediaUrl)}"></video>`;
+      else if(mediaUrl&&['voice','audio'].includes(mediaType))media=`<audio class="event-audio" controls preload="metadata" src="${esc(mediaUrl)}"></audio>`;
+      else if(mediaUrl&&mediaType==='sticker')media=`<img class="event-sticker" src="${esc(mediaUrl)}" loading="lazy" alt="Стикер из сообщения"/>`;
+      else if(mediaType!=='text')media=`<div class="event-attachment">📎 ${esc(mediaName)} · ${esc(mediaType)}${!mediaUrl?' · файл недоступен':''}</div>`;
+      const body=event.original_content||raw.text||raw.caption||'';
+      const current=currentMessageMap.get(event.business_chat_id+':'+event.telegram_message_id);
+      const currentMarkup=!deleted&&current?`<div class="message-event-current"><small>Текущая версия</small><div>${current.content?esc(current.content):'<span class="muted">Текст отсутствует</span>'}</div></div>`:'';
+      return `<article class="message-event-card ${deleted?'is-deleted':'is-edited'}">
+        <div class="message-event-top">${avatar(chat.photo_url,chatName,'message-event-avatar')}<span class="message-event-icon">${deleted?'🗑️':'✏️'}</span><div><b>${esc(chatName)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}${deleted?'Сообщение удалено':'Сохранена предыдущая версия'} · #${esc(event.telegram_message_id)}</small></div><time>${formatMskDateTime(event.occurred_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</time></div>
+        <div class="message-event-content"><small>${deleted?'Удалённое сообщение':'Было'}</small><div>${body?esc(body):'<span class="muted">Текст отсутствует</span>'}</div></div>${media}${currentMarkup}
+        <div class="message-event-footer"><span>${deleted?'Удалено в Telegram':'Отредактировано в Telegram'}</span><small>Только входящее сообщение</small></div>
+      </article>`;
+    }).join('');
+    return `<details class="message-event-chat" open><summary>${avatar(chat.photo_url,chatName)}<span>${esc(chatName)}</span><small>${chatEvents.length} ${deleted?'удалённых':'изменённых'}</small></summary><div class="message-event-chat-list">${cards}</div></details>`;
   }).join('');
 }
 
@@ -1123,6 +1126,10 @@ async function renderUsers(host) {
     p_search:filters.search||null,p_verified:filters.verified,p_premium:filters.premium,p_banned:filters.banned,p_limit:50,p_offset:filters.offset||0
   });
   const users=data||[];
+  const userIds=users.map(user=>user.id);
+  const connectionLookup=userIds.length?await supabase.from('flamexbot_business_connections').select('profile_id,is_enabled').in('profile_id',userIds):{data:[]};
+  const connectionMap=new Map((connectionLookup.data||[]).map(connection=>[connection.profile_id,Boolean(connection.is_enabled)]));
+  users.forEach(user=>{user.business_connected=connectionMap.get(user.id)===true;});
   const actorOwner=state.session.user.id===FOUNDER_PROFILE_ID;
   const total=users[0]?.total_count||0;
   const roleOptions=[
@@ -1150,7 +1157,7 @@ async function renderUsers(host) {
       const currentRole=badges.find(code=>code!=='premium'&&code!=='verified')||'';
       const display=u.display_name||u.username||'Пользователь';
       return `<article class="admin-user-card" data-user-card="${u.id}">
-        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':'<span class="user-flag active">● Активен</span>'}${u.is_premium?'<span class="user-flag premium">'+((u.badge_codes||[]).includes('pro')?'🔥 PRO':'✦ Premium')+'</span>':'<span class="user-flag free">Free</span>'}</div></div>
+        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':u.business_connected?'<span class="user-flag active">● Business подключён</span>':'<span class="user-flag free">○ Business не подключён</span>'}${u.is_premium?'<span class="user-flag premium">'+((u.badge_codes||[]).includes('pro')?'🔥 PRO':'✦ Premium')+'</span>':'<span class="user-flag free">Free</span>'}</div></div>
         <div class="admin-user-actions">
           <button class="admin-action" data-admin-open="${u.id}">Открыть управление →</button>
           <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
@@ -1179,7 +1186,7 @@ async function renderUsers(host) {
     const card=btn.closest('[data-user-card]');
     let reason=null,days=30,badgeCode=null;
     if(action==='ban'){reason=prompt('Причина блокировки (будет сохранена в карточке пользователя):','Нарушение правил сообщества');if(reason===null)return;}
-    if(action==='premium_grant'||action==='pro_grant'){const label=action==='pro_grant'?'PRO':'Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? Введи 0 для бессрочной подписки.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}}
+    if(action==='premium_grant'||action==='pro_grant'){const label=action==='pro_grant'?'PRO':'Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? Введи 0 для бессрочной подписки.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}reason=prompt('Комментарий к выдаче '+label+' (будет виден в уведомлении):','Подарок от администрации');if(reason===null)return;reason=reason.trim()||'Выдано администрацией FLAMEXBOT';}
     if(action==='badge_grant')badgeCode=card?.querySelector('[data-role-select]')?.value||null;
     if(action==='badge_revoke')badgeCode=card?.querySelector('[data-role-remove]')?.value||null;
     if(['badge_grant','badge_revoke'].includes(action)&&!badgeCode){toast('Сначала выбери значок');return;}
