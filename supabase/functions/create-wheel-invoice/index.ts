@@ -93,7 +93,15 @@ Deno.serve(async(req:Request)=>{
   const payload="flamexbot_wheel:"+profile.id+":"+orderId;
   const {error:insertError}=await admin.from("flamexbot_wheel_orders").insert({id:orderId,user_id:profile.id,telegram_user_id:profile.telegram_id,invoice_payload:payload,price_stars:PRICE_STARS,status:"pending"});
   if(insertError)throw insertError;
-  const invoiceLink=await telegram("createInvoiceLink",{title:"Колесо фортуны FLAMEXBOT",description:"Одна прокрутка колеса фортуны. Награда начисляется автоматически.",payload,currency:"XTR",prices:[{label:"Одна прокрутка",amount:PRICE_STARS}]});
+  let invoiceLink:string;
+  try{
+    invoiceLink=await telegram("createInvoiceLink",{title:"Колесо фортуны FLAMEXBOT",description:"Одна прокрутка колеса фортуны. Награда начисляется автоматически.",payload,currency:"XTR",prices:[{label:"Одна прокрутка",amount:PRICE_STARS}]});
+  }catch(invoiceError){
+    const {error:cleanupError}=await admin.from("flamexbot_wheel_orders")
+      .delete().eq("id",orderId).eq("status","pending");
+    if(cleanupError)console.warn("Could not clean up wheel order after invoice creation failure:",cleanupError.message);
+    throw invoiceError;
+  }
   return response({ok:true,invoice_link:invoiceLink,order_id:orderId,price_stars:PRICE_STARS});
  }catch(error){console.error("create-wheel-invoice:",error?.message??error);return response({error:error?.message??"Не удалось создать счёт"},500);}
 });
