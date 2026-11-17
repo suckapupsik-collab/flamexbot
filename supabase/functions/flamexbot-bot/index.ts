@@ -737,7 +737,7 @@ ${tgEmoji("lock")} <b>Текущий диалог</b>
 <code>.antimute</code> / <code>.unantimute</code> — отправлять новые сообщения от имени бота FLAMEXBOT (собеседник должен открыть бота и нажать Start)
 <code>.spam 2-5 текст</code> — отправить 2–5 тестовых копий; требуется FLAMEX PRO и согласие собеседника
 <code>.spamallow</code> / <code>.spamstop</code> — дать или отозвать согласие
-<code>.dokc</code> — анимированный поиск публичной информации
+<code>.profile</code> — анимированная публичная карточка собеседника
 
 ${tgEmoji("edit")} <b>Дополнительно</b>
 <code>.timeprofile</code> — закрепить московское время (UTC+3)
@@ -791,8 +791,8 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(`${tgEmoji("sparkles")} <b>Огонёк установлен мгновенно!</b>\nСерия: <b>${days} дн.</b>\nПользователь добавлен в друзья, если вы ещё не были друзьями. Дальше огонёк будет продлеваться обычной взаимной перепиской.`, "HTML");
     return true;
   }
-  const proOnlyCommands = ["spam","dokc"];
-  const commandNeedsPremium = ["mute","spam","dokc","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
+  const proOnlyCommands = ["spam","profile"];
+  const commandNeedsPremium = ["mute","spam","profile","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
   let premium = false;
   let pro = false;
   if (commandNeedsPremium) {
@@ -904,7 +904,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(enabled ? "🕒 Время в профиле включено." : "Время в профиле скрыто.");
     return true;
   }
-  if (["mute","unmute","spam","copyp","dokc","qr","id","chatid","date","calc","upper","lower","reverse","count","wordcount","choose","roll"].includes(command)) {
+  if (["mute","unmute","spam","copyp","profile","qr","id","chatid","date","calc","upper","lower","reverse","count","wordcount","choose","roll"].includes(command)) {
     if (!businessConnectionId) { await reply("Эту команду нужно писать в личной переписке с собеседником."); return true; }
     const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats")
       .select("id,telegram_chat_id,telegram_user_id,business_connection_id,username,first_name,last_name,photo_url")
@@ -941,13 +941,13 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
         "HTML", markup);
       return true;
     }
-    if (command === "copyp" || command === "dokc") {
+    if (command === "copyp" || command === "profile") {
       const username = String(chat.username || "").replace(/^@/, "").replace(/[^A-Za-z0-9_]/g, "");
       const fullName = [chat.first_name, chat.last_name].filter(Boolean).join(" ") || "Telegram-пользователь";
       const telegramId = String(chat.telegram_user_id || chat.telegram_chat_id);
       const profileLink = username ? `<a href="https://t.me/${username}">Открыть публичный профиль</a>` : "Публичная ссылка недоступна";
       const report = `${tgEmoji("users")} <b>Публичная карточка собеседника</b>\nИмя: <b>${escapeHtml(fullName)}</b>\nЮзернейм: ${username ? "@" + escapeHtml(username) : "не указан"}\nTelegram ID: <code>${escapeHtml(telegramId)}</code>\n${profileLink}\n\n<i>Показаны только сведения, доступные FLAMEXBOT из текущего Telegram-диалога. Закрытые базы и частные данные не запрашиваются.</i>`;
-      if (command === "dokc") {
+      if (command === "profile") {
         const progress = await sendBusinessReply(businessConnectionId, message.chat.id,
           `${tgEmoji("search")} <b>FLAMEXBOT · поиск профиля</b>\n\n① Определяю собеседника…`, "HTML");
         const frames = [
@@ -1814,7 +1814,7 @@ async function processTelegramUpdate(update: any) {
     }
 
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
-        /^[./](mute|unmute|spam|dokc|afk|unafk|antimute|antimut|unantimute|unantimut|autoread|unautoread|autotyping|unautotyping|autovoice|unautovoice|mutestick|unmutestick|antimat|unantimat|timeprofile|bold|dumb|link|time|untime|streak)(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
+        /^[./](mute|unmute|spam|profile|afk|unafk|antimute|antimut|unantimute|unantimut|autoread|unautoread|autotyping|unautotyping|autovoice|unautovoice|mutestick|unmutestick|antimat|unantimat|timeprofile|bold|dumb|link|time|untime|streak)(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
       await sendRichTelegramMessage(
         update.message.chat.id,
         "Эта команда выполняется не в чате с ботом, а прямо в нужной личной переписке Telegram Business.\n\nОткрой диалог с человеком и отправь команду там. Для проверки бота используй /ping, для статуса подключения — /status.",
