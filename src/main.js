@@ -98,10 +98,10 @@ function renderAuth() {
 function navItem(page, icon, label) { return `<button class="nav-item ${state.page === page ? 'selected' : ''}" data-page="${page}"><span>${icon}</span>${label}</button>`; }
 function isPremium() { return ['premium','pro'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
 function planLabel() { return state.subscription?.plan==='pro'&&isPremium()?'PRO':isPremium()?'PREMIUM':'FREE'; }
-async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=null) {
+async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=null, auditId=null) {
   try {
     const {data,error}=await supabase.functions.invoke('flamexbot-user-notify',{
-      body:{target_user_id:targetUserId,action,badge_code:badgeCode}
+      body:{target_user_id:targetUserId,action,badge_code:badgeCode,audit_id:auditId}
     });
     if(error) {
       console.warn('Telegram admin notification:',error.message);
@@ -1186,7 +1186,7 @@ async function renderUsers(host) {
     });
     if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
     toast(({ban:'Пользователь заблокирован',unban:'Блокировка снята',verify:'Синяя галочка выдана',unverify:'Галочка снята',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',pro_grant:'PRO выдан или продлён',pro_revoke:'PRO снят',badge_grant:'Значок выдан',badge_revoke:'Значок снят'})[action]||'Изменения сохранены');
-    await notifyTelegramAboutAdminAction(userId,action,badgeCode);
+    await notifyTelegramAboutAdminAction(userId,action,badgeCode,data?.audit_id);
     await renderUsers(host);
   }));
 }
