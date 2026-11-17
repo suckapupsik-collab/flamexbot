@@ -1499,12 +1499,21 @@ async function renderFriends(host) {
   const badgeMap=new Map();
   (badgeResult.data||[]).forEach(b=>{if(!badgeMap.has(b.user_id))badgeMap.set(b.user_id,[]);badgeMap.get(b.user_id).push(b.badge_code);});
   const friendSet=new Set(friendIds);
+  const sortedFriendIds=[...friendIds].sort((a,b)=>{
+    const sa=streakByFriend.get(a),sb=streakByFriend.get(b);
+    const activeDiff=effectiveStreakDays(sb)-effectiveStreakDays(sa);
+    if(activeDiff)return activeDiff;
+    const bestDiff=(Number(sb?.best_days)||0)-(Number(sa?.best_days)||0);
+    if(bestDiff)return bestDiff;
+    return displayName(a).localeCompare(displayName(b),'ru');
+  });
+  const activeFriendCount=friendIds.filter(id=>effectiveStreakDays(streakByFriend.get(id))>0).length;
   const incomingByUser=new Map((incoming.data||[]).map(r=>[r.sender_id,r]));
   const outgoingByUser=new Map((outgoing.data||[]).map(r=>[r.receiver_id,r]));
   const streakByFriend=new Map((streakResult.data||[]).map(s=>[s.user_low===uid?s.user_high:s.user_low,s]));
   const displayName=id=>{const p=profileMap.get(id);return p?.display_name||p?.username||'Пользователь';};
   const profileCard=(p,subline,actions='',badges=[])=>`<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url||p.telegram_photo_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${verifiedMarkMarkup((badges||[]).includes('verified')||isFounderProfile(p))} ${badgeMarkup(badges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
-  const friendCards=friendIds.map(id=>{
+  const friendCards=sortedFriendIds.map(id=>{
     const p=profileMap.get(id);if(!p)return '';
     const streak=streakByFriend.get(id),days=effectiveStreakDays(streak);
     const handle=String(p.telegram_username||'').replace(/^@/,'').replace(/[^A-Za-z0-9_]/g,'');
@@ -1539,12 +1548,19 @@ async function renderFriends(host) {
       <div class="friend-list friend-search-results">${state.friendSearchQuery.length<2?'<div class="empty-state">Введи имя или никнейм, чтобы найти участника.</div>':searchResult.error?'<div class="business-warning">Не удалось выполнить поиск: '+esc(searchResult.error.message)+'</div>':searchCards||'<div class="empty-state">Ничего не найдено. Проверь написание и попробуй ещё раз.</div>'}</div>
     </section>
     <div class="friends-columns">
-      <section class="friends-section"><div class="section-heading"><div><div class="eyebrow">ТВОЁ СООБЩЕСТВО</div><h3>Мои друзья</h3></div><span class="friend-counter">${friendIds.length}</span></div><div class="friend-list">${friendCards||'<div class="empty-state">Пока нет друзей. Найди знакомых через поиск выше.</div>'}</div></section>
+      <section class="friends-section"><div class="section-heading"><div><div class="eyebrow">ТВОЁ СООБЩЕСТВО</div><h3>Мои друзья</h3></div><span class="friend-counter">${friendIds.length} · ${activeFriendCount} с огоньком</span></div><label class="friend-list-filter"><span>⌕</span><input id="friend-list-filter" type="search" maxlength="48" placeholder="Поиск среди друзей…" autocomplete="off"/></label><div class="friend-list" id="my-friend-list">${friendCards||'<div class="empty-state">Пока нет друзей. Найди знакомых через поиск выше.</div>'}</div></section>
       <section class="friends-section"><div class="section-heading"><div><div class="eyebrow">ВХОДЯЩИЕ</div><h3>Заявки в друзья</h3></div><span class="friend-counter">${(incoming.data||[]).length}</span></div><div class="friend-list">${incomingCards||'<div class="empty-state">Новых заявок нет.</div>'}</div>
         <div class="outgoing-heading"><b>Отправленные</b><span>${(outgoing.data||[]).length}</span></div><div class="friend-list">${outgoingCards||'<div class="empty-state compact-empty">Ты пока никого не приглашал.</div>'}</div>
       </section>
     </div>
     ${friendRows.error||incoming.error||outgoing.error||streakResult.error||profileResult.error||badgeResult.error?'<p class="business-warning">Не удалось загрузить часть данных друзей. Попробуй обновить раздел.</p>':''}`;
+  host.querySelector('#friend-list-filter')?.addEventListener('input',event=>{
+    const query=String(event.currentTarget.value||'').trim().toLocaleLowerCase('ru');
+    host.querySelectorAll('#my-friend-list .friend-card').forEach(card=>{
+      const text=card.querySelector('.friend-card-identity')?.textContent?.toLocaleLowerCase('ru')||'';
+      card.hidden=Boolean(query)&&!text.includes(query);
+    });
+  });
   host.querySelector('#friend-search-form')?.addEventListener('submit',event=>{
     event.preventDefault();
     const fd=new FormData(event.currentTarget);
@@ -1579,7 +1595,10 @@ async function renderStreaks(host) {
   const uid=state.session.user.id;
   const {data,error}=await supabase.from('streaks').select('*').or(`user_low.eq.${uid},user_high.eq.${uid}`).order('current_days',{ascending:false});
   state.streaks=data||[];
+  state.streaks.sort((a,b)=>effectiveStreakDays(b)-effectiveStreakDays(a)||(Number(b.best_days)||0)-(Number(a.best_days)||0));
   const friendIds=state.streaks.map(s=>s.user_low===uid?s.user_high:s.user_low);
+  const activeStreakCount=state.streaks.filter(s=>effectiveStreakDays(s)>0).length;
+  const bestStreak=Math.max(0,...state.streaks.map(s=>Number(s.best_days)||0));
   const [profiles,badges]=await Promise.all([
     friendIds.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url,telegram_username').in('id',friendIds):Promise.resolve({data:[],error:null}),
     friendIds.length?supabase.from('profile_badges').select('user_id,badge_code').in('user_id',friendIds):Promise.resolve({data:[],error:null})
@@ -1588,6 +1607,7 @@ async function renderStreaks(host) {
   const badgeMap=new Map();
   (badges.data||[]).forEach(b=>{if(!badgeMap.has(b.user_id))badgeMap.set(b.user_id,[]);badgeMap.get(b.user_id).push(b.badge_code);});
   host.innerHTML=`<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Огонёк продлевается, когда оба друга отправили хотя бы одно сообщение за день. Пропустите полный день — серия погаснет, но личный рекорд сохранится.</p></div>
+    <div class="streak-overview-grid"><div><small>ВСЕ ОГОНЬКИ</small><b>${state.streaks.length}</b></div><div><small>ГОРЯТ СЕЙЧАС</small><b>${activeStreakCount}</b></div><div><small>ЛИЧНЫЙ РЕКОРД</small><b>${bestStreak} дн.</b></div></div>
     <div class="streak-list large">${error?esc(error.message):state.streaks.length?state.streaks.map(s=>{
       const id=s.user_low===uid?s.user_high:s.user_low,p=profileMap.get(id),days=effectiveStreakDays(s),name=p?.display_name||p?.username||'Друг';
       const waiting=!s.last_activity_date;
