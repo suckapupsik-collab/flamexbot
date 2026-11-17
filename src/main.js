@@ -534,6 +534,8 @@ async function renderBusinessMessages(host) {
     <section class="chat-window" id="business-chat-window"><div class="chat-placeholder"><span>✈</span><b>Твои переписки</b><small>Выбери диалог, чтобы открыть историю сообщений и настройки.</small></div></section></div>`;
   bindBusinessChatChoices(host);bindBusinessChatPreferences(host);bindBusinessSearch(host);
   refreshMissingBusinessAvatars(host);
+  if(state.businessChatListPollTimer){clearInterval(state.businessChatListPollTimer);state.businessChatListPollTimer=null;}
+  state.businessChatListPollTimer=setInterval(()=>{if(state.page==='messages'&&!document.hidden)refreshBusinessChatList(host);},5000);
   state.businessListChannel = supabase.channel(`business-chat-list-${uid}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'flamexbot_business_chats', filter: `profile_id=eq.${uid}` }, () => scheduleBusinessChatListRefresh(host))
     .subscribe(status => {
@@ -828,7 +830,7 @@ async function openBusinessChat(id) {
   const exportButton=box.querySelector('#export-business-chat');
   exportButton?.addEventListener('click',async()=>{
     if(!isPremium()){
-      toast('Экспорт переписки доступен в PRO и FOUNDER.');return;
+      toast('Экспорт переписки доступен в Premium и у основателя.');return;
     }
     exportButton.disabled=true;exportButton.textContent='Готовим экспорт…';
     try{
