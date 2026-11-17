@@ -7,7 +7,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const APP_URL = "https://flamexbot.pages.dev";
 const FOUNDER_TELEGRAM_ID = "7781170049";
 const WEBHOOK_URL = "https://yxmfhnbqzudoiwjlrpui.supabase.co/functions/v1/flamexbot-bot";
-const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "fxbot_whsec_6c2d9a7e4f1b8c3d5a0e7f9b2c4d6a8e";
+const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
 const API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : "";
 const admin = SUPABASE_URL && SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } }) : null;
 
@@ -713,6 +713,11 @@ ${tgEmoji("edit")} <b>Дополнительно</b>
 <code>.time</code> / <code>.untime</code> — показать или скрыть время профиля
 <code>.bold текст</code> / <code>.dumb текст</code> — изменить оформление текста
 <code>.link текст</code> — создать ссылку на этот диалог\n<code>.copyp</code> — скопировать публичную карточку собеседника\n<code>.qr текст</code> — создать QR-код для текста или ссылки\n<code>.id</code> / <code>.chatid</code> — ID собеседника и чата\n<code>.date</code> — дата и время по Москве\n<code>.calc выражение</code> — калькулятор со скобками\n<code>.upper</code> / <code>.lower</code> / <code>.reverse</code> — обработка текста\n<code>.count</code> / <code>.wordcount</code> — подсчёт символов и слов\n<code>.choose A | B</code> — случайный выбор\n<code>.roll 100</code> — случайное число от 1 до 100
+<code>/premium</code> — счёт на FLAMEXBOT Premium на 30 дней
+<code>/pro</code> — счёт на FLAMEX PRO на 30 дней
+
+${tgEmoji("star")} <b>Подписка и тарифы · личный чат с ботом</b>
+Подписки оплачиваются разово через Telegram Stars и не продлеваются автоматически. Текущий тариф и срок действия смотри в Mini App → «Тарифы». Продление выполняется вручную командами <code>/premium</code> или <code>/pro</code>.
 
 ${tgEmoji("help")} <b>Как пользоваться</b>
 Отправляй команду прямо в переписке с нужным человеком. FLAMEXBOT сам определит текущий диалог — <b>@username и ID указывать не нужно</b>. Для команд включения Premium-функций нужна активная подписка; команды отключения доступны бесплатно.
@@ -1647,7 +1652,11 @@ Deno.serve(async (req: Request) => {
     }
   }
   if (req.method !== "POST") return new Response("OK", { status: 200 });
-  if (!WEBHOOK_SECRET || req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
+  if (!WEBHOOK_SECRET) {
+    console.error("TELEGRAM_WEBHOOK_SECRET is not configured");
+    return new Response("Webhook is not configured", { status: 503 });
+  }
+  if (req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
     return new Response("Unauthorized", { status: 401 });
   }
 
