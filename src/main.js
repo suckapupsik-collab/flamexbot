@@ -533,6 +533,22 @@ async function renderBusinessMessages(host) {
   // The initial chat list is already populated above; realtime keeps it current.
 }
 
+function bindBusinessMessageActions(list) {
+  list.querySelectorAll('[data-copy-message]').forEach(button=>button.addEventListener('click',async()=>{
+    const value=button.getAttribute('data-copy-message')||'';
+    try{
+      if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(value);
+      else {
+        const field=document.createElement('textarea');field.value=value;field.style.position='fixed';field.style.opacity='0';
+        document.body.appendChild(field);field.select();const copied=document.execCommand('copy');field.remove();
+        if(!copied)throw new Error('copy unavailable');
+      }
+      const previous=button.textContent;button.textContent='Скопировано';button.disabled=true;
+      setTimeout(()=>{button.textContent=previous;button.disabled=false;},1200);
+    }catch{toast('Не удалось скопировать текст.');}
+  }));
+}
+
 function renderBusinessBubble(message, mediaUrl = '') {
   const mine = message.direction === 'outbound';
   const chat=state.businessChats.find(item=>item.id===state.activeBusinessChat);
@@ -555,7 +571,9 @@ function renderBusinessBubble(message, mediaUrl = '') {
   }
   const reply = message.reply_to_message_id ? `<div class="reply-reference">↪ Ответ на сообщение #${message.reply_to_message_id}</div>` : '';
   const replyButton = !message.deleted_at && message.telegram_message_id ? `<button type="button" class="reply-message" data-reply-to="${message.telegram_message_id}">Ответить</button>` : '';
-  const bubble = `<div class="bubble ${mine ? 'mine' : ''}">${reply}${content ? `<div>${esc(content)}</div>` : ''}${media}<div class="bubble-footer"><small>${formatMskTime(message.created_at)}</small>${replyButton}</div></div>`;
+  const copyButton = content && !message.deleted_at ? `<button type="button" class="copy-message" data-copy-message="${esc(content)}">Копировать</button>` : '';
+  const deliveryStatus = mine ? '<span class="message-delivery-status" title="Сообщение сохранено после успешной отправки">✓ Отправлено</span>' : '';
+  const bubble = `<div class="bubble ${mine ? 'mine' : ''}">${reply}${content ? `<div>${esc(content)}</div>` : ''}${media}<div class="bubble-footer"><small>${formatMskTime(message.created_at)}</small><span class="bubble-actions">${deliveryStatus}${copyButton}${replyButton}</span></div></div>`;
   return mine?`<div class="bubble-row mine">${bubble}${senderAvatar}</div>`:`<div class="bubble-row">${senderAvatar}${bubble}</div>`;
 }
 
@@ -701,6 +719,7 @@ async function renderBusinessMessagesList(chatId,scrollOptions={}) {
     || '<div class="chat-placeholder"><b>Сообщений не найдено</b><small>Измени поисковый запрос или загрузи более раннюю историю.</small></div>';
   list.innerHTML=loadOlderMarkup+messagesMarkup;
   list.querySelector("#business-load-older")?.addEventListener("click",()=>loadOlderBusinessMessages(chatId));
+  bindBusinessMessageActions(list);
   list.querySelectorAll("[data-reply-to]").forEach(button=>button.addEventListener("click",()=>{
     const form=document.querySelector("#business-send-form");
     const preview=document.querySelector("#business-reply-preview");
@@ -760,6 +779,7 @@ async function openBusinessChat(id) {
       const list=box.querySelector('#business-message-list');if(!list)return;
       list.innerHTML='<div class="business-search-results"><b>Результаты по всей сохранённой истории: '+found.length+'</b><small>Показаны последние совпадения, максимум 100.</small><button type="button" class="outline small" id="business-search-restore">Вернуться к переписке</button></div>'+(found.length?found.reverse().map(message=>renderBusinessBubble(message,mediaMap[message.media_url]||'')).join(''):'<div class="chat-placeholder"><b>Совпадений не найдено</b><small>Попробуй изменить поисковый запрос.</small></div>');
       list.querySelector('#business-search-restore')?.addEventListener('click',()=>refreshBusinessMessages(id));
+      bindBusinessMessageActions(list);
       list.querySelectorAll('[data-reply-to]').forEach(button=>button.addEventListener('click',()=>{const form=box.querySelector('#business-send-form');const preview=box.querySelector('#business-reply-preview');if(!form||!preview)return;form.querySelector('[name=reply_to_message_id]').value=button.dataset.replyTo;preview.hidden=false;preview.querySelector('span').textContent='Ответ на сообщение #'+button.dataset.replyTo;form.querySelector('input[name=content]').focus();}));
     }catch(error){toast('Не удалось выполнить поиск: '+(error?.message||'ошибка'));}
     finally{searchAllButton.disabled=false;searchAllButton.textContent='Вся история';}
