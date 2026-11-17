@@ -1398,6 +1398,8 @@ const TELEGRAM_DELIVERABLE_NOTIFICATION_TYPES = [
   "pro_revoked",
   "badge_granted",
   "badge_revoked",
+  "business_connected",
+  "business_disconnected",
 ];
 
 async function deliverPendingTelegramNotifications(telegramUserId: number | string, privateChatId: number | string) {
