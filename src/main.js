@@ -1881,7 +1881,6 @@ async function renderCommands(host) {
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
     {syntax:'/pro',title:'Купить или продлить FLAMEX PRO',description:'Создаёт счёт Telegram Stars на 30 дней. Переход с Premium сохраняет оставшееся время.',access:'free',group:'Подписка · личный чат'},
     {syntax:'.spamallow',title:'Разрешить тестовые повторы',description:'Даёт согласие на повторные тестовые сообщения в этом диалоге.',access:'free',group:'Управление чатом'},
-    {syntax:'.spamstop',title:'Отозвать согласие',description:'Немедленно отзывает согласие на тестовые повторные сообщения.',access:'free',group:'Управление чатом'},
     {syntax:'.antimat',title:'Фильтр ненормативной лексики',description:'Включает фильтр мата в текущем Business-диалоге. Требуется Premium.',access:'premium',group:'Фильтры'},
     {syntax:'.unantimat',title:'Выключить фильтр ненормативной лексики',description:'Отключает фильтр. Доступно бесплатно.',access:'free',group:'Фильтры'},
     {syntax:'.unantimute',title:'Выключить антимут',description:'Отключает альтернативную отправку. Доступно бесплатно.',access:'free',group:'Управление чатом'},
