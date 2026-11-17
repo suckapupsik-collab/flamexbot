@@ -1251,7 +1251,7 @@ async function sendPaymentNotificationOnce(
   if (!admin) return;
   const { data: notice, error: noticeError } = await admin.from("notifications")
     .select("id").eq("user_id", userId).eq("type", notificationType)
-    .contains("data", dataFilter).is("telegram_delivered_at", null)
+    .contains("data", dataFilter)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (noticeError) {
     console.warn("Could not locate payment notification; queued delivery will handle it:", noticeError.message);
