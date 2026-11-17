@@ -433,9 +433,9 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
       if (markLateDeleteError) throw markLateDeleteError;
     }
     const { data: currentPrefs, error: currentPrefsError } = await admin.from("flamexbot_business_chat_settings")
-      .select("is_muted").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
+      .select("is_muted,auto_flood_muted").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
     if (currentPrefsError) throw currentPrefsError;
-    if (!currentPrefs?.is_muted && senderId) {
+    if (!currentPrefs?.is_muted && !currentPrefs?.auto_flood_muted && senderId) {
       const { data: floodData, error: floodError } = await admin.rpc("record_flamexbot_business_flood", {
         p_profile_id: connection.profile_id,
         p_business_chat_id: chat.id,
@@ -445,7 +445,7 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
       const flood = Array.isArray(floodData) ? floodData[0] : floodData;
       if (flood?.triggered) {
         const { error: autoMuteError } = await admin.from("flamexbot_business_chat_settings").upsert({
-          profile_id: connection.profile_id, business_chat_id: chat.id, is_muted: true,
+          profile_id: connection.profile_id, business_chat_id: chat.id, is_muted: true, auto_flood_muted: true,
         }, { onConflict: "profile_id,business_chat_id" });
         if (autoMuteError) throw autoMuteError;
         const canDeleteIncoming = connection.rights?.can_delete_all_messages === true;
@@ -481,16 +481,16 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
     }
     if (isFounderTarget(chatId)) return;
     const { data: chatPrefs, error: chatSettingsError } = await admin.from("flamexbot_business_chat_settings")
-      .select("is_muted,antimut_enabled,afk_enabled,afk_message,autoread_enabled,autotyping_enabled,autovoice_enabled,mutestick_enabled,antimat_enabled")
+      .select("is_muted,auto_flood_muted,antimut_enabled,afk_enabled,afk_message,autoread_enabled,autotyping_enabled,autovoice_enabled,mutestick_enabled,antimat_enabled")
       .eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
     if (chatSettingsError) throw chatSettingsError;
     const isFounderChat = chatId === FOUNDER_TELEGRAM_ID;
     const hasCommandAutomations = Boolean(
-      chatPrefs?.is_muted || chatPrefs?.antimut_enabled || chatPrefs?.afk_enabled ||
+      chatPrefs?.is_muted || chatPrefs?.auto_flood_muted || chatPrefs?.antimut_enabled || chatPrefs?.afk_enabled ||
       chatPrefs?.autoread_enabled || chatPrefs?.autotyping_enabled || chatPrefs?.autovoice_enabled ||
       chatPrefs?.mutestick_enabled || chatPrefs?.antimat_enabled
     );
-    if (hasCommandAutomations && connection.telegram_user_id !== FOUNDER_TELEGRAM_ID) {
+    if (hasCommandAutomations && !chatPrefs?.auto_flood_muted && connection.telegram_user_id !== FOUNDER_TELEGRAM_ID) {
       const { data: targetProtection, error: targetProtectionError } = await admin.from("profiles")
         .select("command_protection_expires_at").eq("telegram_id", chatId).maybeSingle();
       if (targetProtectionError) throw targetProtectionError;
@@ -498,7 +498,7 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
         ? new Date(targetProtection.command_protection_expires_at).getTime() : 0;
       if (protectedUntil > Date.now()) return;
     }
-    const shouldHardMute = !isFounderChat && Boolean(chatPrefs?.is_muted);
+    const shouldHardMute = !isFounderChat && Boolean(chatPrefs?.is_muted || chatPrefs?.auto_flood_muted);
     const shouldDeleteSticker = media.type === "sticker" && Boolean(chatPrefs?.mutestick_enabled);
     const shouldDeleteProfanity = Boolean(chatPrefs?.antimat_enabled) && containsBusinessProfanity(content);
     const shouldFilter = shouldDeleteSticker || shouldDeleteProfanity;
@@ -889,7 +889,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
         }
       }
       const { error } = await admin.from("flamexbot_business_chat_settings").upsert({
-        profile_id: profile.id, business_chat_id: chat.id, is_muted: command === "mute",
+        profile_id: profile.id, business_chat_id: chat.id, is_muted: command === "mute", auto_flood_muted: false,
       }, { onConflict: "profile_id,business_chat_id" });
       if (error) throw error;
       const enabled = command === "mute";
@@ -1108,7 +1108,7 @@ async function handleBusinessActionCallback(query: any) {
   }
   const field = action === "mute" ? "is_muted" : "antimut_enabled";
   const { error: updateError } = await admin.from("flamexbot_business_chat_settings").upsert({
-    profile_id: chat.profile_id, business_chat_id: chat.id, [field]: enabled,
+    profile_id: chat.profile_id, business_chat_id: chat.id, [field]: enabled, ...(action === "mute" ? { auto_flood_muted: false } : {}),
   }, { onConflict: "profile_id,business_chat_id" });
   if (updateError) throw updateError;
   await telegram("answerCallbackQuery", { callback_query_id: query.id, text: enabled ? "Функция включена." : "Функция выключена." });
