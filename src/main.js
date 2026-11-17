@@ -97,7 +97,7 @@ function renderAuth() {
 }
 
 function navItem(page, icon, label) { return `<button class="nav-item ${state.page === page ? 'selected' : ''}" data-page="${page}"><span>${icon}</span>${label}</button>`; }
-function isPremium() { return ['premium','pro'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
+function isPremium() { return ['premium','founder'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
 function planLabel() { return isPremium()?'PREMIUM':'FREE'; }
 async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=null, auditId=null) {
   try {
@@ -120,7 +120,7 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
   }
 }
 const PAGE_LABELS = {
-  home:'Обзор', support:'Техподдержка', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
+  home:'Обзор', support:'Техподдержка', inbox:'Личные сообщения бота', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
   stats:'Статистика', commands:'Все команды', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
@@ -137,7 +137,6 @@ const BADGE_META = {
   community_manager:{label:'Комьюнити',icon:'🌐',className:'community'},
   partner:{label:'Партнёр',icon:'🤝',className:'partner'},
   premium:{label:'Premium',icon:'✧',className:'premium'},
-  pro:{label:'Premium',icon:'✧',className:'premium'}
 };
 function isFounderProfile(profile=state.profile) {
   return String(profile?.telegram_id||'')===FOUNDER_TELEGRAM_ID || String(profile?.id||'')===FOUNDER_PROFILE_ID;
@@ -147,7 +146,7 @@ function verifiedMarkMarkup(verified=false) {
 }
 function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
   const ownPlan=state.subscription?.plan;
-  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&ownPlan==='premium'&&isPremium()?['premium']:[]),...(includeOwnPremium&&ownPlan==='pro'&&isPremium()?['pro']:[])])];
+  const unique=[...new Set([...(codes||[]),...(includeOwnPremium&&ownPlan==='premium'&&isPremium()&&state.profile?.show_subscription!==false?['premium']:[])])];
   return unique.filter(code=>code!=='verified'&&BADGE_META[code]).map(code=>{
     const b=BADGE_META[code];
     return `<span class="role-badge badge-${b.className} ${compact?'compact':''}" title="${esc(b.label)}"><i>${b.icon}</i>${compact?'':`<span>${esc(b.label)}</span>`}</span>`;
@@ -333,6 +332,7 @@ async function loadPage() {
     else if(state.page==='stats') await renderStats(host);
     else if(state.page==='commands') await renderCommands(host);
     else if(state.page==='support') await renderSupportInbox(host);
+    else if(state.page==='inbox') await renderBotInbox(host);
     else if(state.page==='users') await renderUsers(host);
     else if(state.page==='admin_user') await renderAdminUser(host);
     else if(state.page==='admin') await renderAdmin(host);
@@ -1174,7 +1174,8 @@ async function renderAdmin(host) {
     </div>
     <div class="admin-section-title"><div><div class="eyebrow">CONTROL MODULES</div><h3>Инструменты управления</h3></div><span class="admin-secure">🔐 Защищённый доступ</span></div>
     <div class="admin-module-grid">
-      <button class="admin-module" data-go="support"><span class="admin-module-icon users">✉</span><b>Входящие бота</b><small>Сообщения пользователей и ответы от имени FLAMEXBOT</small><i>Открыть →</i></button>
+      <button class="admin-module" data-go="inbox"><span class="admin-module-icon users">✉</span><b>Личные сообщения бота</b><small>Все личные сообщения, которые пользователи отправляют FLAMEXBOT</small><i>Открыть →</i></button>
+       <button class="admin-module" data-go="support"><span class="admin-module-icon users">🛟</span><b>Техподдержка</b><small>Отдельные обращения пользователей и ответы поддержки</small><i>Открыть →</i></button>
       <button class="admin-module" data-go="users"><span class="admin-module-icon users">👥</span><b>Все пользователи</b><small>Поиск, сортировка, фильтры и карточки участников</small><i>Открыть →</i></button>
       <button class="admin-module" data-admin-filter="verified"><span class="admin-module-icon verify">🔵</span><b>Верификация</b><small>Синие галочки и официальные значки ролей</small><i>Управлять →</i></button>
       <button class="admin-module" data-admin-filter="premium"><span class="admin-module-icon premium">✦</span><b>Premium</b><small>Выдача, продление и снятие подписки</small><i>Управлять →</i></button>
@@ -1220,7 +1221,7 @@ async function renderUsers(host) {
       <form id="users-filter-form" class="users-filter-form">
         <label class="users-search-field"><span>⌕</span><input name="search" value="${esc(filters.search)}" placeholder="Имя, никнейм или Telegram ID"/></label>
         <select name="verified"><option value="all" ${filters.verified==='all'?'selected':''}>Все галочки</option><option value="verified" ${filters.verified==='verified'?'selected':''}>🔵 С галочкой</option><option value="unverified" ${filters.verified==='unverified'?'selected':''}>Без галочки</option></select>
-        <select name="premium"><option value="all" ${filters.premium==='all'?'selected':''}>Все тарифы</option><option value="premium" ${filters.premium==='premium'?'selected':''}>✦ Premium и PRO</option><option value="free" ${filters.premium==='free'?'selected':''}>Free</option></select>
+        <select name="premium"><option value="all" ${filters.premium==='all'?'selected':''}>Все тарифы</option><option value="premium" ${filters.premium==='premium'?'selected':''}>✦ Premium</option><option value="free" ${filters.premium==='free'?'selected':''}>Free</option></select>
         <select name="banned"><option value="all" ${filters.banned==='all'?'selected':''}>Все статусы</option><option value="active" ${filters.banned==='active'?'selected':''}>Активные</option><option value="banned" ${filters.banned==='banned'?'selected':''}>Заблокированные</option></select>
         <button class="primary small" type="submit">Применить фильтры</button>
       </form>
@@ -1317,7 +1318,7 @@ async function renderAdminUser(host) {
     btn.disabled=true;
     const {error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{p_user_id:u.id,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days});
     if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
-    toast(({ban:'Аккаунт заблокирован',unban:'Блокировка снята',verify:'Аккаунт подтверждён',unverify:'Подтверждение снято',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',pro_grant:'PRO выдан или продлён',pro_revoke:'PRO снят',badge_grant:'Значок заменён',badge_revoke:'Значок снят'})[action]||'Готово');
+    toast(({ban:'Аккаунт заблокирован',unban:'Блокировка снята',verify:'Аккаунт подтверждён',unverify:'Подтверждение снято',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',badge_grant:'Значок заменён',badge_revoke:'Значок снят'})[action]||'Готово');
     await notifyTelegramAboutAdminAction(u.id,action,badgeCode);
     await renderAdminUser(host);
   }));
@@ -1328,7 +1329,7 @@ async function renderAdminUser(host) {
 function animateFortuneWheel(prizeType) {
  const wheel=document.querySelector('#fortune-wheel');
  if(!wheel)return Promise.resolve();
- const centers={free_spin:22.5,addon:67.5,premium_7d:112.5,premium_30d:157.5,premium_90d:202.5,pro_7d:247.5,pro_30d:292.5,pro_90d:337.5,premium_day:112.5};
+ const centers={free_spin:30,addon:90,premium_7d:150,premium_30d:210,premium_90d:270,premium_day:150};
  const target=centers[prizeType]??252;
  if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
    wheel.style.transform='rotate('+((360-target)%360)+'deg)';
@@ -1444,13 +1445,10 @@ async function renderTariffs(host, initialTab='premium') {
      <span class="wheel-prize wheel-prize-premium7">⭐<small>7д</small></span>
      <span class="wheel-prize wheel-prize-premium30">⭐<small>30д</small></span>
      <span class="wheel-prize wheel-prize-premium90">⭐<small>90д</small></span>
-     <span class="wheel-prize wheel-prize-pro7">🔥<small>7д</small></span>
-     <span class="wheel-prize wheel-prize-pro30">🔥<small>30д</small></span>
-     <span class="wheel-prize wheel-prize-pro90">🔥<small>90д</small></span>
      <span class="fortune-wheel-center">✦</span>
     </div>
    </div>
-   <p class="muted">Прокрутка стоит 5 ⭐. Можно выиграть Premium или PRO на 7, 30 и 90 дней, защиту от команд либо ещё одну прокрутку.</p>
+   <p class="muted">Прокрутка стоит 5 ⭐. Можно выиграть Premium на 7, 30 и 90 дней, защиту от команд либо ещё одну прокрутку.</p>
    <div class="wheel-odds-controls"><button class="outline small" type="button" id="toggle-wheel-odds" aria-expanded="false">Показать шансы</button><div class="wheel-odds" id="wheel-odds-panel" hidden>${wheelOddsHtml}</div></div>
    <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐'}</button>
    <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${weeklySpins} для текущего тарифа${rareLuck?' · веса редких наград +' + rareLuck + '%':''}.</small>
@@ -1476,10 +1474,10 @@ async function renderTariffs(host, initialTab='premium') {
    ${protectionFounder?'':'<button class="primary addon-buy-button" id="buy-command-protection" type="button">'+protectionLabel+'</button>'}
    <small class="premium-payment-note">Оплата — Telegram Stars. Срок начинается после подтверждения успешного платежа. Продление суммируется с оставшимся временем.</small>
   </section>
-  <div class="addon-feature-heading"><div class="eyebrow">ТОЛЬКО ОТДЕЛЬНЫЕ ПОКУПКИ</div><h2>🧩 Дополнения</h2><p class="muted">Здесь только независимые модули, которые покупаются отдельно. Возможности Premium и PRO здесь не дублируются.</p></div>
+  <div class="addon-feature-heading"><div class="eyebrow">ТОЛЬКО ОТДЕЛЬНЫЕ ПОКУПКИ</div><h2>🧩 Дополнения</h2><p class="muted">Здесь только независимые модули, которые покупаются отдельно. Возможности Premium здесь не дублируются.</p></div>
   <p class="business-note">Сейчас доступно отдельное дополнение «Защита от команд» на 5 дней. Новые модули появятся здесь отдельными карточками и не будут смешиваться с тарифами.</p>
  </section>
- <p class="business-note">Управление подпиской: текущий тариф и дата окончания показаны в карточке выше. Premium — разовая покупка без автосписаний. Продление выполняется вручную в этом разделе или командой /premium в личном чате с ботом. Все возможности прежнего PRO включены в Premium. Платёж подтверждается Telegram, доступ открывается только после проверки successful_payment на сервере.</p>`;
+ <p class="business-note">Управление подпиской: текущий тариф и дата окончания показаны в карточке выше. Premium — разовая покупка без автосписаний. Продление выполняется вручную в этом разделе или командой /premium в личном чате с ботом.  Платёж подтверждается Telegram, доступ открывается только после проверки successful_payment на сервере.</p>`;
  const tabs=[...host.querySelectorAll('[data-tariff-tab]')];
  const panels=[...host.querySelectorAll('[data-tariff-panel]')];
  const showTab=(name)=>{
@@ -1511,7 +1509,7 @@ async function renderTariffs(host, initialTab='premium') {
 
  const startTierPurchase=async(button,plan)=>{
    if(!button)return;
-   const label=plan==='pro'?'PRO':'Premium';
+   const label='Premium';
    button.disabled=true;button.classList.add('is-loading');button.textContent='Подготавливаем оплату…';
    try{
      const {data,error}=await supabase.functions.invoke('create-premium-invoice',{body:{plan}});
@@ -1573,7 +1571,7 @@ async function renderTariffs(host, initialTab='premium') {
        await animateFortuneWheel(data.prize.prize_type);
        const {data:profile}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
        state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0,command_protection_expires_at:profile?.command_protection_expires_at};
-       if(String(data.prize.prize_type||'').startsWith('premium_')||String(data.prize.prize_type||'').startsWith('pro_')){
+       if(String(data.prize.prize_type||'').startsWith('premium_')){
          const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
          state.subscription=subscription;
        }
@@ -1596,7 +1594,7 @@ async function renderTariffs(host, initialTab='premium') {
          toast(result?'🎉 Выпало: '+result.prize_label:'Платёж принят. Награда появится после подтверждения Telegram.');
          const {data:profile}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
          state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0,command_protection_expires_at:profile?.command_protection_expires_at};
-         if(result&&(/^(premium|pro)_/.test(result.prize_type||''))){
+         if(result&&(/^premium_/.test(result.prize_type||''))){
            const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
            state.subscription=subscription;
          }
@@ -2024,10 +2022,10 @@ async function renderCommands(host) {
     {syntax:'.wordcount текст',title:'Подсчёт слов',description:'Считает количество слов в тексте.',access:'free',group:'Работа с текстом'},
     {syntax:'.choose A | B',title:'Случайный выбор',description:'Выбирает один из вариантов, разделённых символом |.',access:'free',group:'Утилиты'},
     {syntax:'.roll 100',title:'Случайное число',description:'Выдаёт случайное число от 1 до заданного максимума.',access:'free',group:'Утилиты'},
-    {syntax:'.profile',title:'Публичная карточка',description:'Анимированно показывает открытые сведения текущего Telegram-диалога. Не обращается к утечкам и закрытым базам.',access:'pro',group:'PRO'},
+    {syntax:'.profile',title:'Публичная карточка',description:'Анимированно показывает открытые сведения текущего Telegram-диалога. Не обращается к утечкам и закрытым базам.',access:'premium',group:'Профиль'},
     {syntax:'.streak 7',title:'Установить огонёк',description:'Мгновенно создаёт или устанавливает серию на указанное число дней (1–3650). Только владелец и администраторы.',access:'admin',group:'Администрация'}
   ];
-  const filters=[['all','Все'],['free','Бесплатные'],['premium','Premium'],['pro','PRO'],['admin','Администрация']];
+  const filters=[['all','Все'],['free','Бесплатные'],['premium','Premium'],['admin','Администрация']];
   host.innerHTML='<div class="page-heading"><div class="eyebrow">FLAMEXBOT COMMAND CENTER</div><h1>Все команды <span>⌘</span></h1><p class="muted">Полный справочник команд. Отправляй их прямо в нужной Telegram Business-переписке — без @username и ID. Команды управления не применяются к диалогам владельца FLAMEXBOT.</p></div>'+
     '<section class="commands-toolbar"><label class="commands-search"><span>⌕</span><input id="commands-search" type="search" placeholder="Найти команду или функцию…"/></label><div class="commands-filters">'+filters.map(([key,label])=>'<button type="button" class="command-filter '+key+'" data-command-filter="'+key+'">'+label+'</button>').join('')+'</div></section>'+
     '<div class="commands-result-meta"><span id="commands-count">'+entries.length+' команд и вариантов</span><span>Префикс: <code>.</code> или <code>/</code></span></div>'+
@@ -2041,7 +2039,7 @@ async function renderCommands(host) {
     const visible=entries.filter(item=>(activeFilter==='all'||item.access===activeFilter)&&(!query||[item.syntax,item.title,item.description,item.group].join(' ').toLowerCase().includes(query)));
     host.querySelector('#commands-count').textContent='Показано '+visible.length+' из '+entries.length;
     const groups=[...new Set(visible.map(item=>item.group))];
-    list.innerHTML=groups.map(group=>'<section class="commands-group"><div class="commands-group-title">'+esc(group)+'<span>'+visible.filter(item=>item.group===group).length+'</span></div><div class="commands-group-grid">'+visible.filter(item=>item.group===group).map(item=>'<article class="command-card command-'+item.access+'"><div class="command-card-top"><code>'+esc(item.syntax)+'</code><span class="command-access '+item.access+'">'+(item.access==='premium'?'✦ PREMIUM':item.access==='pro'?'✦ PRO':item.access==='admin'?'♛ АДМИН':'FREE')+'</span></div><b>'+esc(item.title)+'</b><p>'+esc(item.description)+'</p><button type="button" class="command-copy" data-copy-command="'+esc(item.syntax)+'">Скопировать команду</button></article>').join('')+'</div></section>').join('')||'<div class="empty-state">По запросу ничего не найдено. Попробуй другое название.</div>';
+    list.innerHTML=groups.map(group=>'<section class="commands-group"><div class="commands-group-title">'+esc(group)+'<span>'+visible.filter(item=>item.group===group).length+'</span></div><div class="commands-group-grid">'+visible.filter(item=>item.group===group).map(item=>'<article class="command-card command-'+item.access+'"><div class="command-card-top"><code>'+esc(item.syntax)+'</code><span class="command-access '+item.access+'">'+(item.access==='premium'?'✦ PREMIUM':item.access==='admin'?'♛ АДМИН':'FREE')+'</span></div><b>'+esc(item.title)+'</b><p>'+esc(item.description)+'</p><button type="button" class="command-copy" data-copy-command="'+esc(item.syntax)+'">Скопировать команду</button></article>').join('')+'</div></section>').join('')||'<div class="empty-state">По запросу ничего не найдено. Попробуй другое название.</div>';
     list.querySelectorAll('[data-copy-command]').forEach(button=>button.addEventListener('click',async()=>{
       const value=button.dataset.copyCommand;
       try{await navigator.clipboard.writeText(value);toast('Команда скопирована: '+value);}
