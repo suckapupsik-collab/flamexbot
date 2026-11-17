@@ -95,3 +95,13 @@ New migration applied and tracked:
 - `20261117135257_serialize_trial_claim_with_subscription_payments.sql`
 
 The trial claim now locks the user's active profile row and then the subscription row before checking eligibility and granting three trial days. This follows the same profile-then-subscription lock order as paid Premium/PRO grants. It prevents a simultaneous trial claim from overwriting a paid subscription or allowing a trial to start after a paid subscription has already become active. The existing one-trial-per-user check and notification remain in the same transaction.
+
+
+## Follow-up check — 2026-11-17 (referral reward serialization)
+
+New migration applied and tracked:
+- `20261117135441_serialize_referral_rewards_with_account_bans.sql`
+
+Referral reward processing now locks the referrer and referred user's profile rows in deterministic UUID order before checking Telegram linkage and ban status. It then locks the referrer's subscription before choosing between a lifetime-plan bonus spin and a one-day Premium/PRO-preserving extension. This closes the race where a ban could occur after the eligibility check but before reward application and reduces deadlock risk for concurrent referral attempts.
+
+The underlying `apply_flamexbot_referral(uuid,uuid)` RPC remains service-role-only; the authenticated entry point uses the current `auth.uid()` as the referred account. No referral was manually applied during verification.
