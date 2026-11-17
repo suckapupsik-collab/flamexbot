@@ -1499,6 +1499,10 @@ async function renderFriends(host) {
   const badgeMap=new Map();
   (badgeResult.data||[]).forEach(b=>{if(!badgeMap.has(b.user_id))badgeMap.set(b.user_id,[]);badgeMap.get(b.user_id).push(b.badge_code);});
   const friendSet=new Set(friendIds);
+  const incomingByUser=new Map((incoming.data||[]).map(r=>[r.sender_id,r]));
+  const outgoingByUser=new Map((outgoing.data||[]).map(r=>[r.receiver_id,r]));
+  const streakByFriend=new Map((streakResult.data||[]).map(s=>[s.user_low===uid?s.user_high:s.user_low,s]));
+  const displayName=id=>{const p=profileMap.get(id);return p?.display_name||p?.username||'Пользователь';};
   const sortedFriendIds=[...friendIds].sort((a,b)=>{
     const sa=streakByFriend.get(a),sb=streakByFriend.get(b);
     const activeDiff=effectiveStreakDays(sb)-effectiveStreakDays(sa);
@@ -1508,10 +1512,7 @@ async function renderFriends(host) {
     return displayName(a).localeCompare(displayName(b),'ru');
   });
   const activeFriendCount=friendIds.filter(id=>effectiveStreakDays(streakByFriend.get(id))>0).length;
-  const incomingByUser=new Map((incoming.data||[]).map(r=>[r.sender_id,r]));
-  const outgoingByUser=new Map((outgoing.data||[]).map(r=>[r.receiver_id,r]));
-  const streakByFriend=new Map((streakResult.data||[]).map(s=>[s.user_low===uid?s.user_high:s.user_low,s]));
-  const displayName=id=>{const p=profileMap.get(id);return p?.display_name||p?.username||'Пользователь';};
+
   const profileCard=(p,subline,actions='',badges=[])=>`<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url||p.telegram_photo_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${verifiedMarkMarkup((badges||[]).includes('verified')||isFounderProfile(p))} ${badgeMarkup(badges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
   const friendCards=sortedFriendIds.map(id=>{
     const p=profileMap.get(id);if(!p)return '';
