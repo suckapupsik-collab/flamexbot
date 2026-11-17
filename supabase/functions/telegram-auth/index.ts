@@ -47,12 +47,12 @@ async function verifyTelegramInitData(initData: string, botToken: string) {
   return user;
 }
 
-let admin: any = null;
-let reservedInitHash: string | null = null;
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return response({ error: "Method not allowed" }, 405);
+  // Keep replay protection state isolated per request; Edge isolates handle concurrent requests.
+  let admin: any = null;
+  let reservedInitHash: string | null = null;
   try {
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
