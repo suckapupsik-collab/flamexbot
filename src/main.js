@@ -98,7 +98,7 @@ function renderAuth() {
 
 function navItem(page, icon, label) { return `<button class="nav-item ${state.page === page ? 'selected' : ''}" data-page="${page}"><span>${icon}</span>${label}</button>`; }
 function isPremium() { return ['premium','pro'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
-function planLabel() { return state.subscription?.plan==='pro'&&isPremium()?'PRO':isPremium()?'PREMIUM':'FREE'; }
+function planLabel() { return isPremium()?'PREMIUM':'FREE'; }
 async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=null, auditId=null) {
   try {
     const {data,error}=await supabase.functions.invoke('flamexbot-user-notify',{
@@ -120,7 +120,7 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
   }
 }
 const PAGE_LABELS = {
-  home:'Обзор', support:'Входящие бота', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
+  home:'Обзор', support:'Техподдержка', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
   stats:'Статистика', commands:'Все команды', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
@@ -137,7 +137,7 @@ const BADGE_META = {
   community_manager:{label:'Комьюнити',icon:'🌐',className:'community'},
   partner:{label:'Партнёр',icon:'🤝',className:'partner'},
   premium:{label:'Premium',icon:'✧',className:'premium'},
-  pro:{label:'FLAMEX PRO',icon:'🔥',className:'pro'}
+  pro:{label:'Premium',icon:'✧',className:'premium'}
 };
 function isFounderProfile(profile=state.profile) {
   return String(profile?.telegram_id||'')===FOUNDER_TELEGRAM_ID || String(profile?.id||'')===FOUNDER_PROFILE_ID;
@@ -212,7 +212,7 @@ function renderApp() {
     ['commands','⌘','Все команды','Полный список команд'],
     ['tariffs','✧','Тарифы','Подписка и дополнения'],
     ['profile','◉','Профиль','Настройки аккаунта'],
-    ...(state.isAdmin?[['support','✉','Входящие бота','Сообщения пользователей'],['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
+    ...(state.isAdmin?[['support','✉','Техподдержка','Обращения пользователей'],['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
   ];
   app.innerHTML=`
     <div class="app-layout">
@@ -765,6 +765,7 @@ async function renderBusinessMessagesList(chatId,scrollOptions={}) {
     preview.querySelector("span").textContent="Ответ на сообщение #"+button.dataset.replyTo;
     form.querySelector('input[name=content]').focus();
   }));
+  if(scrollOptions.scrollToBottom){requestAnimationFrame(()=>{if(list.isConnected)list.scrollTo({top:list.scrollHeight,behavior:'auto'});});}
   if(scrollOptions.preserveScroll){
     list.scrollTop=scrollOptions.scrollTopBefore+(list.scrollHeight-scrollOptions.scrollHeightBefore);
   }else if(scrollOptions.scrollToBottom){
@@ -775,6 +776,7 @@ async function renderBusinessMessagesList(chatId,scrollOptions={}) {
 }
 
 async function openBusinessChat(id) {
+  if(state.businessChatPollTimer){clearInterval(state.businessChatPollTimer);state.businessChatPollTimer=null;}
   state.activeBusinessChat = id;
   state.businessMessages=[];
   state.businessMessagesHasMore=false;
@@ -796,7 +798,7 @@ async function openBusinessChat(id) {
   const {error:readError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:readAt},{onConflict:'profile_id,business_chat_id'});
   if(!readError){chat.last_read_at=readAt;chat.unread_count=0;document.querySelector(`[data-business-chat="${id}"] .chat-unread-badge`)?.remove();}
   box.closest('.business-inbox')?.classList.add('chat-open');
-  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div class="chat-head-person">${avatar(chat.photo_url,name,'chat-avatar')}<div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div></div><div class="message-search-tools"><input class="message-search" id="business-message-search" type="search" placeholder="Поиск в загруженных сообщениях…"/><button type="button" class="outline small" id="business-search-all">Вся история</button></div> ${(['pro','founder'].includes(state.subscription?.plan)&&premiumAccess)?'<button type="button" class="chat-export-button" id="export-business-chat">↓ Экспорт</button>':''}</div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form" autocomplete="off"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" aria-autocomplete="none" inputmode="text" enterkeyhint="send"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
+  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div class="chat-head-person">${avatar(chat.photo_url,name,'chat-avatar')}<div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div></div><div class="message-search-tools"><input class="message-search" id="business-message-search" type="search" placeholder="Поиск в загруженных сообщениях…"/><button type="button" class="outline small" id="business-search-all">Вся история</button></div> ${premiumAccess?'<button type="button" class="chat-export-button" id="export-business-chat">↓ Экспорт</button>':''}</div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form" autocomplete="off"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" aria-autocomplete="none" inputmode="text" enterkeyhint="send"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
   const searchAllButton=box.querySelector('#business-search-all');
   searchAllButton?.addEventListener('click',async()=>{
     const input=box.querySelector('#business-message-search');
@@ -823,7 +825,7 @@ async function openBusinessChat(id) {
   });
   const exportButton=box.querySelector('#export-business-chat');
   exportButton?.addEventListener('click',async()=>{
-    if(!['pro','founder'].includes(state.subscription?.plan)||!isPremium()){
+    if(!isPremium()){
       toast('Экспорт переписки доступен в PRO и FOUNDER.');return;
     }
     exportButton.disabled=true;exportButton.textContent='Готовим экспорт…';
@@ -862,35 +864,8 @@ async function openBusinessChat(id) {
     }
   });
   const controlsHost = box.querySelector('#business-chat-controls');
-  const renderBusinessControls = () => {
-    if (!controlsHost) return;
-    controlsHost.innerHTML = `<div class="business-control-intro">
-      ${founderChat ? '<div class="business-protection-banner"><span>👑</span><div><b>Защищённый диалог владельца</b><small>Все команды и автоматические действия FLAMEXBOT здесь отключены.</small></div></div>' : '<div class="business-command-hint"><span>⌘</span><div><b>Команды вводятся прямо в этом Telegram-диалоге</b><small>Без @username и ID. Например: <code>.mute</code>, <code>.unmute</code>, <code>.antimute</code>, <code>.unantimute</code>.</small></div></div>'}
-    </div><div class="business-control-grid">
-      <section class="business-control-card">
-        <div class="business-control-title"><b>🔇 Мут</b><span class="business-control-state ${chatMuted?'active':''}">${chatMuted?'Включён':'Выключен'}</span></div>
-        <p>Удаляет новые входящие сообщения в этом диалоге. Уже сохранённая переписка остаётся на месте.</p>
-        ${!founderChat && !canDeleteMessages && !chatMuted ? '<small class="business-control-note">В Telegram Business нужно разрешить «Удалять все сообщения».</small>' : ''}
-        ${!founderChat && !premiumAccess && !chatMuted ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
-        <button type="button" class="outline small" id="toggle-business-mute" ${founderChat||(!premiumAccess && !chatMuted)||(!canDeleteMessages && !chatMuted)?'disabled':''}>${chatMuted?'Выключить мут':'Включить мут'}</button>
-      </section>
-      <section class="business-control-card">
-        <div class="business-control-title"><b>🛡 Антимут</b><span class="business-control-state ${antimutEnabled?'active':''}">${antimutEnabled?'Включён':'Выключен'}</span></div>
-        <p>Отправляет новые сообщения от имени бота FLAMEXBOT, если собеседник уже открыл бота и нажал Start. Не обходит блокировки Telegram.</p>
-        ${!founderChat && !premiumAccess && !antimutEnabled ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
-        <button type="button" class="outline small" id="toggle-business-antimut" ${founderChat||(!premiumAccess && !antimutEnabled)?'disabled':''}>${antimutEnabled?'Выключить антимут':'Включить антимут'}</button>
-        ${antimutEnabled && !founderChat ? '<small class="business-control-note">Режим можно выключить командой <code>.unantimute</code> или кнопкой выше.</small>' : ''}
-      </section>
-    </div>`;
-    controlsHost.querySelector('#toggle-business-mute')?.addEventListener('click', async e => {
-      const next = !chatMuted;
-      if (next && (founderChat || !premiumAccess || !canDeleteMessages)) return;
-      e.currentTarget.disabled = true;
-      const { data, error } = await supabase.functions.invoke('business-chat-send',{body:{action:'set_mute',chat_id:id,enabled:next}});
-      if (error || data?.error) { toast(data?.error || 'Не удалось изменить мут: '+(error?.message||'')); e.currentTarget.disabled = false; return; }
-      chatMuted = next; chat.is_muted = next;
-      toast(next ? 'Мут включён: новые сообщения будут удаляться' : 'Размут выполнен: сообщения больше не удаляются');
-      renderBusinessControls();
+  const renderBusinessControls = () => { if(controlsHost) controlsHost.innerHTML=''; };
+  renderBusinessControls();
       await refreshBusinessChatList(document.querySelector('#page-content'));
     });
     controlsHost.querySelector('#toggle-business-antimut')?.addEventListener('click', async e => {
@@ -909,11 +884,13 @@ async function openBusinessChat(id) {
   renderBusinessControls();
   box.querySelector('#business-chat-back')?.addEventListener('click', () => {
     state.activeBusinessChat = null;
+    if(state.businessChatPollTimer){clearInterval(state.businessChatPollTimer);state.businessChatPollTimer=null;}
     box.closest('.business-inbox')?.classList.remove('chat-open');
     box.innerHTML = '<div class="chat-placeholder"><span>✈</span><b>Твои переписки</b><small>Выбери чат слева.</small></div>';
     document.querySelectorAll('[data-business-chat]').forEach(btn => btn.classList.remove('active'));
   });
   await refreshBusinessMessages(id);
+  state.businessChatPollTimer=setInterval(()=>{if(state.activeBusinessChat===id&&!document.hidden)refreshBusinessMessages(id);},2500);
   document.querySelector('#business-message-search')?.addEventListener('input',()=>scheduleBusinessMessagesRefresh(id,160));
   state.businessChatChannel = supabase.channel(`business-chat-${id}`)
     .on('postgres_changes',{event:'*',schema:'public',table:'flamexbot_business_messages',filter:`business_chat_id=eq.${id}`},() => scheduleBusinessMessagesRefresh(id,180))
@@ -1055,7 +1032,7 @@ async function renderSupportInbox(host) {
     host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Входящие доступны только владельцу и администраторам.</p></div>';
     return;
   }
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · SUPPORT</div><h1>Входящие бота</h1><p class="muted">Личные сообщения, которые пользователи отправляют FLAMEXBOT. Ответы отправляются от имени бота.</p></div>
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · SUPPORT</div><h1>Техподдержка</h1><p class="muted">Обращения пользователей, входящие сообщения и ответы от имени FLAMEXBOT.</p></div>
     <div class="support-inbox"><aside class="support-chat-list"><div class="support-list-head"><b>Диалоги</b><button class="outline small" id="support-refresh" type="button">↻</button></div><div class="support-chat-items"><div class="empty-state">Загрузка диалогов…</div></div></aside>
     <section class="support-thread"><div class="support-thread-placeholder"><span>✉</span><b>Выбери диалог</b><small>Здесь появится история сообщений с пользователем.</small></div></section></div>`;
   const list=host.querySelector('.support-chat-items');
@@ -1388,15 +1365,13 @@ function animateFortuneWheel(prizeType) {
 
 async function renderTariffs(host, initialTab='premium') {
  const premium=isPremium();
- const isPro=state.subscription?.plan==='pro'&&premium;
- const weeklySpins=isPro?2:premium?1:0;
- const rareLuck=isPro?10:0;
- const rareWeightBoost=isPro?1.1:1;
- const wheelOddsTotal=92+8*rareWeightBoost;
+ const weeklySpins=premium?2:0;
+  const rareLuck=premium?10:0;
+  const rareWeightBoost=premium?1.1:1;
+  const wheelOddsTotal=100;
  const wheelOddsHtml=[
   ['Прокрутка',55],['Защита 5 дней',25],['Premium 7 дней',12],
-  ['Premium 30 дней',5*rareWeightBoost],['Premium 90 дней',1.5*rareWeightBoost],
-  ['PRO 7 дней',1*rareWeightBoost],['PRO 30 дней',0.4*rareWeightBoost],['PRO 90 дней',0.1*rareWeightBoost]
+  ['Premium 30 дней',5.5*rareWeightBoost],['Premium 90 дней',2.5*rareWeightBoost]
  ].map(([label,weight])=>'<span>'+((weight/wheelOddsTotal)*100).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+label+'</span>').join('');
  const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
  const [{data:subscriptionPayments,error:subscriptionPaymentError},{data:addonPayments,error:addonPaymentError}]=await Promise.all([
@@ -1449,33 +1424,19 @@ async function renderTariffs(host, initialTab='premium') {
      <li>Персональный AFK-автоответ и автоматическое прочтение</li>
      <li>Статусы «печатает…» и «записывает голосовое»</li>
      <li>Фильтр стикеров, время профиля по МСК и оформление текста</li>
-     <li><b>+1 бесплатная прокрутка колеса каждую неделю</b></li>
+     <li><b>+2 бесплатные прокрутки колеса каждую неделю</b></li><li><b>+10% к весам редких наград колеса</b></li><li>Бейдж Premium и ранний доступ к новым функциям</li><li>Экспорт выбранной Business-переписки в JSON</li>
     </ul>
     <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
-    <span class="business-status ${premium?'is-connected':''}">${isPro?'Включён в PRO':premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
-    ${isPro||lifetime?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
+    <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
+    ${lifetime?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
     <small class="premium-payment-note">Оплата проходит через Telegram Stars. Срок — 30 дней; повторная покупка продлевает доступ. Автосписания и автопродления нет — продлевай вручную здесь или командой /premium.</small>
    </section>
-   <section class="business-card tariff-card pro-card ${isPro?'tariff-current':''}">
-    <div class="eyebrow">POWER TIER</div><h2>🔥 FLAMEX PRO</h2>
-    <p class="muted">Максимальный публичный тариф — больше прокруток, более редкие призы и расширенные возможности.</p>
-    <ul>
-     <li>Всё из Premium</li>
-     <li><b>+2 бесплатные прокрутки колеса каждую неделю</b></li>
-     <li><b>+10% к весам редких наград колеса</b></li>
-     <li>Эксклюзивный бейдж PRO и ранний доступ к новым функциям</li>
-     <li>Экспорт выбранной Business-переписки в JSON</li>
-    </ul>
-    <div class="premium-price-line"><b>250 ⭐</b><span>30 дней · разовая оплата</span></div>
-    <span class="business-status ${isPro?'is-connected':''}">${isPro?'Твой текущий тариф · '+(lifetime?'бессрочно':'до '+expires):'Доступен для всех пользователей'}</span>
-    ${lifetime?'':'<button class="primary pro-buy-button" id="buy-pro" type="button">'+(isPro?'↻ Продлить PRO · 250 ⭐':premium?'Перейти на PRO · 250 ⭐':'Оплатить PRO · 250 ⭐')+'</button>'}
-    <small class="premium-payment-note">При переходе с Premium оставшееся время сохраняется и добавляется к PRO. Покупка разовая, автопродления нет — продлевай вручную здесь или командой /pro.</small>
-   </section>
+   
   </div>
   <section class="business-card payment-history-card" aria-labelledby="payment-history-title">
    <div class="payment-history-heading"><div><div class="eyebrow">BILLING</div><h2 id="payment-history-title">История оплат</h2></div><span class="payment-history-count">${paymentHistory?.length||0}/10</span></div>
    ${paymentHistory?.length
-     ? '<div class="payment-history-list">'+paymentHistory.map(payment=>'<div class="payment-history-row"><div><b>'+(payment.kind==='addon'?(payment.addon_code==='command_protection'?'Защита от команд':'Дополнение FLAMEXBOT'):(payment.plan==='pro'?'FLAMEX PRO':'FLAMEX Premium'))+'</b><small>'+esc(formatMskDateTime(payment.history_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}))+' · '+esc(String(payment.period_days))+' дней</small></div><strong>'+esc(String(payment.total_amount))+' '+(payment.currency==='XTR'?'⭐':esc(String(payment.currency)))+'</strong></div>').join('')+'</div>'
+     ? '<div class="payment-history-list">'+paymentHistory.map(payment=>'<div class="payment-history-row"><div><b>'+(payment.kind==='addon'?(payment.addon_code==='command_protection'?'Защита от команд':'Дополнение FLAMEXBOT'):'FLAMEX Premium')+'</b><small>'+esc(formatMskDateTime(payment.history_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}))+' · '+esc(String(payment.period_days))+' дней</small></div><strong>'+esc(String(payment.total_amount))+' '+(payment.currency==='XTR'?'⭐':esc(String(payment.currency)))+'</strong></div>').join('')+'</div>'
      : paymentHistoryError
        ? '<p class="muted">Не удалось загрузить историю оплат. Попробуй обновить раздел позже.</p>'
        : '<p class="muted payment-history-empty">Пока нет завершённых оплат подписки. После первой покупки здесь появится история последних 10 платежей.</p>'}
