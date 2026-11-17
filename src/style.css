@@ -1417,3 +1417,13 @@ body{
 .friend-activity-days b{font-size:9px;color:#e7edf5}.friend-activity-days small{font-size:8px;color:#8c9bad}
 .friend-profile-privacy{display:block;margin-top:11px;color:#748296;font-size:9px;line-height:1.5}
 @media(max-width:560px){.friend-profile-panel{padding:13px}.friend-profile-top{align-items:flex-start}.friend-profile-stats{gap:6px}.friend-profile-stats>div{padding:9px}.friend-profile-stats small{font-size:7px}.friend-profile-stats b{font-size:15px}.friend-activity-days{grid-template-columns:repeat(4,minmax(0,1fr))}.friend-profile-meta{align-items:flex-start}.friend-profile-meta span{width:100%}}
+
+
+/* Search across full saved chat history */
+.message-search-tools{display:flex;align-items:center;gap:6px;min-width:0;flex:1}
+.message-search-tools .message-search{min-width:0;flex:1}
+.business-search-results{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px;border:1px solid rgba(93,151,230,.22);border-radius:11px;background:rgba(18,27,41,.96);backdrop-filter:blur(12px)}
+.business-search-results>b{font-size:11px;color:#e9eef7}.business-search-results>small{font-size:9px;color:#8d9bb0}.business-search-results>button{margin-left:auto}
+.message-event-avatar{width:36px;height:36px;flex:none;border-radius:50%;overflow:hidden}
+.message-event-avatar img{width:100%;height:100%;object-fit:cover}
+@media(max-width:720px){.message-search-tools{width:100%;order:3}.message-search-tools .message-search{width:1px}.message-event-avatar{width:32px;height:32px}}
