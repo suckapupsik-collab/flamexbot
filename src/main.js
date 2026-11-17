@@ -1301,7 +1301,7 @@ async function renderTariffs(host, initialTab='premium') {
     <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
     <span class="business-status ${premium?'is-connected':''}">${isPro?'Включён в PRO':premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
     ${isPro?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
-    <small class="premium-payment-note">Оплата проходит через Telegram Stars. Срок — 30 дней, продление суммирует оставшееся время.</small>
+    <small class="premium-payment-note">Оплата проходит через Telegram Stars. Срок — 30 дней; повторная покупка продлевает доступ. Автоматического списания и автопродления нет — продлевай вручную через эту карточку или команду /premium.</small>
    </section>
    <section class="business-card tariff-card pro-card ${isPro?'tariff-current':''}">
     <div class="eyebrow">POWER TIER</div><h2>🔥 FLAMEX PRO</h2>
@@ -1316,7 +1316,7 @@ async function renderTariffs(host, initialTab='premium') {
     <div class="premium-price-line"><b>250 ⭐</b><span>30 дней · разовая оплата</span></div>
     <span class="business-status ${isPro?'is-connected':''}">${isPro?'Твой текущий тариф · '+(lifetime?'бессрочно':'до '+expires):'Доступен для всех пользователей'}</span>
     ${isPro?'':'<button class="primary pro-buy-button" id="buy-pro" type="button">'+(premium?'Перейти на PRO · 250 ⭐':'Оплатить PRO · 250 ⭐')+'</button>'}
-    <small class="premium-payment-note">При переходе с Premium оставшееся время сохраняется и добавляется к PRO.</small>
+    <small class="premium-payment-note">При переходе с Premium оставшееся время сохраняется и добавляется к PRO. Покупка разовая, автопродления нет.</small>
    </section>
   </div>
   <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
@@ -1372,7 +1372,7 @@ async function renderTariffs(host, initialTab='premium') {
   <div class="addon-feature-heading"><div class="eyebrow">ТОЛЬКО ОТДЕЛЬНЫЕ ПОКУПКИ</div><h2>🧩 Дополнения</h2><p class="muted">Здесь только независимые модули, которые покупаются отдельно. Возможности Premium и PRO здесь не дублируются.</p></div>
   <p class="business-note">Сейчас доступно отдельное дополнение «Защита от команд» на 5 дней. Новые модули появятся здесь отдельными карточками и не будут смешиваться с тарифами.</p>
  </section>
- <p class="business-note">Платежи подтверждаются Telegram. Доступ открывается только после получения и проверки successful_payment на сервере.</p>`;
+ <p class="business-note">Управление подпиской: текущий тариф и дата окончания показаны в карточке выше. Подписки FLAMEXBOT — разовые покупки без автосписаний; отменять автоматическое продление не нужно. Продление выполняется вручную в этом разделе или командами /premium и /pro в личном чате с ботом. Платежи подтверждаются Telegram, доступ открывается только после проверки successful_payment на сервере.</p>`;
  const tabs=[...host.querySelectorAll('[data-tariff-tab]')];
  const panels=[...host.querySelectorAll('[data-tariff-panel]')];
  const showTab=(name)=>{
@@ -1878,12 +1878,22 @@ async function renderCommands(host) {
     {syntax:'/status',title:'Статус Telegram Business',description:'Показывает, подключён ли Business и какие права выданы.',access:'free',group:'Личный чат с ботом'},
     {syntax:'/help',title:'Помощь в личном чате',description:'Объясняет, что команды управления нужно отправлять в переписке с человеком.',access:'free',group:'Личный чат с ботом'},
     {syntax:'/commands',title:'Справка по командам',description:'Открывает ту же справку, что и /help.',access:'free',group:'Личный чат с ботом'},
+    {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
+    {syntax:'/pro',title:'Купить или продлить FLAMEX PRO',description:'Создаёт счёт Telegram Stars на 30 дней. Переход с Premium сохраняет оставшееся время.',access:'free',group:'Подписка · личный чат'},
+    {syntax:'.spamallow',title:'Разрешить тестовые повторы',description:'Даёт согласие на повторные тестовые сообщения в этом диалоге.',access:'free',group:'Управление чатом'},
+    {syntax:'.spamstop',title:'Отозвать согласие',description:'Немедленно отзывает согласие на тестовые повторные сообщения.',access:'free',group:'Управление чатом'},
+    {syntax:'.antimat',title:'Фильтр ненормативной лексики',description:'Включает фильтр мата в текущем Business-диалоге. Требуется Premium.',access:'premium',group:'Фильтры'},
+    {syntax:'.unantimat',title:'Выключить фильтр ненормативной лексики',description:'Отключает фильтр. Доступно бесплатно.',access:'free',group:'Фильтры'},
+    {syntax:'.unantimute',title:'Выключить антимут',description:'Отключает альтернативную отправку. Доступно бесплатно.',access:'free',group:'Управление чатом'},
+    {syntax:'.antimut on/off',title:'Переключить антимут',description:'Включает или выключает одну попытку отправки через бота в рамках разрешений Telegram.',access:'premium',group:'Управление чатом'},
+    {syntax:'.timeprofile +3',title:'Часовой пояс',description:'Настраивает смещение времени профиля.',access:'premium',group:'Профиль'},
+    {syntax:'.spamstop',title:'Отозвать согласие',description:'Немедленно отзывает согласие на тестовые повторные сообщения.',access:'free',group:'Управление чатом'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Включить мут',description:'Удаляет новые входящие сообщения в выбранном диалоге. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
     {syntax:'.unmute',title:'Выключить мут',description:'Останавливает автоматическое удаление новых сообщений. Доступно бесплатно.',access:'free',group:'Управление чатом'},
     {syntax:'.antimute',title:'Включить антимут',description:'Отправляет новые сообщения от имени бота FLAMEXBOT. Получатель должен открыть бота и нажать Start. Нужен Premium.',access:'premium',group:'Управление чатом'},
     {syntax:'.unantimute',title:'Выключить антимут',description:'Выключает режим антимута. Доступно бесплатно.',access:'free',group:'Управление чатом'},
-    {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Отправляет от двух до пяти копий текста с паузой. Используй только когда получатель согласен.',access:'premium',group:'Управление чатом'},
+    {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Отправляет от двух до пяти тестовых копий с паузой. Доступно только с FLAMEX PRO и только при явном согласии собеседника.',access:'pro',group:'Управление чатом'},
     {syntax:'.afk причина',title:'Включить автоответ',description:'Включает автоответ только в этом диалоге и задаёт текст ответа.',access:'premium',group:'Автоматизация'},
     {syntax:'.unafk',title:'Выключить автоответ',description:'Отключает автоответ только в этом диалоге. Доступно бесплатно.',access:'free',group:'Автоматизация'},
     {syntax:'.autoread',title:'Автопрочтение',description:'Автоматически отмечает входящие сообщения прочитанными только в этом диалоге.',access:'premium',group:'Автоматизация'},
@@ -1915,7 +1925,7 @@ async function renderCommands(host) {
     {syntax:'.wordcount текст',title:'Подсчёт слов',description:'Считает количество слов в тексте.',access:'free',group:'Работа с текстом'},
     {syntax:'.choose A | B',title:'Случайный выбор',description:'Выбирает один из вариантов, разделённых символом |.',access:'free',group:'Утилиты'},
     {syntax:'.roll 100',title:'Случайное число',description:'Выдаёт случайное число от 1 до заданного максимума.',access:'free',group:'Утилиты'},
-    {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Только согласованные тестовые сообщения; команда требует PRO.',access:'pro',group:'PRO'},
+    ,
     {syntax:'.dokc',title:'Публичная карточка',description:'Анимированно показывает открытые сведения текущего Telegram-диалога. Не обращается к утечкам и закрытым базам.',access:'pro',group:'PRO'},
     {syntax:'.streak 7',title:'Установить огонёк',description:'Мгновенно создаёт или устанавливает серию на указанное число дней (1–3650). Только владелец и администраторы.',access:'admin',group:'Администрация'}
   ];
