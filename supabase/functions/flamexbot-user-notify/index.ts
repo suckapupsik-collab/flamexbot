@@ -191,6 +191,8 @@ Deno.serve(async (req: Request) => {
       return response({ error: "Admin notification record was not created" }, 409);
     }
 
+    if (adminComment) message += "\n\n💬 <b>Комментарий администрации:</b> " + escapeHtml(adminComment);
+
     try {
       await sendBotMessage(String(profile.telegram_id), message);
     } catch (error) {
