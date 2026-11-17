@@ -1482,3 +1482,19 @@ body{
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+
+/* Subscription payment history */
+.payment-history-card{margin:18px 0;padding:18px}
+.payment-history-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.payment-history-heading h2{margin:3px 0 0;font-size:20px}
+.payment-history-count{padding:5px 9px;border:1px solid var(--border);border-radius:999px;color:var(--muted);font-size:10px;font-weight:800}
+.payment-history-list{display:grid;gap:0;margin-top:8px}
+.payment-history-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)}
+.payment-history-row:last-child{border-bottom:0}
+.payment-history-row>div{display:grid;gap:4px;min-width:0}
+.payment-history-row b{font-size:12px}
+.payment-history-row small{color:var(--muted);font-size:10px}
+.payment-history-row strong{flex-shrink:0;font-size:13px;font-variant-numeric:tabular-nums}
+.payment-history-empty{margin:12px 0 2px}
+@media(max-width:520px){.payment-history-card{padding:14px}.payment-history-row{align-items:flex-start}.payment-history-row strong{font-size:12px}}
