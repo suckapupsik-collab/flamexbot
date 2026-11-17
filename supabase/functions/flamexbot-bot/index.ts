@@ -1018,6 +1018,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     }
   await reply("Неизвестная команда. Напиши .help");
   return true;
+  }
 }
 
 
