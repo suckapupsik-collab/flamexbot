@@ -1238,8 +1238,6 @@ async function renderUsers(host) {
           <button class="admin-action ${u.is_banned?'safe':''}" data-user-action="${u.is_banned?'unban':'ban'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
           <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${locked?'disabled':''}>✦ ${u.is_premium&&!((u.badge_codes||[]).includes('pro'))?'Продлить Premium':'Выдать Premium'}</button>
           <button class="admin-action" data-user-action="premium_revoke" data-user-id="${u.id}" ${!u.is_premium||((u.badge_codes||[]).includes('pro'))||locked?'disabled':''}>Снять Premium</button>
-          <button class="admin-action pro" data-user-action="pro_grant" data-user-id="${u.id}" ${locked?'disabled':''}>🔥 ${((u.badge_codes||[]).includes('pro'))?'Продлить PRO':'Выдать PRO'}</button>
-          <button class="admin-action" data-user-action="pro_revoke" data-user-id="${u.id}" ${!((u.badge_codes||[]).includes('pro'))||locked?'disabled':''}>Снять PRO</button>
         </div>
         <div class="admin-role-controls"><label>Заменить значок<div class="role-picker" data-role-picker><button type="button" class="role-picker-trigger" data-role-picker-toggle ${locked?'disabled':''}>${esc(roleOptions.find(([code])=>code===currentRole)?.[1]||'Выбрать значок…')} <span>⌄</span></button><div class="role-picker-menu" hidden>${roleOptions.map(([code,label])=>`<button type="button" data-role-option="${code}">${esc(label)}${currentRole===code?' · текущий':''}</button>`).join('')}</div><input type="hidden" data-role-select="${u.id}" value="${esc(currentRole)}"/></div></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}" ${locked?'disabled':''} title="${locked?'Аккаунт администрации защищён от других администраторов':'Заменить значок роли'}">Заменить значок</button><label>Снять значок<div class="role-picker" data-role-picker><button type="button" class="role-picker-trigger" data-role-picker-toggle ${locked?'disabled':''}>Выбрать значок… <span>⌄</span></button><div class="role-picker-menu" hidden>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<button type="button" data-role-option="${code}">${esc(BADGE_META[code]?.label||code)}</button>`).join('')}</div><input type="hidden" data-role-remove="${u.id}" value=""/></div></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}" ${locked?'disabled':''} title="${locked?'Аккаунт администрации защищён от других администраторов':'Снять значок'}">Снять</button>
         </div>
@@ -1299,8 +1297,6 @@ async function renderAdminUser(host) {
         <button class="admin-action ${u.is_banned?'safe':''}" data-admin-detail-action="${u.is_banned?'unban':'ban'}" ${locked?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
         <button class="admin-action premium" data-admin-detail-action="premium_grant" ${locked||badges.includes('pro')?'disabled':''}>✦ ${u.is_premium&&!badges.includes('pro')?'Продлить Premium':'Выдать Premium'}</button>
         <button class="admin-action" data-admin-detail-action="premium_revoke" ${!u.is_premium||badges.includes('pro')||locked?'disabled':''}>Снять Premium</button>
-        <button class="admin-action pro" data-admin-detail-action="pro_grant" ${locked?'disabled':''}>🔥 ${badges.includes('pro')?'Продлить PRO':'Выдать PRO'}</button>
-        <button class="admin-action" data-admin-detail-action="pro_revoke" ${!badges.includes('pro')||locked?'disabled':''}>Снять PRO</button>
       </div>
       <div class="admin-detail-badge-form"><label>Единственный значок аккаунта<select id="admin-detail-badge" ${locked?'disabled':''}><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="primary small" data-admin-detail-action="badge_grant" ${locked?'disabled':''}>Заменить значок</button><button class="outline small" data-admin-detail-action="badge_revoke" ${locked?'disabled':''}>Снять значок</button></div>
       <small class="admin-detail-note">На одном аккаунте может быть только один значок роли. Выдача нового заменяет предыдущий. Premium отображается отдельно и не занимает слот значка.</small>
@@ -1451,7 +1447,7 @@ async function renderTariffs(host, initialTab='premium') {
     </div>
    </div>
    <p class="muted">Прокрутка стоит 5 ⭐. Можно выиграть Premium или PRO на 7, 30 и 90 дней, защиту от команд либо ещё одну прокрутку.</p>
-   <div class="wheel-odds-controls"><button class="outline small" type="button" id="toggle-wheel-odds" aria-expanded="false">Показать шансы</button><div class="wheel-odds" id="wheel-odds-panel" hidden>${wheelOddsHtml}</div></div>${isPro?'<small class="premium-payment-note">Вероятности пересчитаны с учётом бонуса PRO к весам редких наград.</small>':''}
+   <div class="wheel-odds-controls"><button class="outline small" type="button" id="toggle-wheel-odds" aria-expanded="false">Показать шансы</button><div class="wheel-odds" id="wheel-odds-panel" hidden>${wheelOddsHtml}</div></div>
    <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐'}</button>
    <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${weeklySpins} для текущего тарифа${rareLuck?' · веса редких наград +' + rareLuck + '%':''}.</small>
   </section>
@@ -1479,7 +1475,7 @@ async function renderTariffs(host, initialTab='premium') {
   <div class="addon-feature-heading"><div class="eyebrow">ТОЛЬКО ОТДЕЛЬНЫЕ ПОКУПКИ</div><h2>🧩 Дополнения</h2><p class="muted">Здесь только независимые модули, которые покупаются отдельно. Возможности Premium и PRO здесь не дублируются.</p></div>
   <p class="business-note">Сейчас доступно отдельное дополнение «Защита от команд» на 5 дней. Новые модули появятся здесь отдельными карточками и не будут смешиваться с тарифами.</p>
  </section>
- <p class="business-note">Управление подпиской: текущий тариф и дата окончания показаны в карточке выше. Premium и PRO — разовые покупки без автосписаний; отменять автоматическое продление не нужно. Продление выполняется вручную в этом разделе или командами /premium и /pro в личном чате с ботом. Платёж подтверждается Telegram, доступ открывается только после проверки successful_payment на сервере.</p>`;
+ <p class="business-note">Управление подпиской: текущий тариф и дата окончания показаны в карточке выше. Premium — разовая покупка без автосписаний. Продление выполняется вручную в этом разделе или командой /premium в личном чате с ботом. Все возможности прежнего PRO включены в Premium. Платёж подтверждается Telegram, доступ открывается только после проверки successful_payment на сервере.</p>`;
  const tabs=[...host.querySelectorAll('[data-tariff-tab]')];
  const panels=[...host.querySelectorAll('[data-tariff-panel]')];
  const showTab=(name)=>{
@@ -1531,7 +1527,7 @@ async function renderTariffs(host, initialTab='premium') {
            await new Promise(resolve=>setTimeout(resolve,700));
          }
          updateHeaderProfile();
-         toast(activated?(plan==='pro'?'🔥 FLAMEX PRO успешно активирован!':'⭐ Premium успешно активирован!'):'Платёж получен. Тариф появится после подтверждения Telegram.');
+         toast(activated?('⭐ Premium успешно активирован!'):'Платёж получен. Тариф появится после подтверждения Telegram.');
          await renderTariffs(host,'premium');
        }else if(status==='cancelled')toast('Оплата отменена. Списания не произошло.');
        else if(status==='failed')toast('Telegram не смог завершить оплату. Попробуй ещё раз.');
@@ -1542,7 +1538,7 @@ async function renderTariffs(host, initialTab='premium') {
    finally{
      if(host.contains(button)){
        button.disabled=false;button.classList.remove('is-loading');
-       button.textContent=plan==='pro'?(isPro?'↻ Продлить PRO · 250 ⭐':premium?'Перейти на PRO · 250 ⭐':'Оплатить PRO · 250 ⭐'):buyLabel;
+       button.textContent=buyLabel;
      }
    }
  };
@@ -1987,8 +1983,7 @@ async function renderCommands(host) {
     {syntax:'/help',title:'Помощь в личном чате',description:'Объясняет, что команды управления нужно отправлять в переписке с человеком.',access:'free',group:'Личный чат с ботом'},
     {syntax:'/commands',title:'Справка по командам',description:'Открывает ту же справку, что и /help.',access:'free',group:'Личный чат с ботом'},
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
-    {syntax:'/pro',title:'Купить или продлить FLAMEX PRO',description:'Создаёт счёт Telegram Stars на 30 дней. При переходе с Premium оставшееся время сохраняется.',access:'free',group:'Подписка · личный чат'},
-    {syntax:'.unantimute',title:'Выключить антимут',description:'Отключает альтернативную отправку от имени бота.',access:'free',group:'Управление чатом'},
+        {syntax:'.unantimute',title:'Выключить антимут',description:'Отключает альтернативную отправку от имени бота.',access:'free',group:'Управление чатом'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Включить мут',description:'Удаляет новые входящие сообщения в выбранном диалоге. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
     {syntax:'.unmute',title:'Выключить мут',description:'Останавливает автоматическое удаление новых сообщений. Доступно бесплатно.',access:'free',group:'Управление чатом'},
