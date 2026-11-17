@@ -1328,7 +1328,7 @@ async function renderTariffs(host, initialTab='premium') {
     </ul>
     <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
     <span class="business-status ${premium?'is-connected':''}">${isPro?'Включён в PRO':premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
-    ${isPro?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
+    ${isPro||lifetime?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
     <small class="premium-payment-note">Оплата проходит через Telegram Stars. Срок — 30 дней; повторная покупка продлевает доступ. Автосписания и автопродления нет — продлевай вручную здесь или командой /premium.</small>
    </section>
    <section class="business-card tariff-card pro-card ${isPro?'tariff-current':''}">
@@ -1343,7 +1343,7 @@ async function renderTariffs(host, initialTab='premium') {
     </ul>
     <div class="premium-price-line"><b>250 ⭐</b><span>30 дней · разовая оплата</span></div>
     <span class="business-status ${isPro?'is-connected':''}">${isPro?'Твой текущий тариф · '+(lifetime?'бессрочно':'до '+expires):'Доступен для всех пользователей'}</span>
-    ${isPro?'':'<button class="primary pro-buy-button" id="buy-pro" type="button">'+(premium?'Перейти на PRO · 250 ⭐':'Оплатить PRO · 250 ⭐')+'</button>'}
+    ${lifetime?'':'<button class="primary pro-buy-button" id="buy-pro" type="button">'+(isPro?'↻ Продлить PRO · 250 ⭐':premium?'Перейти на PRO · 250 ⭐':'Оплатить PRO · 250 ⭐')+'</button>'}
     <small class="premium-payment-note">При переходе с Premium оставшееся время сохраняется и добавляется к PRO. Покупка разовая, автопродления нет — продлевай вручную здесь или командой /pro.</small>
    </section>
   </div>
@@ -1473,7 +1473,7 @@ async function renderTariffs(host, initialTab='premium') {
    finally{
      if(host.contains(button)){
        button.disabled=false;button.classList.remove('is-loading');
-       button.textContent=plan==='pro'?(premium?'Перейти на PRO · 250 ⭐':'Оплатить PRO · 250 ⭐'):buyLabel;
+       button.textContent=plan==='pro'?(isPro?'↻ Продлить PRO · 250 ⭐':premium?'Перейти на PRO · 250 ⭐':'Оплатить PRO · 250 ⭐'):buyLabel;
      }
    }
  };
