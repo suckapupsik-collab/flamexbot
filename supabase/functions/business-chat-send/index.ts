@@ -131,15 +131,17 @@ Deno.serve(async (req: Request) => {
       if (chatsError) throw chatsError;
       const ids = (chats ?? []).map((item: any) => item.id);
       if (!ids.length) return reply({ chats: [] });
-      const [{ data: prefs, error: prefsError }, { data: messages, error: messagesError }] = await Promise.all([
+      const [{ data: prefs, error: prefsError }, { data: messages, error: messagesError }, { data: connection, error: connectionError }] = await Promise.all([
         admin.from("flamexbot_business_chat_settings")
           .select("business_chat_id,is_favorite,is_pinned,is_muted,antimut_enabled,last_read_at").in("business_chat_id", ids),
         admin.from("flamexbot_business_messages")
           .select("business_chat_id,direction,created_at").in("business_chat_id", ids).eq("direction", "inbound")
           .order("created_at", { ascending: false }).limit(5000),
+        admin.from("flamexbot_business_connections").select("is_enabled,rights").eq("profile_id", profileId).maybeSingle(),
       ]);
       if (prefsError) throw prefsError;
       if (messagesError) throw messagesError;
+      if (connectionError) throw connectionError;
       const prefMap = new Map((prefs ?? []).map((item: any) => [item.business_chat_id, item]));
       const unread = new Map<string, number>();
       for (const message of messages ?? []) {
@@ -148,7 +150,7 @@ Deno.serve(async (req: Request) => {
           unread.set(message.business_chat_id, (unread.get(message.business_chat_id) ?? 0) + 1);
         }
       }
-      return reply({ chats: (chats ?? []).map((item: any) => ({
+      return reply({ connection: connection ?? null, chats: (chats ?? []).map((item: any) => ({
         ...item, ...(prefMap.get(item.id) ?? {}), unread_count: unread.get(item.id) ?? 0,
       })) });
     }
@@ -228,11 +230,11 @@ Deno.serve(async (req: Request) => {
       if (targetIsFounder) return reply({ error: "Этот диалог защищён. Команды управления здесь отключены." }, 403);
       if (targetTelegramId) {
         const { data: protection, error: protectionError } = await admin.from("profiles")
-          .select("command_protection_expires_at").eq("telegram_id", targetTelegramId).maybeSingle();
+          .select("command_protection_expires_at,command_protection_disabled").eq("telegram_id", targetTelegramId).maybeSingle();
         if (protectionError) throw protectionError;
         const expiresAt = protection?.command_protection_expires_at
           ? new Date(protection.command_protection_expires_at).getTime() : 0;
-        if (expiresAt > Date.now()) {
+        if (expiresAt > Date.now() && protection?.command_protection_disabled !== true) {
           return reply({ error: "Этот пользователь включил защиту от команд FLAMEXBOT. Использовать команды на защищённом аккаунте может только Основатель проекта." }, 403);
         }
       }
