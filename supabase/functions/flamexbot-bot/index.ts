@@ -59,7 +59,7 @@ async function telegram(method: string, body: Record<string, unknown>) {
             : /подтверд|готово|продолж|сохран/.test(label) ? "success"
             : /профил|аккаунт/.test(label) ? "profile"
             : /оплат|stars|звезд/.test(label) ? "star"
-            : /premium|pro|тариф/.test(label) ? "diamond"
+            : /premium|тариф/.test(label) ? "diamond"
             : /выключить мут|размут|unmute/.test(label) ? "unlock"
              : /включить мут|мут|mute/.test(label) ? "lock"
              : /защит|безопас|lock/.test(label) ? "security"
@@ -1195,7 +1195,7 @@ async function refundAndRecordStarsPayment(args: {
   userId: string;
   telegramUserId: string;
   invoicePayload: string;
-  paymentKind: "premium" | "pro" | "wheel" | "command_protection";
+  paymentKind: "premium" | "wheel" | "command_protection";
   currency: string;
   totalAmount: number;
   chargeId: string;
