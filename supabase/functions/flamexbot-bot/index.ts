@@ -1268,6 +1268,7 @@ async function handleSuccessfulPayment(message: any) {
       p_currency:payment.currency,p_total_amount:payment.total_amount
     });
     if(prizeError)throw prizeError;
+    if(prize?.applied !== true) return;
     await sendRichTelegramMessage(message.chat.id,
       `${tgEmoji("sparkles")} <b>Колесо фортуны!</b>\nТвоя награда: <b>${String(prize?.prize_label??"Награда начислена")}</b>.\nОткрой FLAMEXBOT, чтобы посмотреть результат.`,
       "HTML",{inline_keyboard:[[{text:"Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
