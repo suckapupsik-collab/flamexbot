@@ -492,26 +492,6 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
         }
       }
     }
-    const consentCommand = content.trim().toLowerCase();
-    if (consentCommand === ".spamallow" || consentCommand === "/spamallow") {
-      const { error: consentError } = await admin.from("flamexbot_business_spam_consents").upsert({
-        profile_id: connection.profile_id, business_chat_id: chat.id, telegram_chat_id: chatId,
-        consented_at: new Date().toISOString(), revoked_at: null,
-      }, { onConflict: "profile_id,business_chat_id" });
-      if (consentError) throw consentError;
-      await sendBusinessReply(connection.connection_id, chatId,
-        "Согласие на получение повторных тестовых сообщений сохранено. Отказаться можно командой .spamstop.");
-      return;
-    }
-    if (consentCommand === ".spamstop" || consentCommand === "/spamstop") {
-      const { error: consentError } = await admin.from("flamexbot_business_spam_consents")
-        .update({ revoked_at: new Date().toISOString() })
-        .eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).eq("telegram_chat_id", chatId);
-      if (consentError) throw consentError;
-      await sendBusinessReply(connection.connection_id, chatId,
-        "Согласие отозвано. Повторные сообщения больше отправляться не будут.");
-      return;
-    }
     if (isFounderTarget(chatId)) return;
     const { data: chatPrefs, error: chatSettingsError } = await admin.from("flamexbot_business_chat_settings")
       .select("is_muted,auto_flood_muted,antimut_enabled,afk_enabled,afk_message,autoread_enabled,autotyping_enabled,autovoice_enabled,mutestick_enabled,antimat_enabled")
@@ -693,10 +673,6 @@ async function handleBusinessChatCommand(message: any, businessConnectionId: str
   const [rawCommand, ...parts] = text.slice(1).split(/\s+/);
   const command = String(rawCommand ?? "").replace(/@\w+$/,"").toLowerCase();
   const args = parts;
-  if (command === "spam") {
-    await reply("Команда .spam удалена из FLAMEXBOT.");
-    return true;
-  }
   const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const reply = async (body: string, parseMode?: string, replyMarkup?: Record<string, unknown>) => {
     const formatted = parseMode === "HTML" || body.includes("<tg-emoji")
@@ -793,8 +769,8 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(`${tgEmoji("sparkles")} <b>Огонёк установлен мгновенно!</b>\nСерия: <b>${days} дн.</b>\nПользователь добавлен в друзья, если вы ещё не были друзьями. Дальше огонёк будет продлеваться обычной взаимной перепиской.`, "HTML");
     return true;
   }
-  const proOnlyCommands = ["spam","profile"];
-  const commandNeedsPremium = ["mute","spam","profile","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
+  const proOnlyCommands = ["profile"];
+  const commandNeedsPremium = ["mute","profile","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
   let premium = false;
   let pro = false;
   if (commandNeedsPremium) {
@@ -906,7 +882,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(enabled ? "🕒 Время в профиле включено." : "Время в профиле скрыто.");
     return true;
   }
-  if (["mute","unmute","spam","copyp","profile","qr","id","chatid","date","calc","upper","lower","reverse","count","wordcount","choose","roll"].includes(command)) {
+  if (["mute","unmute","copyp","profile","qr","id","chatid","date","calc","upper","lower","reverse","count","wordcount","choose","roll"].includes(command)) {
     if (!businessConnectionId) { await reply("Эту команду нужно писать в личной переписке с собеседником."); return true; }
     const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats")
       .select("id,telegram_chat_id,telegram_user_id,business_connection_id,username,first_name,last_name,photo_url")
@@ -957,7 +933,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
           `${tgEmoji("search")} <b>FLAMEXBOT · поиск профиля</b>\n\n✓ Собеседник определён\n✓ Публичные данные проверены\n③ Формирую карточку…`,
         ];
         for (const frame of frames) {
-          await new Promise(resolve => setTimeout(resolve, 450));
+          await new Promise(resolve => setTimeout(resolve, 120));
           await telegram("editMessageText", { business_connection_id: businessConnectionId, chat_id: message.chat.id,
             message_id: progress.message_id, text: frame, parse_mode: "HTML" });
         }
@@ -1040,50 +1016,6 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       await reply(`${tgEmoji("star")} Выпало: <b>${result}</b> (1–${max})`, "HTML");
       return true;
     }
-    if (command !== "spam") {
-      await reply(`Неизвестная команда: <code>.${escapeHtml(command)}</code>. Напиши <code>.help</code>, чтобы увидеть поддерживаемые команды.`, "HTML");
-      return true;
-    }
-    const count = Number(args[0]);
-    const spamText = args.slice(1).join(" ").trim();
-    if (!Number.isInteger(count) || count < 2 || count > 5 || !spamText || spamText.length > 1000) {
-      await reply("Формат: .spam 2-5 текст сообщения. Максимум 5 сообщений и 1000 символов.");
-      return true;
-    }
-    const { data: consent, error: consentError } = await admin.from("flamexbot_business_spam_consents")
-      .select("consented_at,revoked_at").eq("profile_id", profile.id)
-      .eq("business_chat_id", chat.id).eq("telegram_chat_id", String(message.chat.id)).maybeSingle();
-    if (consentError) throw consentError;
-    if (!consent?.consented_at || consent.revoked_at) {
-      await reply("⛔ Собеседник ещё не дал согласие. Он должен отправить в этом диалоге команду .spamallow. Отказ — .spamstop.");
-      return true;
-    }
-    let connection = connectionOverride;
-    if (!connection) {
-      const { data, error } = await admin.from("flamexbot_business_connections")
-        .select("is_enabled,connection_id").eq("profile_id", profile.id).eq("connection_id", businessConnectionId).maybeSingle();
-      if (error) throw error;
-      connection = data;
-    }
-    if (!connection?.is_enabled) { await reply("Подключение Telegram Business не активно."); return true; }
-    let sent = 0;
-    for (let i = 0; i < count; i++) {
-      try {
-        await telegram("sendMessage", {
-          business_connection_id: connection.connection_id,
-          chat_id: Number(message.chat.id),
-          text: spamText,
-        });
-        sent++;
-      } catch (error) {
-        await reply(`${tgEmoji("warning")} Отправлено ${sent} из ${count}. ${escapeHtml(explainTelegramSendError(error))}`, "HTML");
-        return true;
-      }
-      if (i < count - 1) await new Promise(resolve => setTimeout(resolve, 1200));
-    }
-    await reply(`${tgEmoji("success")} <b>Готово.</b> Отправлено ${sent} сообщений в этот диалог.`, "HTML");
-    return true;
-  }
   await reply("Неизвестная команда. Напиши .help");
   return true;
 }
@@ -1865,13 +1797,9 @@ async function processTelegramUpdate(update: any) {
         update.business_message.from?.id != null;
       const isBusinessCommand = hasCommandPrefix &&
         String(update.business_message.from.id) === String(ownerConnection?.telegram_user_id ?? "");
-      const businessCommandText = String(update.business_message.text ?? "").trim().toLowerCase();
-      const isSpamConsentCommand = [".spamallow", "/spamallow", ".spamstop", "/spamstop"].includes(businessCommandText) &&
-        String(update.business_message.from?.id ?? "") !== String(ownerConnection?.telegram_user_id ?? "");
       // Only commands authored by the connected account owner are executable.
       // Messages from the other participant (including dot-prefixed text) stay in the archive.
-      // Consent belongs to the recipient, so these two commands also go through the incoming handler.
-      if (!isBusinessCommand || isSpamConsentCommand) {
+      if (!isBusinessCommand) {
         await saveBusinessMessage(update.business_message, ownerConnection);
       }
       if (isBusinessCommand) {
