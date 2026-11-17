@@ -1164,12 +1164,12 @@ async function sendTierInvoice(chatId: number, telegramUserId: number, plan: "pr
   const { data: current, error: currentError } = await admin.from("user_subscriptions").select("plan,expires_at").eq("user_id", profile.id).maybeSingle();
   if (currentError) throw currentError;
   const active = Boolean(current && (!current.expires_at || new Date(current.expires_at).getTime() > Date.now()));
-  if (active && current.plan === "pro") {
-    await sendRichTelegramMessage(chatId, `${tgEmoji("success")} <b>FLAMEX PRO уже активен.</b> Это максимальный тариф. Он действует ${current.expires_at ? "до " + new Date(current.expires_at).toLocaleDateString("ru-RU") : "бессрочно"}.`, "HTML");
-    return;
-  }
   if (active && !current.expires_at) {
     await sendRichTelegramMessage(chatId, `${tgEmoji("success")} <b>У тебя уже бессрочный тариф.</b> Покупка не требуется.`, "HTML");
+    return;
+  }
+  if (active && current.plan === "pro" && plan === "premium") {
+    await sendRichTelegramMessage(chatId, `${tgEmoji("success")} <b>FLAMEX PRO уже активен.</b> Покупка Premium не нужна. Тариф действует до ${new Date(current.expires_at).toLocaleDateString("ru-RU")}.`, "HTML");
     return;
   }
   const price = plan === "pro" ? PRO_PRICE_STARS : PREMIUM_PRICE_STARS;
