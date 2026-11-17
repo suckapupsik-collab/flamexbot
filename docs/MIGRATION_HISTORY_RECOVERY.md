@@ -57,3 +57,18 @@ This migration updates the Premium/PRO, paid-wheel, and command-protection payme
 The paid-wheel RPC now validates and locks the profile before drawing/awarding the prize. The free-wheel redemption path already decrements spins through an update constrained by `is_banned=false`, which locks the profile row before calling the prize routine.
 
 The migration preserves the existing service-role-only EXECUTE grants on payment/refund RPCs. No production payment, refund, or prize redemption was executed during this audit.
+
+
+## Follow-up check — 2026-11-17 (weekly wheel grants and index cleanup)
+
+The production ledger now contains **80 applied migrations** and GitHub `main` contains **33 SQL migration files**. The raw difference remains 47 and must not be interpreted as an exact count of missing historical sources.
+
+New migrations:
+- `20261117134807_top_up_weekly_wheel_grants_after_pro_upgrade.sql`
+- `20261117135026_refund_ledger_fk_index_and_dedupe_notifications_index.sql`
+
+Weekly wheel grants are now idempotent per user/week and can top up an existing Premium grant by one spin after an upgrade to PRO during that same week. The function re-locks and re-reads the profile and subscription before computing the delta; it never removes spins already granted after a downgrade. It preserves the existing service-role-only EXECUTE grant and the existing Monday cron schedule.
+
+The wheel UI now computes displayed probabilities from the same weights and PRO multiplier as the database draw routine. The PRO copy describes a 10% increase to rare-prize weights rather than promising an exact 10% increase to normalized probabilities.
+
+The performance advisor identified two exactly identical pending-notification indexes. The newer duplicate was removed; the original index was retained. An index was also added to the refund ledger's user foreign key. No other unused indexes were dropped because advisor usage counters alone are insufficient evidence that they are safe to remove.
