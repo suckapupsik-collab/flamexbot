@@ -2095,7 +2095,7 @@ async function renderCommands(host) {
     {syntax:'.choose A | B',title:'Случайный выбор',description:'Выбирает один из вариантов, разделённых символом |.',access:'free',group:'Утилиты'},
     {syntax:'.roll 100',title:'Случайное число',description:'Выдаёт случайное число от 1 до заданного максимума.',access:'free',group:'Утилиты'},
     {syntax:'.spam 2-5 текст',title:'Повторная отправка',description:'Только согласованные тестовые сообщения; команда требует PRO.',access:'pro',group:'PRO'},
-    {syntax:'.dokc',title:'Публичная карточка',description:'Анимированно показывает открытые сведения текущего Telegram-диалога. Не обращается к утечкам и закрытым базам.',access:'pro',group:'PRO'},
+    {syntax:'.profile',title:'Публичная карточка',description:'Анимированно показывает открытые сведения текущего Telegram-диалога. Не обращается к утечкам и закрытым базам.',access:'pro',group:'PRO'},
     {syntax:'.streak 7',title:'Установить огонёк',description:'Мгновенно создаёт или устанавливает серию на указанное число дней (1–3650). Только владелец и администраторы.',access:'admin',group:'Администрация'}
   ];
   const filters=[['all','Все'],['free','Бесплатные'],['premium','Premium'],['pro','PRO'],['admin','Администрация']];
