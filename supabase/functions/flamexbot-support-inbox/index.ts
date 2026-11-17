@@ -64,6 +64,77 @@ Deno.serve(async (req: Request) => {
       return response({ chat, messages: data ?? [] });
     }
 
+    if (action === "media") {
+      const messageId = Number(body?.message_id);
+      if (!Number.isSafeInteger(messageId) || messageId <= 0) return response({ error: "Invalid message_id" }, 400);
+      const { data: stored, error: storedError } = await admin.from("flamexbot_support_messages")
+        .select("content,message_type").eq("support_chat_id", chatId).eq("telegram_message_id", messageId).maybeSingle();
+      if (storedError) throw storedError;
+      if (!stored) return response({ error: "Файл не найден." }, 404);
+      let media: any = null;
+      try { media = JSON.parse(stored.content); } catch { media = null; }
+      if (!media || media._fx_media !== 1 || !media.file_id) return response({ error: "У сообщения нет вложения." }, 404);
+      const infoResponse = await fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/getFile", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ file_id: media.file_id }), signal: AbortSignal.timeout(12000),
+      });
+      const info = await infoResponse.json();
+      if (!infoResponse.ok || !info.ok || !info.result?.file_path) return response({ error: "Telegram не смог получить файл." }, 502);
+      if (Number(info.result.file_size || 0) > 20 * 1024 * 1024) return response({ error: "Файл превышает лимит 20 МБ." }, 413);
+      const fileResponse = await fetch("https://api.telegram.org/file/bot" + BOT_TOKEN + "/" + info.result.file_path, { signal: AbortSignal.timeout(20000) });
+      if (!fileResponse.ok) return response({ error: "Не удалось загрузить файл из Telegram." }, 502);
+      const headers = new Headers(corsHeaders);
+      headers.set("Content-Type", fileResponse.headers.get("Content-Type") || media.mime_type || "application/octet-stream");
+      headers.set("Content-Disposition", "inline; filename*=UTF-8''" + encodeURIComponent(media.file_name || ("telegram-" + messageId)));
+      headers.set("Cache-Control", "private, max-age=60");
+      return new Response(fileResponse.body, { status: 200, headers });
+    }
+
+    if (action === "send_media") {
+      const fileName = String(body?.file_name ?? "attachment").slice(0, 180);
+      const mimeType = String(body?.mime_type ?? "application/octet-stream").slice(0, 120);
+      const base64 = String(body?.file_base64 ?? "");
+      const caption = String(body?.caption ?? "").trim().slice(0, 1024);
+      if (!base64 || base64.length > 28 * 1024 * 1024) return response({ error: "Файл пустой или превышает лимит 20 МБ." }, 413);
+      const binary = atob(base64);
+      if (binary.length > 20 * 1024 * 1024) return response({ error: "Максимальный размер файла — 20 МБ." }, 413);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const extension = fileName.split(".").pop()?.toLowerCase() || "";
+      const method = mimeType.startsWith("image/") && !["gif"].includes(extension) ? "sendPhoto"
+        : mimeType.startsWith("video/") ? "sendVideo"
+        : mimeType.startsWith("audio/") ? "sendAudio"
+        : extension === "gif" ? "sendAnimation" : "sendDocument";
+      const field = method === "sendPhoto" ? "photo" : method === "sendVideo" ? "video"
+        : method === "sendAudio" ? "audio" : method === "sendAnimation" ? "animation" : "document";
+      const form = new FormData();
+      form.set("chat_id", chat.telegram_chat_id);
+      form.set(field, new Blob([bytes], { type: mimeType }), fileName);
+      if (caption) form.set("caption", caption);
+      const telegramResponse = await fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/" + method, {
+        method: "POST", body: form, signal: AbortSignal.timeout(30000),
+      });
+      const telegramData = await telegramResponse.json();
+      if (!telegramResponse.ok || !telegramData.ok) return response({ error: telegramData.description ?? "Telegram не принял вложение." }, 502);
+      const sent = telegramData.result;
+      const sentMedia = sent.photo?.[sent.photo.length - 1] ?? sent.video ?? sent.audio ?? sent.animation ?? sent.document;
+      const fileId = sentMedia?.file_id;
+      if (!fileId) throw new Error("Telegram did not return a media file_id");
+      const sentAt = new Date((sent.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
+      const storedContent = JSON.stringify({ _fx_media: 1, caption, file_id: fileId, file_name: fileName, mime_type: mimeType });
+      const { error: saveError } = await admin.from("flamexbot_support_messages").upsert({
+        support_chat_id: chatId, telegram_message_id: sent.message_id, direction: "outgoing",
+        content: storedContent, message_type: method === "sendPhoto" ? "photo" : method === "sendVideo" ? "video" : method === "sendAudio" ? "audio" : method === "sendAnimation" ? "animation" : "document",
+        sender_profile_id: authData.user.id, created_at: sentAt,
+      }, { onConflict: "support_chat_id,telegram_message_id" });
+      if (saveError) throw saveError;
+      await admin.from("flamexbot_support_chats").update({
+        last_message_preview: (caption || "📎 " + fileName).slice(0, 240),
+        last_message_at: sentAt, updated_at: new Date().toISOString(),
+      }).eq("id", chatId);
+      return response({ ok: true, message_id: sent.message_id });
+    }
+
     if (action === "send") {
       const content = String(body?.content ?? "").trim();
       if (!content || content.length > 4096) return response({ error: "Сообщение должно содержать от 1 до 4096 символов." }, 400);
