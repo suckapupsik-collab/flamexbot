@@ -864,24 +864,7 @@ async function openBusinessChat(id) {
     }
   });
   const controlsHost = box.querySelector('#business-chat-controls');
-  const renderBusinessControls = () => { if(controlsHost) controlsHost.innerHTML=''; };
-  renderBusinessControls();
-      await refreshBusinessChatList(document.querySelector('#page-content'));
-    });
-    controlsHost.querySelector('#toggle-business-antimut')?.addEventListener('click', async e => {
-      const next = !antimutEnabled;
-      if (next && (founderChat || !premiumAccess)) return;
-      e.currentTarget.disabled = true;
-      const { data, error } = await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next}});
-      if (error || data?.error) { toast(data?.error || 'Не удалось изменить антимут: '+(error?.message||'')); e.currentTarget.disabled = false; return; }
-      antimutEnabled = next; chat.antimut_enabled = next;
-      toast(next ? 'Антимут включён: новые сообщения пойдут от имени бота' : 'Антимут выключен');
-      renderBusinessControls();
-      await refreshBusinessChatList(document.querySelector('#page-content'));
-    });
-
-  };
-  renderBusinessControls();
+  if(controlsHost) controlsHost.innerHTML='';
   box.querySelector('#business-chat-back')?.addEventListener('click', () => {
     state.activeBusinessChat = null;
     if(state.businessChatPollTimer){clearInterval(state.businessChatPollTimer);state.businessChatPollTimer=null;}
