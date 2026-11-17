@@ -1240,6 +1240,65 @@ async function refundTelegramStarsPayment(telegramUserId: number, chargeId: stri
   }
 }
 
+async function sendPaymentNotificationOnce(
+  userId: string,
+  notificationType: string,
+  dataFilter: Record<string, unknown>,
+  chatId: number | string,
+  body: string,
+  replyMarkup?: Record<string, unknown>,
+) {
+  if (!admin) return;
+  const { data: notice, error: noticeError } = await admin.from("notifications")
+    .select("id").eq("user_id", userId).eq("type", notificationType)
+    .contains("data", dataFilter).is("telegram_delivered_at", null)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (noticeError) {
+    console.warn("Could not locate payment notification; queued delivery will handle it:", noticeError.message);
+    return;
+  }
+  if (!notice?.id) {
+    // The payment RPC may not have produced a notification; there is no queue row to race with.
+    try { await sendRichTelegramMessage(chatId, body, "HTML", replyMarkup); }
+    catch (error) { console.warn("Payment confirmation send failed:", (error as any)?.message ?? error); }
+    return;
+  }
+
+  const claimToken = crypto.randomUUID();
+  const { data: claimed, error: claimError } = await admin.rpc("claim_flamexbot_telegram_notification_by_id", {
+    p_notification_id: notice.id,
+    p_user_id: userId,
+    p_claim_token: claimToken,
+  });
+  if (claimError || claimed !== true) {
+    if (claimError) console.warn("Could not claim payment notification:", claimError.message);
+    return;
+  }
+
+  try {
+    await sendRichTelegramMessage(chatId, body, "HTML", replyMarkup);
+  } catch (error) {
+    const reason = String((error as any)?.message ?? error);
+    const outcomeUnknown = error instanceof TypeError || /timeout|timed out|network|connection reset|aborted/i.test(reason);
+    if (!outcomeUnknown) {
+      const { error: releaseError } = await admin.rpc("release_flamexbot_telegram_notification_claims", {
+        p_claim_token: claimToken,
+      });
+      if (releaseError) console.warn("Could not release failed payment notification claim:", releaseError.message);
+    }
+    console.warn("Payment confirmation send failed:", reason);
+    return;
+  }
+
+  const { data: marked, error: markError } = await admin.rpc("mark_flamexbot_telegram_notification_delivered", {
+    p_notification_id: notice.id,
+    p_claim_token: claimToken,
+  });
+  if (markError || marked !== true) {
+    console.warn("Could not confirm payment notification delivery:", markError?.message ?? "claim token no longer owns notification");
+  }
+}
+
 async function handleSuccessfulPayment(message: any) {
   if (!admin || !message?.from?.id || !message?.successful_payment) return;
   const payment = message.successful_payment;
@@ -1269,16 +1328,14 @@ async function handleSuccessfulPayment(message: any) {
     });
     if(prizeError)throw prizeError;
     if(prize?.applied !== true) return;
-    await sendRichTelegramMessage(message.chat.id,
+    await sendPaymentNotificationOnce(
+      wheelUserId,
+      "wheel_prize",
+      { wheel_order_id: order.id },
+      message.chat.id,
       `${tgEmoji("sparkles")} <b>Колесо фортуны!</b>\nТвоя награда: <b>${String(prize?.prize_label??"Награда начислена")}</b>.\nОткрой FLAMEXBOT, чтобы посмотреть результат.`,
-      "HTML",{inline_keyboard:[[{text:"Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
-    const {error:wheelNoticeMarkError}=await admin.from("notifications")
-      .update({telegram_delivered_at:new Date().toISOString()})
-      .eq("user_id",wheelUserId)
-      .eq("type","wheel_prize")
-      .contains("data",{wheel_order_id:order.id})
-      .is("telegram_delivered_at",null);
-    if(wheelNoticeMarkError)console.warn("Could not mark paid wheel notice delivered:",wheelNoticeMarkError.message);
+      {inline_keyboard:[[{text:"Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]},
+    );
     return;
   }
   const addonUserId = parseCommandProtectionPayload(invoicePayload);
@@ -1365,20 +1422,15 @@ async function handleSuccessfulPayment(message: any) {
   });
   if (applyError) throw applyError;
   if (applied === true) {
-    await sendRichTelegramMessage(
+    await sendPaymentNotificationOnce(
+      userId,
+      "subscription_activated",
+      { payment_charge_id: payment.telegram_payment_charge_id },
       message.chat.id,
       plan === "pro"
         ? `${tgEmoji("diamond")} <b>Оплата прошла успешно!</b> FLAMEX PRO активирован на 30 дней. Тебе доступны 2 прокрутки каждую неделю и +10% к шансу редких наград.`
         : `${tgEmoji("star")} <b>Оплата прошла успешно!</b> FLAMEXBOT Premium активирован на 30 дней. Тебе доступна 1 прокрутка каждую неделю.`,
-      "HTML",
     );
-    const {error:tierNoticeMarkError}=await admin.from("notifications")
-      .update({telegram_delivered_at:new Date().toISOString()})
-      .eq("user_id",userId)
-      .eq("type","subscription_activated")
-      .contains("data",{payment_charge_id:payment.telegram_payment_charge_id})
-      .is("telegram_delivered_at",null);
-    if(tierNoticeMarkError)console.warn("Could not mark subscription notice delivered:",tierNoticeMarkError.message);
   }
 }
 
