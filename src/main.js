@@ -1248,6 +1248,8 @@ async function renderAdmin(host) {
       <button class="admin-module" data-admin-filter="verified"><span class="admin-module-icon verify">🔵</span><b>Верификация</b><small>Синие галочки и официальные значки ролей</small><i>Управлять →</i></button>
       <button class="admin-module" data-admin-filter="premium"><span class="admin-module-icon premium">✦</span><b>Premium</b><small>Выдача, продление и снятие подписки</small><i>Управлять →</i></button>
       <button class="admin-module" data-admin-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
+      <button class="admin-module" data-go="wallet"><span class="admin-module-icon premium">🪙</span><b>Управление балансом</b><small>Начисление и списание монет, история операций</small><i>Открыть →</i></button>
+      <button class="admin-module" data-go="banners"><span class="admin-module-icon verify">🖼️</span><b>Баннеры бота</b><small>Изображения для /start и инструкции</small><i>Настроить →</i></button>
     </div>
     <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки, снятия Premium, синей галочки и значков ролей. Значки администратора и разработчика не выдают доступ к панели.</small></div></div><span class="business-status is-connected">SECURE</span></section>
     <section class="admin-owner-settings">
