@@ -724,6 +724,52 @@ async function handleBusinessChatCommand(message: any, businessConnectionId: str
     await reply(\`\${tgEmoji("success")} <b>PONG!</b>\nBusiness-команды получены. Текущий диалог определён, обработчик отвечает.\`, "HTML");
     return true;
   }
+
+  if (command === "help" || command === "inf" || command === "commands") {
+    await reply(`${tgEmoji("sparkles")} <b>FLAMEXBOT · все команды</b>
+
+${tgEmoji("settings")} <b>Автоматизация текущего диалога</b>
+<code>.afk причина</code> / <code>.unafk</code> — автоответ только в этом диалоге
+<code>.autoread</code> / <code>.unautoread</code> — автопрочтение только здесь
+<code>.autotyping</code> / <code>.unautotyping</code> — статус набора только здесь
+<code>.autovoice</code> / <code>.unautovoice</code> — статус записи только здесь
+<code>.mutestick</code> / <code>.unmutestick</code> — фильтр стикеров только здесь\n<code>.antimat</code> / <code>.unantimat</code> — фильтр мата
+
+${tgEmoji("lock")} <b>Текущий диалог</b>
+<code>.ping</code> / <code>/ping</code> — проверить ответы Business-команд\n<code>.help</code> / <code>/help</code> / <code>.commands</code> — полный список команд\n<code>.streak 1-3650</code> — мгновенно установить серию (только администрация)\n<code>.mute</code> / <code>/mute</code> — удалять новые входящие сообщения
+<code>.unmute</code> — остановить удаление сообщений
+<code>.antimute</code> / <code>.unantimute</code> — пересылать твои сообщения заново от имени подключённого Telegram Business-аккаунта в том же чате
+<code>.warn N</code> / <code>.unwarn</code> — автомут после N сообщений подряд
+<code>.panic</code> — удаление истории у обоих после подтверждения (доступны последние 48 часов)
+<code>.clone</code> — копировать сообщение собеседника с пометкой об источнике
+<code>.advertising</code> — персональная реферальная ссылка с бонусом Premium на 3 дня
+<code>.profile</code> — анимированная публичная карточка собеседника
+
+${tgEmoji("edit")} <b>Дополнительно</b>
+<code>.timeprofile</code> — закрепить московское время (UTC+3)
+<code>.time</code> / <code>.untime</code> — показать или скрыть время профиля
+<code>.bold текст</code> / <code>.dumb текст</code> — изменить оформление текста
+<code>.link текст</code> — создать ссылку на этот диалог\n<code>.copyp</code> — скопировать публичную карточку собеседника\n<code>.qr текст</code> — создать QR-код для текста или ссылки\n<code>.id</code> / <code>.chatid</code> — ID собеседника и чата\n<code>.date</code> — дата и время по Москве\n<code>.calc выражение</code> — калькулятор со скобками\n<code>.upper</code> / <code>.lower</code> / <code>.reverse</code> — обработка текста\n<code>.count</code> / <code>.wordcount</code> — подсчёт символов и слов\n<code>.choose A | B</code> — случайный выбор\n<code>.roll 100</code> — случайное число от 1 до 100
+<code>/premium</code> — счёт на FLAMEXBOT Premium на 30 дней
+
+${tgEmoji("star")} <b>Подписка и тарифы · личный чат с ботом</b>
+Подписки оплачиваются разово через Telegram Stars и не продлеваются автоматически. Текущий тариф и срок действия смотри в Mini App → «Тарифы». Продление выполняется вручную командой <code>/premium</code>. 
+
+${tgEmoji("help")} <b>Как пользоваться</b>
+Отправляй команду прямо в переписке с нужным человеком. FLAMEXBOT сам определит текущий диалог — <b>@username и ID указывать не нужно</b>. Для команд включения Premium-функций нужна активная подписка; команды отключения доступны бесплатно.
+В Business-переписке можно использовать префикс <code>.</code> или <code>/</code>. В личном чате с ботом работают /ping, /status и /help.`, "HTML");
+    return true;
+  }
+  let profile = connectionOverride?.profile_id
+    ? { id: connectionOverride.profile_id, telegram_id: String(connectionOverride.telegram_user_id ?? message.from.id) }
+    : null;
+  if (!profile) {
+    const { data, error } = await admin.from("profiles")
+      .select("id,telegram_id").eq("telegram_id", String(message.from.id)).maybeSingle();
+    if (error) throw error;
+    profile = data;
+  }
+  if (!profile) { await reply("Сначала открой FLAMEXBOT и войди через Telegram."); return true; }
   if (command === "advertising") {
     const {data:existingCode,error:codeError}=await admin.from("flamexbot_referral_codes").select("code").eq("user_id",profile.id).maybeSingle();
     if(codeError)throw codeError;
@@ -802,51 +848,6 @@ async function handleBusinessChatCommand(message: any, businessConnectionId: str
     await reply("Автомут по .warn отключён.");
     return true;
   }
-  if (command === "help" || command === "inf" || command === "commands") {
-    await reply(`${tgEmoji("sparkles")} <b>FLAMEXBOT · все команды</b>
-
-${tgEmoji("settings")} <b>Автоматизация текущего диалога</b>
-<code>.afk причина</code> / <code>.unafk</code> — автоответ только в этом диалоге
-<code>.autoread</code> / <code>.unautoread</code> — автопрочтение только здесь
-<code>.autotyping</code> / <code>.unautotyping</code> — статус набора только здесь
-<code>.autovoice</code> / <code>.unautovoice</code> — статус записи только здесь
-<code>.mutestick</code> / <code>.unmutestick</code> — фильтр стикеров только здесь\n<code>.antimat</code> / <code>.unantimat</code> — фильтр мата
-
-${tgEmoji("lock")} <b>Текущий диалог</b>
-<code>.ping</code> / <code>/ping</code> — проверить ответы Business-команд\n<code>.help</code> / <code>/help</code> / <code>.commands</code> — полный список команд\n<code>.streak 1-3650</code> — мгновенно установить серию (только администрация)\n<code>.mute</code> / <code>/mute</code> — удалять новые входящие сообщения
-<code>.unmute</code> — остановить удаление сообщений
-<code>.antimute</code> / <code>.unantimute</code> — пересылать твои сообщения заново от имени подключённого Telegram Business-аккаунта в том же чате
-<code>.warn N</code> / <code>.unwarn</code> — автомут после N сообщений подряд
-<code>.panic</code> — удаление истории у обоих после подтверждения (доступны последние 48 часов)
-<code>.clone</code> — копировать сообщение собеседника с пометкой об источнике
-<code>.advertising</code> — персональная реферальная ссылка с бонусом Premium на 3 дня
-<code>.profile</code> — анимированная публичная карточка собеседника
-
-${tgEmoji("edit")} <b>Дополнительно</b>
-<code>.timeprofile</code> — закрепить московское время (UTC+3)
-<code>.time</code> / <code>.untime</code> — показать или скрыть время профиля
-<code>.bold текст</code> / <code>.dumb текст</code> — изменить оформление текста
-<code>.link текст</code> — создать ссылку на этот диалог\n<code>.copyp</code> — скопировать публичную карточку собеседника\n<code>.qr текст</code> — создать QR-код для текста или ссылки\n<code>.id</code> / <code>.chatid</code> — ID собеседника и чата\n<code>.date</code> — дата и время по Москве\n<code>.calc выражение</code> — калькулятор со скобками\n<code>.upper</code> / <code>.lower</code> / <code>.reverse</code> — обработка текста\n<code>.count</code> / <code>.wordcount</code> — подсчёт символов и слов\n<code>.choose A | B</code> — случайный выбор\n<code>.roll 100</code> — случайное число от 1 до 100
-<code>/premium</code> — счёт на FLAMEXBOT Premium на 30 дней
-
-${tgEmoji("star")} <b>Подписка и тарифы · личный чат с ботом</b>
-Подписки оплачиваются разово через Telegram Stars и не продлеваются автоматически. Текущий тариф и срок действия смотри в Mini App → «Тарифы». Продление выполняется вручную командой <code>/premium</code>. 
-
-${tgEmoji("help")} <b>Как пользоваться</b>
-Отправляй команду прямо в переписке с нужным человеком. FLAMEXBOT сам определит текущий диалог — <b>@username и ID указывать не нужно</b>. Для команд включения Premium-функций нужна активная подписка; команды отключения доступны бесплатно.
-В Business-переписке можно использовать префикс <code>.</code> или <code>/</code>. В личном чате с ботом работают /ping, /status и /help.`, "HTML");
-    return true;
-  }
-  let profile = connectionOverride?.profile_id
-    ? { id: connectionOverride.profile_id, telegram_id: String(connectionOverride.telegram_user_id ?? message.from.id) }
-    : null;
-  if (!profile) {
-    const { data, error } = await admin.from("profiles")
-      .select("id,telegram_id").eq("telegram_id", String(message.from.id)).maybeSingle();
-    if (error) throw error;
-    profile = data;
-  }
-  if (!profile) { await reply("Сначала открой FLAMEXBOT и войди через Telegram."); return true; }
   if (command === "streak") {
     const { data: adminBadge, error: adminBadgeError } = await admin.from("profile_badges")
       .select("badge_code").eq("user_id",profile.id).eq("badge_code","administrator").limit(1).maybeSingle();
