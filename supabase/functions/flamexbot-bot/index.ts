@@ -792,7 +792,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       referralCode=created.code;
     }
     const referralLink=`https://t.me/Flamexgame?start=ref_${referralCode}`;
-    await reply(`Я использую @Flamexgame, и я очень рад его использовать. Используй мою реферальную ссылку и получи Premium на 3 дня бесплатно!\n\n${referralLink}`);
+    await reply(`Я использую @Flamexgame, и я очень рад его использовать. Используй мою реферальную ссылку и получи premium на 3 дня бесплатно!\n\n${referralLink}`);
     return true;
   }
   if(command==="clone"){
