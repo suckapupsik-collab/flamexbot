@@ -1598,3 +1598,15 @@ body{
 .season-tier-row{display:flex;gap:8px;margin:16px 0}.season-tier{flex:1;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--muted);font-weight:800}.season-tier.active{border-color:var(--orange);color:var(--text);background:rgba(255,113,56,.1)}.season-pro-card{display:flex;align-items:center;justify-content:space-between;gap:14px}.season-pro-card h3{margin:5px 0}.season-level-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.season-level-card{display:grid;align-content:start;gap:8px;min-width:0;padding:14px;border:1px solid var(--line);border-radius:15px;background:var(--panel)}.season-level-card.ready{border-color:rgba(255,177,66,.45)}.season-level-card.claimed{opacity:.65}.season-level-number{color:var(--muted);font-size:9px;letter-spacing:.1em;font-weight:800}.season-level-card b{font-size:13px}.season-level-card small{min-height:28px;color:var(--muted);font-size:10px}.season-level-card button{width:100%;padding-inline:6px}
 .banner-form{display:grid;gap:12px}.banner-form textarea{resize:vertical}
 @media(max-width:700px){.season-level-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.season-pro-card{align-items:flex-start;flex-direction:column}.season-pro-card button{width:100%}}
+
+/* Badge selector popup must escape card clipping and stack above neighboring cards */
+.admin-user-list,.admin-user-card,.admin-role-controls,.admin-role-controls>label,.role-picker{overflow:visible}
+.admin-user-card{position:relative;z-index:0}
+.admin-user-card:has(.role-picker-menu:not([hidden])){z-index:80}
+.admin-role-controls{position:relative;z-index:2;display:flex;flex-wrap:wrap;align-items:flex-start}
+.role-picker{position:relative;z-index:3;min-width:190px;flex:1 1 190px}
+.role-picker:focus-within{z-index:90}
+.role-picker-menu{max-height:min(60vh,420px);overscroll-behavior:contain;scrollbar-width:thin}
+.admin-detail-badge-form{display:flex;flex-wrap:wrap;align-items:end;gap:10px}
+.admin-detail-badge-form label{flex:1 1 240px;min-width:0}
+#admin-detail-badge{width:100%;min-height:44px;position:relative;z-index:50}
