@@ -2370,9 +2370,9 @@ async function renderSeasonEvents(host,showHistory=false) {
         <div class="season-event-top"><span class="season-event-icon">${esc(e.icon||'🔥')}</span><span class="season-event-time">${starts?'Начнётся '+formatMskDateTime(e.starts_at):'До '+formatMskDateTime(e.ends_at)}</span></div>
         <h3>${esc(e.title)}</h3><p>${esc(e.description||'')}</p>
         <div class="season-event-progress"><div><b>Выполнено заданий</b><strong>${Math.min(progress,target)} / ${target}</strong></div><span class="task-progress-track"><i style="width:${percent}%"></i></span></div>
-        <div class="season-event-bottom"><span>🏆 +${Number(e.reward_xp)} XP</span><button class="${done&&!claimed?'primary':'outline'} small" data-claim-event="${esc(e.event_id)}" ${!done||claimed||starts?'disabled':''}>${claimed?'Получено':done?'Забрать награду':starts?'Скоро':'Выполняй'}</button></div>
+        <div class="season-event-bottom"><span>🏆 +${Number(e.reward_xp)} XP</span><button class="${done&&!claimed?'primary':'outline'} small" data-claim-event="${esc(e.event_id)}" ${showHistory||!done||claimed||starts?'disabled':''}>${claimed?'Получено':showHistory?'Событие завершено':done?'Забрать награду':starts?'Скоро':'Выполняй'}</button></div>
       </article>`;
-    }).join('')||'<div class="empty-state">Активных событий пока нет. Загляни позже — новые испытания появятся здесь.</div>'}</div>
+    }).join('')||(showHistory?'<div class="empty-state">Архив пока пуст. Завершённые события появятся здесь.</div>':'<div class="empty-state">Активных событий пока нет. Загляни позже — новые испытания появятся здесь.</div>')}</div>
     <section class="daily-task-footer"><span>⚡</span><div><b>Как считается прогресс</b><small>Учитываются только реально полученные награды за ежедневные задания в период события. Одну награду события можно забрать один раз.</small></div></section>`;
   host.querySelectorAll('[data-event-view]').forEach(btn=>btn.addEventListener('click',()=>renderSeasonEvents(host,btn.dataset.eventView==='history')));
   host.querySelectorAll('[data-claim-event]').forEach(btn=>btn.addEventListener('click',async()=>{
