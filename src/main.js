@@ -2283,9 +2283,19 @@ async function renderUserSupport(host) {
 async function renderBotBanners(host) {
   const {data:rows,error}=await supabase.from('flamexbot_bot_banners').select('banner_key,image_url,caption,enabled').order('banner_key');
   const map=new Map((rows||[]).map(x=>[x.banner_key,x]));
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FOUNDER SETTINGS</div><h1>Баннеры бота 🖼️</h1><p class="muted">Настрой изображения и подписи для приветствия /start и меню инструкции.</p></div>${['start','instruction'].map(key=>{const item=map.get(key)||{image_url:'',caption:'',enabled:true};return `<form class="business-card banner-form" data-banner-key="${key}"><div class="eyebrow">${key==='start'?'ПРИВЕТСТВИЕ /START':'ИНСТРУКЦИЯ'}</div><label>Ссылка на изображение<input name="image_url" type="url" value="${esc(item.image_url||'')}" placeholder="https://…"></label><label>Текст подписи<textarea name="caption" maxlength="900" rows="3">${esc(item.caption||'')}</textarea></label><label class="admin-owner-setting"><span><b>Баннер включён</b><small>Если выключить, бот отправит обычное текстовое сообщение.</small></span><input type="checkbox" name="enabled" ${item.enabled?'checked':''}></label><button class="primary" type="submit">Сохранить баннер</button></form>`;}).join('')}${error?'<p class="business-warning">'+esc(error.message)+'</p>':''}`;
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FOUNDER SETTINGS</div><h1>Баннеры бота 🖼️</h1><p class="muted">Настрой изображения и подписи для приветствия /start и меню инструкции.</p></div>${['start','instruction'].map(key=>{const item=map.get(key)||{image_url:'',caption:'',enabled:true};return `<form class="business-card banner-form" data-banner-key="${key}"><div class="eyebrow">${key==='start'?'ПРИВЕТСТВИЕ /START':'ИНСТРУКЦИЯ'}</div><label>Ссылка на изображение (необязательно)<input name="image_url" type="url" value="${esc(item.image_url||'')}" placeholder="https://…"></label><label>Или загрузить файл (PNG, JPG, WEBP, GIF · до 5 МБ)<input name="banner_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><label>Текст подписи<textarea name="caption" maxlength="900" rows="3">${esc(item.caption||'')}</textarea></label><label class="admin-owner-setting"><span><b>Баннер включён</b><small>Если выключить, бот отправит обычное текстовое сообщение.</small></span><input type="checkbox" name="enabled" ${item.enabled?'checked':''}></label><button class="primary" type="submit">Сохранить баннер</button></form>`;}).join('')}${error?'<p class="business-warning">'+esc(error.message)+'</p>':''}`;
   host.querySelectorAll('[data-banner-key]').forEach(form=>form.addEventListener('submit',async event=>{
-    event.preventDefault();const fd=new FormData(form);const key=form.dataset.bannerKey;const image=String(fd.get('image_url')||'').trim();if(image&&!/^https:\/\//i.test(image)){toast('Нужна HTTPS-ссылка на изображение.');return;}
+    event.preventDefault();const fd=new FormData(form);const key=form.dataset.bannerKey;let image=String(fd.get('image_url')||'').trim();const file=form.querySelector('[name="banner_file"]')?.files?.[0];
+    if(image&&!/^https:\/\//i.test(image)){toast('Нужна HTTPS-ссылка на изображение.');return;}
+    if(file){
+      const allowed=['image/png','image/jpeg','image/webp','image/gif'];
+      if(!allowed.includes(file.type)||file.size>5*1024*1024){toast('Подходит PNG, JPG, WEBP или GIF размером до 5 МБ.');return;}
+      const ext=({ 'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/gif':'gif' })[file.type];
+      const path=key+'/'+Date.now()+'.'+ext;
+      const {error:uploadError}=await supabase.storage.from('flamexbot-banners').upload(path,file,{upsert:true,contentType:file.type});
+      if(uploadError){toast('Не удалось загрузить баннер: '+uploadError.message);return;}
+      image=supabase.storage.from('flamexbot-banners').getPublicUrl(path).data.publicUrl;
+    }
     const {error:saveError}=await supabase.from('flamexbot_bot_banners').upsert({banner_key:key,image_url:image||null,caption:String(fd.get('caption')||''),enabled:fd.get('enabled')==='on',updated_by:state.session.user.id,updated_at:new Date().toISOString()},{onConflict:'banner_key'});
     if(saveError)toast(saveError.message);else toast('Баннер сохранён.');
   }));
