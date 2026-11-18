@@ -2373,10 +2373,22 @@ async function renderSeasonEvents(host,showHistory=false) {
         <div class="season-event-top"><span class="season-event-icon">${esc(e.icon||'🔥')}</span><span class="season-event-time">${starts?'Начнётся '+formatMskDateTime(e.starts_at):'До '+formatMskDateTime(e.ends_at)}</span></div>
         <h3>${esc(e.title)}</h3><p>${esc(e.description||'')}</p>
         <div class="season-event-progress"><div><b>Выполнено заданий</b><strong>${Math.min(progress,target)} / ${target}</strong></div><span class="task-progress-track"><i style="width:${percent}%"></i></span></div>
-        <div class="season-event-bottom"><span>🏆 +${Number(e.reward_xp)} XP</span><button class="${done&&!claimed?'primary':'outline'} small" data-claim-event="${esc(e.event_id)}" ${showHistory||!done||claimed||starts?'disabled':''}>${claimed?'Получено':showHistory?'Событие завершено':done?'Забрать награду':starts?'Скоро':'Выполняй'}</button></div>
+        <div class="season-event-bottom"><span>🏆 +${Number(e.reward_xp)} XP</span><div class="season-event-actions"><button class="outline small" data-event-winners="${esc(e.event_id)}">🏆 Победители</button><button class="${done&&!claimed?'primary':'outline'} small" data-claim-event="${esc(e.event_id)}" ${showHistory||!done||claimed||starts?'disabled':''}>${claimed?'Получено':showHistory?'Событие завершено':done?'Забрать награду':starts?'Скоро':'Выполняй'}</button></div></div>
+        <div class="season-event-winners" data-event-winners-panel="${esc(e.event_id)}" hidden></div>
       </article>`;
     }).join('')||(showHistory?'<div class="empty-state">Архив пока пуст. Завершённые события появятся здесь.</div>':'<div class="empty-state">Активных событий пока нет. Загляни позже — новые испытания появятся здесь.</div>')}</div>
     <section class="daily-task-footer"><span>⚡</span><div><b>Как считается прогресс</b><small>Учитываются только реально полученные награды за ежедневные задания в период события. Одну награду события можно забрать один раз.</small></div></section>`;
+  host.querySelectorAll('[data-event-winners]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const panel=host.querySelector('[data-event-winners-panel="'+btn.dataset.eventWinners+'"]');
+    if(!panel)return;
+    if(!panel.hidden){panel.hidden=true;btn.textContent='🏆 Победители';return;}
+    panel.hidden=false;panel.innerHTML='<div class="loading-state">Загружаем победителей…</div>';btn.disabled=true;
+    const {data,error}=await supabase.rpc('get_flamexbot_season_event_leaderboard',{p_event_id:btn.dataset.eventWinners,p_limit:50});
+    btn.disabled=false;btn.textContent='Скрыть победителей';
+    if(error){panel.innerHTML='<div class="business-warning">'+esc(error.message)+'</div>';return;}
+    const medals=['🥇','🥈','🥉'];
+    panel.innerHTML=(data||[]).map(row=>'<div class="season-event-winner"><span class="season-event-winner-rank">'+(medals[Number(row.rank_position)-1]||('#'+row.rank_position))+'</span><span class="season-event-winner-avatar">'+(row.avatar_url?'<img src="'+esc(row.avatar_url)+'" alt="">':'🔥')+'</span><span class="season-event-winner-name"><b>'+esc(row.display_name||'Участник')+'</b><small>'+(row.username?'@'+esc(row.username):'Участник FLAMEXBOT')+' · '+formatMskDateTime(row.claimed_at)+'</small></span><strong>'+Number(row.progress_at_claim||0)+' / цель</strong><em>+'+Number(row.reward_xp||0)+' XP</em></div>').join('')||'<div class="empty-state">Пока никто не забрал награду. Стань первым!</div>';
+  }));
   host.querySelectorAll('[data-event-view]').forEach(btn=>btn.addEventListener('click',()=>renderSeasonEvents(host,btn.dataset.eventView==='history')));
   host.querySelectorAll('[data-claim-event]').forEach(btn=>btn.addEventListener('click',async()=>{
     btn.disabled=true;btn.textContent='Проверяем…';
@@ -2801,6 +2813,9 @@ async function startNotificationRealtime(session) {
       const n=payload.new||{};
       if(!n.id||n.read_at)return;
       if(state.isAdmin&&n.type==='support_message')toast((n.title||'Новое сообщение в техподдержку')+(n.body?' · '+n.body:''));
+      else if(n.type==='season_event_new')toast('🎯 '+(n.title||'Новое сезонное событие'));
+      else if(n.type==='season_event_reward')toast('🏆 '+(n.title||'Награда за событие')+(n.body?' · '+n.body:''));
+      else if(n.type==='season_promo')toast('🎟️ '+(n.title||'Промокод активирован')+(n.body?' · '+n.body:''));
       const {error}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('id',n.id).eq('user_id',uid);
       if(error)console.warn('Auto-read notification:',error.message);
     })
