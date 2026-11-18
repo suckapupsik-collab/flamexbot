@@ -3,6 +3,9 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const URL=Deno.env.get("SUPABASE_URL")??"";
 const ANON=Deno.env.get("SUPABASE_ANON_KEY")??"";
 const SERVICE=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"";
+const BOT_TOKEN=Deno.env.get("TELEGRAM_BOT_TOKEN")??"";
+const FOUNDER_PROFILE_ID="74a352c0-5a26-46a8-9b88-e71d0c3a9879";
+const FOUNDER_TELEGRAM_ID="7781170049";
 const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Content-Type":"application/json"};
 const out=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:cors});
 Deno.serve(async(req:Request)=>{
@@ -61,6 +64,19 @@ Deno.serve(async(req:Request)=>{
      data:{support_chat_id:ticket.id}
     })));
     if(noticeError)throw noticeError;
+   }
+   if(BOT_TOKEN){
+    const {data:adminProfiles,error:adminProfilesError}=await admin.from("profiles").select("telegram_id").in("id",recipients);
+    if(adminProfilesError)throw adminProfilesError;
+    const telegramIds=[...new Set([FOUNDER_TELEGRAM_ID,...(adminProfiles??[]).map((x:any)=>String(x.telegram_id??""))])].filter(Boolean);
+    await Promise.allSettled(telegramIds.filter(id=>id!==String(profile.telegram_id)).map(async id=>{
+     const response=await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({chat_id:id,text:"🛟 Новое сообщение в техподдержку\n"+(profile.username?"@"+profile.username:profile.display_name||"Пользователь")+": "+content.slice(0,900)+"\n\nОткрой FLAMEXBOT → Техподдержка."}),
+      signal:AbortSignal.timeout(10000),
+     });
+     if(!response.ok)throw new Error("Telegram notification failed: "+response.status);
+    }));
    }
    return out({ok:true,chat_id:ticket.id});
   }
