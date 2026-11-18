@@ -699,7 +699,85 @@ async function handleBusinessChatCommand(message: any, businessConnectionId: str
     }
   }
   if (command === "ping") {
-    await reply(`${tgEmoji("success")} <b>PONG!</b>\nBusiness-команды получены. Текущий диалог определён, обработчик отвечает.`, "HTML");
+    await reply(\`\${tgEmoji("success")} <b>PONG!</b>\nBusiness-команды получены. Текущий диалог определён, обработчик отвечает.\`, "HTML");
+    return true;
+  }
+  if (command === "advertising") {
+    const {data:existingCode,error:codeError}=await admin.from("flamexbot_referral_codes").select("code").eq("user_id",profile.id).maybeSingle();
+    if(codeError)throw codeError;
+    let referralCode=existingCode?.code;
+    if(!referralCode){
+      const generated=crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase();
+      const {error:insertError}=await admin.from("flamexbot_referral_codes").upsert({user_id:profile.id,code:generated},{onConflict:"user_id",ignoreDuplicates:true});
+      if(insertError)throw insertError;
+      const {data:created,error:createdError}=await admin.from("flamexbot_referral_codes").select("code").eq("user_id",profile.id).single();
+      if(createdError)throw createdError;
+      referralCode=created.code;
+    }
+    const referralLink=\`https://t.me/Flamexgame?start=ref_\${referralCode}\`;
+    await reply(\`Я использую @Flamexgame, и я очень рад его использовать. Используй мою реферальную ссылку и получи Premium на 3 дня бесплатно!\\n\\n\${referralLink}\`);
+    return true;
+  }
+  if(command==="clone"){
+    const source=message.reply_to_message;
+    if(!source||String(source.from?.id??"")===String(message.from.id)){
+      await reply("Ответь командой .clone на сообщение собеседника, которое нужно скопировать.");
+      return true;
+    }
+    const sourceMedia=messageMedia(source);
+    const sourceText=String(source.text??source.caption??"").trim();
+    const attribution="📋 Копия сообщения собеседника:\\n";
+    if(sourceMedia.fileId){
+      const methods:Record<string,{method:string;field:string}>={photo:{method:"sendPhoto",field:"photo"},video:{method:"sendVideo",field:"video"},animation:{method:"sendAnimation",field:"animation"},document:{method:"sendDocument",field:"document"},audio:{method:"sendAudio",field:"audio"},voice:{method:"sendVoice",field:"voice"}};
+      const selected=methods[sourceMedia.type];
+      if(!selected){await reply("Этот тип медиа пока нельзя скопировать.");return true;}
+      const payload:Record<string,unknown>={business_connection_id:businessConnectionId,chat_id:message.chat.id,[selected.field]:sourceMedia.fileId};
+      if(sourceText)payload.caption=(attribution+sourceText).slice(0,1024);
+      await telegram(selected.method,payload);
+      if(!sourceText)await reply("📋 Копия медиа собеседника.");
+    }else if(sourceText){
+      await telegram("sendMessage",{business_connection_id:businessConnectionId,chat_id:message.chat.id,text:attribution+sourceText});
+    }else{
+      await reply("В сообщении нет текста или поддерживаемого медиа для копирования.");
+    }
+    return true;
+  }
+  if(command==="panic"){
+    const {data:panicChat,error:panicChatError}=await admin.from("flamexbot_business_chats").select("id").eq("profile_id",profile.id).eq("telegram_chat_id",String(message.chat.id)).eq("business_connection_id",businessConnectionId).maybeSingle();
+    if(panicChatError)throw panicChatError;
+    if(!panicChat){await reply("Не удалось определить текущий диалог.");return true;}
+    if(connectionOverride?.rights?.can_delete_all_messages!==true){
+      await reply("Для удаления переписки у обоих Telegram Business должен выдать право «Удалять все сообщения».");
+      return true;
+    }
+    await reply("⚠️ <b>Удалить переписку у обоих?</b>\\nБудут удалены доступные Telegram сообщения за последние 48 часов. Это действие нельзя отменить.", "HTML", {
+      inline_keyboard:[[{text:"🗑 Да, удалить переписку",callback_data:\`fb:panic_yes:\${panicChat.id}\`}],[{text:"Отмена",callback_data:\`fb:panic_no:\${panicChat.id}\`}]]
+    });
+    return true;
+  }
+  if(command==="warn"){
+    const threshold=Number(args[0]);
+    if(!Number.isInteger(threshold)||threshold<2||threshold>100){
+      await reply("Формат: .warn N — автоматически включить мут после 2–100 сообщений собеседника подряд. Например: .warn 5");
+      return true;
+    }
+    if(connectionOverride?.rights?.can_delete_all_messages!==true){
+      await reply("Для автомутa Telegram Business должен выдать право «Удалять все сообщения».");
+      return true;
+    }
+    const {error:warnError}=await admin.from("flamexbot_business_chat_settings").upsert({
+      profile_id:profile.id,business_chat_id:chat.id,warn_enabled:true,warn_threshold:threshold,warn_count:0,updated_at:new Date().toISOString()
+    },{onConflict:"profile_id,business_chat_id"});
+    if(warnError)throw warnError;
+    await reply(\`Автомут включён: после \${threshold} сообщений собеседника подряд FLAMEXBOT включит мут в этом диалоге.\`);
+    return true;
+  }
+  if(command==="unwarn"){
+    const {error:warnError}=await admin.from("flamexbot_business_chat_settings").upsert({
+      profile_id:profile.id,business_chat_id:chat.id,warn_enabled:false,warn_threshold:0,warn_count:0,updated_at:new Date().toISOString()
+    },{onConflict:"profile_id,business_chat_id"});
+    if(warnError)throw warnError;
+    await reply("Автомут по .warn отключён.");
     return true;
   }
   if (command === "help" || command === "inf" || command === "commands") {
@@ -716,6 +794,10 @@ ${tgEmoji("lock")} <b>Текущий диалог</b>
 <code>.ping</code> / <code>/ping</code> — проверить ответы Business-команд\n<code>.help</code> / <code>/help</code> / <code>.commands</code> — полный список команд\n<code>.streak 1-3650</code> — мгновенно установить серию (только администрация)\n<code>.mute</code> / <code>/mute</code> — удалять новые входящие сообщения
 <code>.unmute</code> — остановить удаление сообщений
 <code>.antimute</code> / <code>.unantimute</code> — пересылать твои сообщения заново от имени подключённого Telegram Business-аккаунта в том же чате
+<code>.warn N</code> / <code>.unwarn</code> — автомут после N сообщений подряд
+<code>.panic</code> — удаление истории у обоих после подтверждения (доступны последние 48 часов)
+<code>.clone</code> — копировать сообщение собеседника с пометкой об источнике
+<code>.advertising</code> — персональная реферальная ссылка с бонусом Premium на 3 дня
 <code>.profile</code> — анимированная публичная карточка собеседника
 
 ${tgEmoji("edit")} <b>Дополнительно</b>
@@ -769,7 +851,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(`${tgEmoji("sparkles")} <b>Огонёк установлен мгновенно!</b>\nСерия: <b>${days} дн.</b>\nПользователь добавлен в друзья, если вы ещё не были друзьями. Дальше огонёк будет продлеваться обычной взаимной перепиской.`, "HTML");
     return true;
   }
-  const commandNeedsPremium = ["mute","profile","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
+  const commandNeedsPremium = ["mute","profile","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat","warn"].includes(command);
   let premium = false;
   if (commandNeedsPremium) {
     const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
