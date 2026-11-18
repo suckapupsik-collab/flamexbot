@@ -481,7 +481,7 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
       const reached=nextCount>=threshold;
       const {error:warnUpdateError}=await admin.from("flamexbot_business_chat_settings").update({
         warn_count:reached?0:nextCount,
-        ...(reached?{is_muted:true,auto_flood_muted:true,warn_enabled:false}:{}),
+        ...(reached?{is_muted:true,auto_flood_muted:false,warn_enabled:false}:{}),
         updated_at:new Date().toISOString()
       }).eq("profile_id",connection.profile_id).eq("business_chat_id",chat.id);
       if(warnUpdateError)throw warnUpdateError;
