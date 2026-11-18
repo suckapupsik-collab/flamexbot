@@ -873,8 +873,8 @@ async function openBusinessChat(id) {
             <span class="business-control-state ${active ? 'active' : ''}">${active ? 'АКТИВЕН' : 'ВЫКЛЮЧЕН'}</span>
           </div>
           <p>${active
-            ? 'Режим включён: FLAMEXBOT повторно отправляет ваши исходящие сообщения в этом же Business-чате, если Telegram присылает событие об их удалении.'
-            : 'Если Telegram сообщает об удалении вашего исходящего сообщения, FLAMEXBOT попробует отправить его повторно в этом же диалоге.'}</p>
+            ? 'Режим активен: FLAMEXBOT повторно отправляет ваши исходящие сообщения через подключённый Business-аккаунт в этом же чате и удаляет исходный экземпляр.'
+            : 'После отправки сообщения FLAMEXBOT переотправит его через подключённый Business-аккаунт в этом же диалоге и удалит исходный экземпляр.'}</p>
           ${!active && !premiumAccess ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
           ${!active && !canEnable ? '<small class="business-control-note">Нужно разрешение Telegram Business «Удалять отправленные сообщения».</small>' : ''}
           <button type="button" class="${active ? 'outline' : 'primary'} small" data-toggle-antimut>${buttonLabel}</button>
