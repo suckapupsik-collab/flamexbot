@@ -2337,7 +2337,7 @@ async function renderSeasonPass(host) {
         <div class="season-level-number">УРОВЕНЬ ${Number(row.level)}</div>
         <b>${esc(labelReward(row))}</b>
         <small>${isClaimed ? 'Награда уже получена' : proLocked ? 'Открой Pro Pass' : !hasProgress ? 'Выполни первое ежедневное задание' : ready ? 'Награда доступна' : 'Нужно ' + requiredXp.toLocaleString('ru-RU') + ' XP'}</small>
-        <button type="button" class="${ready ? 'primary' : 'outline'} small" data-claim-season="${Number(row.level)}" ${!ready ? 'disabled' : ''}>${isClaimed ? 'Получено ✓' : ready ? 'Забрать награду' : 'Закрыто'}</button>
+        <button type="button" class="${ready ? 'primary' : 'outline'} small" data-claim-season="${Number(row.level)}" ${!ready ? 'disabled' : ''}>${isClaimed ? 'Получено ✓' : proLocked ? 'Нужен Pro Pass' : !hasProgress ? 'Выполни задание' : ready ? 'Забрать награду' : 'Закрыто'}</button>
       </article>`;
     }).join('') || '<div class="empty-state">Для этой дорожки пока не добавлены награды.</div>';
     grid.querySelectorAll('[data-claim-season]').forEach(button => button.addEventListener('click', async () => {
