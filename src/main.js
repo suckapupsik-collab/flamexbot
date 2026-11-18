@@ -2306,6 +2306,10 @@ async function renderSeasonPass(host) {
       <div class="xp-track"><span style="width:${Math.min(100, xpInLevel)}%"></span></div>
       <div class="level-foot"><small>${currentLevel >= 30 ? 'Максимальный уровень достигнут' : 'До следующего уровня: ' + (100 - xpInLevel) + ' XP'} · Баланс: ${balance.toLocaleString('ru-RU')} монет</small><b>${tier === 'pro' ? '💎 PRO PASS' : 'FREE PASS'}</b></div>
     </section>
+    <section class="business-card season-missions-link">
+      <div><div class="eyebrow">ПОЛУЧАЙ СЕЗОННЫЙ XP</div><b>Ежедневные задания</b><p class="muted">Выполняй задания FLAMEXBOT — получай опыт для уровней сезонного пропуска.</p></div>
+      <button type="button" class="outline small" data-go="missions">Открыть задания →</button>
+    </section>
     <div class="season-tier-row"><button class="season-tier active" data-season-tier="free">Free Pass</button><button class="season-tier" data-season-tier="pro">💎 Pro Pass</button></div>
     <section class="business-card season-pro-card">
       <div><div class="eyebrow">ДОПОЛНИТЕЛЬНАЯ ДОРОЖКА</div><h3>💎 Pro Pass</h3><p class="muted">Открой вторую дорожку и получай дополнительные награды: Premium-дни, прокрутки и полезные дополнения.</p></div>
