@@ -120,8 +120,8 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
   }
 }
 const PAGE_LABELS = {
-  home:'Обзор', support:'Техподдержка', inbox:'Личные сообщения бота', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
-  missions:'Ежедневные задания', profile:'Профиль', achievements:'Достижения',
+  home:'Обзор', support:'Техподдержка', support_user:'Написать в техподдержку', inbox:'Личные сообщения бота', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
+  missions:'Ежедневные задания', wallet:'Баланс', season:'Сезонный пропуск', banners:'Баннеры бота', profile:'Профиль', achievements:'Достижения',
   stats:'Статистика', commands:'Все команды', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
 const BADGE_META = {
@@ -207,12 +207,15 @@ function renderApp() {
     ['friends','👥','Друзья','Заявки и совместные огоньки'],
     ['streaks','🔥','Огоньки','Общие серии'],
     ['missions','⚡','Ежедневные задания','Новые задания каждый день'],
+    ['season','🎟️','Сезонный пропуск','Награды Free и Pro'],
+    ['wallet','🪙','Баланс','Монеты и пополнение'],
     ['achievements','🏆','Достижения','Коллекция наград'],
+    ['support_user','🛟','Написать в техподдержку','Задать вопрос команде'],
     ['stats','▥','Статистика','Твоя активность'],
     ['commands','⌘','Все команды','Полный список команд'],
     ['tariffs','✧','Тарифы','Подписка и дополнения'],
     ['profile','◉','Профиль','Настройки аккаунта'],
-    ...(state.isAdmin?[['support','✉','Техподдержка','Обращения пользователей'],['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
+    ...(state.isAdmin?[['support','✉','Техподдержка','Обращения пользователей'],['banners','🖼️','Баннеры бота','Оформление /start и инструкции'],['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
   ];
   app.innerHTML=`
     <div class="app-layout">
@@ -313,7 +316,7 @@ async function loadPage() {
         </section>
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
         <div class="streak-list">${state.streaks.filter(s=>effectiveStreakDays(s)>0).length?state.streaks.filter(s=>effectiveStreakDays(s)>0).map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${effectiveStreakDays(s)} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Найди друга и начните обмениваться сообщениями каждый день.</div>'}</div>
-        <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
+        <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="season"><span>🎟️</span><b>Сезонный пропуск</b><small>Открывай награды и прокачивай сезон</small><i>→</i></button><button class="home-feature-card" data-go="wallet"><span>🪙</span><b>Баланс</b><small>Монеты, история и пополнение через Stars</small><i>→</i></button><button class="home-feature-card" data-go="support_user"><span>🛟</span><b>Написать в техподдержку</b><small>Свяжись с командой FLAMEXBOT</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
       host.querySelector('#copy-referral')?.addEventListener('click',async()=>{
         const link=referralLinkData?.link;
         if(!link){toast(refCodeError?.message||referralLinkData?.error||'Реферальная ссылка пока недоступна.');return;}
@@ -328,6 +331,10 @@ async function loadPage() {
     else if(state.page==='friends') await renderFriends(host);
     else if(state.page==='streaks') await renderStreaks(host);
     else if(state.page==='missions') await renderDailyMissions(host);
+    else if(state.page==='wallet') await renderWallet(host);
+    else if(state.page==='season') await renderSeasonPass(host);
+    else if(state.page==='support_user') await renderUserSupport(host);
+    else if(state.page==='banners'&&state.isAdmin) await renderBotBanners(host);
     else if(state.page==='profile') await renderProfile(host);
     else if(state.page==='achievements') await renderAchievements(host);
     else if(state.page==='stats') await renderStats(host);
@@ -2150,6 +2157,131 @@ async function renderCommands(host) {
   }));
   search.addEventListener('input',draw);
   draw();
+}
+
+
+async function renderWallet(host) {
+  const uid=state.session.user.id;
+  const [walletResult,txResult]=await Promise.all([
+    supabase.from('flamexbot_wallets').select('balance').eq('user_id',uid).maybeSingle(),
+    supabase.from('flamexbot_wallet_transactions').select('id,amount,reason,source,created_at').eq('user_id',uid).order('created_at',{ascending:false}).limit(25)
+  ]);
+  const balance=Number(walletResult.data?.balance||0);
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT WALLET</div><h1>Баланс 🪙</h1><p class="muted">Твои монеты, пополнения и покупки внутри FLAMEXBOT.</p></div>
+    <section class="business-card wallet-balance-card"><small>ТЕКУЩИЙ БАЛАНС</small><strong>${balance.toLocaleString('ru-RU')} <span>монет</span></strong><p>1 Telegram Star = 2 монеты</p></section>
+    <section class="business-card"><div class="eyebrow">ПОПОЛНЕНИЕ ЧЕРЕЗ TELEGRAM STARS</div><h3>Выбери количество звёзд</h3><form id="wallet-topup-form" class="wallet-topup-form"><label>Звёзды<input name="stars" type="number" min="5" max="5000" step="1" value="50" required></label><div class="wallet-conversion" id="wallet-conversion">Ты получишь 100 монет</div><button class="primary" type="submit">Создать счёт в Telegram ⭐</button></form><small class="muted">Оплата проводится через официальный счёт Telegram Stars. После подтверждения монеты автоматически поступят на баланс.</small></section>
+    ${state.isAdmin?`<section class="business-card"><div class="eyebrow">УПРАВЛЕНИЕ БАЛАНСОМ</div><h3>Начислить или списать монеты</h3><form id="admin-wallet-form" class="wallet-topup-form"><label>Telegram ID пользователя<input name="telegram_id" inputmode="numeric" placeholder="Например, 123456789" required></label><label>Количество монет<input name="amount" type="number" step="1" min="-1000000" max="1000000" required placeholder="Например, 500 или -100"></label><label>Причина<input name="reason" maxlength="240" placeholder="Бонус от владельца"></label><button class="primary" type="submit">Применить изменение</button></form></section>`:''}
+    <section class="business-card"><div class="section-heading"><div><div class="eyebrow">ИСТОРИЯ ОПЕРАЦИЙ</div><h3>Последние движения</h3></div><span class="payment-history-count">${(txResult.data||[]).length}</span></div><div class="payment-history-list">${(txResult.data||[]).map(tx=>`<div class="payment-history-row"><div><b>${esc(tx.reason||'Операция')}</b><small>${formatMskDateTime(tx.created_at)} · ${esc(tx.source||'')}</small></div><strong class="${tx.amount>=0?'wallet-credit':'wallet-debit'}">${tx.amount>0?'+':''}${Number(tx.amount).toLocaleString('ru-RU')} 🪙</strong></div>`).join('')||'<div class="empty-state">Операций пока нет.</div>'}</div></section>
+    ${walletResult.error||txResult.error?'<p class="business-warning">Не удалось загрузить баланс или историю.</p>':''}`;
+  const starsInput=host.querySelector('[name="stars"]');
+  const conversion=host.querySelector('#wallet-conversion');
+  starsInput?.addEventListener('input',()=>{const n=Math.max(0,Math.floor(Number(starsInput.value)||0));conversion.textContent='Ты получишь '+(n*2).toLocaleString('ru-RU')+' монет';});
+  host.querySelector('#wallet-topup-form')?.addEventListener('submit',async event=>{
+    event.preventDefault();const button=event.currentTarget.querySelector('button[type="submit"]');button.disabled=true;button.textContent='Создаём счёт…';
+    try{
+      const stars=Math.floor(Number(new FormData(event.currentTarget).get('stars')));
+      const {data,error}=await supabase.functions.invoke('create-wallet-invoice',{body:{stars}});
+      if(error||data?.error)throw new Error(data?.error||error?.message||'Не удалось создать счёт');
+      const webApp=window.Telegram?.WebApp;
+      if(webApp?.openInvoice)webApp.openInvoice(data.invoice_url,status=>{if(status==='paid'){toast('Оплата получена. Обновляем баланс…');setTimeout(()=>renderWallet(host),1200);}else if(status==='failed')toast('Оплата не прошла.');});
+      else if(webApp?.openLink)webApp.openLink(data.invoice_url);else window.location.href=data.invoice_url;
+    }catch(error){toast(error?.message||'Ошибка пополнения');}
+    finally{button.disabled=false;button.textContent='Создать счёт в Telegram ⭐';}
+  });
+  host.querySelector('#admin-wallet-form')?.addEventListener('submit',async event=>{
+    event.preventDefault();const fd=new FormData(event.currentTarget);const telegramId=String(fd.get('telegram_id')||'').trim();const amount=Number(fd.get('amount'));const reason=String(fd.get('reason')||'Изменение баланса владельцем').trim();
+    if(!/^[0-9]{5,20}$/.test(telegramId)||!Number.isSafeInteger(amount)||amount===0){toast('Проверь Telegram ID и количество монет.');return;}
+    const button=event.currentTarget.querySelector('button');button.disabled=true;
+    try{
+      const {data:profile,error:profileError}=await supabase.from('profiles').select('id,username,display_name').eq('telegram_id',telegramId).maybeSingle();
+      if(profileError)throw profileError;if(!profile)throw new Error('Пользователь с таким Telegram ID не найден.');
+      const {data,error}=await supabase.rpc('admin_adjust_flamexbot_balance',{p_user_id:profile.id,p_amount:amount,p_reason:reason});
+      if(error)throw error;toast('Баланс изменён. Новый баланс: '+data+' монет.');await renderWallet(host);
+    }catch(error){toast(error?.message||'Не удалось изменить баланс');}
+    finally{button.disabled=false;}
+  });
+}
+
+async function renderSeasonPass(host) {
+  const uid=state.session.user.id;
+  const {data:season,error:seasonError}=await supabase.from('flamexbot_seasons').select('id,season_key,title,starts_at,ends_at').eq('is_active',true).lte('starts_at',new Date().toISOString()).gt('ends_at',new Date().toISOString()).order('starts_at',{ascending:false}).limit(1).maybeSingle();
+  if(seasonError||!season){host.innerHTML='<div class="page-heading"><h1>Сезонный пропуск 🎟️</h1></div><div class="empty-state">Активный сезон пока не запущен.</div>';return;}
+  const [progressResult,levelsResult,claimsResult,walletResult]=await Promise.all([
+    supabase.from('flamexbot_season_pass_progress').select('xp,level,pass_tier').eq('user_id',uid).eq('season_id',season.id).maybeSingle(),
+    supabase.from('flamexbot_season_pass_levels').select('pass_tier,level,reward_type,reward_amount,reward_payload').eq('season_id',season.id).order('level'),
+    supabase.from('flamexbot_season_pass_claims').select('pass_tier,level').eq('user_id',uid).eq('season_id',season.id),
+    supabase.from('flamexbot_wallets').select('balance').eq('user_id',uid).maybeSingle()
+  ]);
+  const progress=progressResult.data||{xp:0,level:1,pass_tier:'free'};
+  const claimed=new Set((claimsResult.data||[]).map(x=>x.pass_tier+':'+x.level));
+  const levels=levelsResult.data||[];
+  const tier=progress.pass_tier||'free';
+  const labelReward=r=>r.reward_type==='coins'?r.reward_amount+' монет':r.reward_type==='premium_days'?r.reward_amount+' дн. Premium':r.reward_type==='wheel_spins'?r.reward_amount+' прокрутка(и)':r.reward_type==='addon'?'Дополнение: '+(r.reward_payload?.addon_code||'бонус'):'Награда';
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT SEASON PASS</div><h1>${esc(season.title)} 🎟️</h1><p class="muted">Выполняй ежедневные задания, получай сезонный опыт и забирай награды. Free открыт всем, Pro открывает дополнительную дорожку.</p></div>
+    <section class="business-card season-progress-card"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ СЕЗОНА</small><h2>Уровень ${progress.level||1}</h2></div><strong>${progress.xp||0} XP</strong></div><div class="xp-track"><span style="width:${Math.min(100,(Number(progress.xp||0)%100))}%"></span></div><div class="level-foot"><small>Баланс: ${Number(walletResult.data?.balance||0)} монет</small><b>${tier==='pro'?'PRO PASS АКТИВЕН':'FREE PASS'}</b></div></section>
+    <div class="season-tier-row"><button class="season-tier active" data-season-tier="free">Free Pass</button><button class="season-tier" data-season-tier="pro">Pro Pass</button></div>
+    <section class="business-card season-pro-card"><div><div class="eyebrow">ДОПОЛНИТЕЛЬНАЯ ДОРОЖКА</div><h3>Pro Pass</h3><p class="muted">Дополнительные награды: Premium-дни, прокрутки и дополнения.</p></div><button class="primary small" id="season-upgrade" ${tier==='pro'?'disabled':''}>${tier==='pro'?'Уже куплен':'Открыть за 500 монет'}</button></section>
+    <div class="season-level-grid" id="season-level-grid"></div>
+    ${progressResult.error||levelsResult.error||claimsResult.error?'<p class="business-warning">Не удалось загрузить прогресс сезонного пропуска.</p>':''}`;
+  let selectedTier='free';
+  const draw=()=>{
+    const grid=host.querySelector('#season-level-grid');
+    host.querySelectorAll('[data-season-tier]').forEach(btn=>btn.classList.toggle('active',btn.dataset.seasonTier===selectedTier));
+    const rows=levels.filter(x=>x.pass_tier===selectedTier);
+    grid.innerHTML=rows.map(r=>{
+      const isClaimed=claimed.has(selectedTier+':'+r.level);
+      const unlocked=Number(progress.level||1)>=r.level;
+      const proLocked=selectedTier==='pro'&&tier!=='pro';
+      return `<article class="season-level-card ${isClaimed?'claimed':unlocked&&!proLocked?'ready':'locked'}"><div class="season-level-number">LEVEL ${r.level}</div><b>${esc(labelReward(r))}</b><small>${unlocked&&!proLocked?'Награда доступна':proLocked?'Нужен Pro Pass':'Нужно '+r.level*100+' XP'}</small><button class="${unlocked&&!proLocked&&!isClaimed?'primary':'outline'} small" data-claim-season="${r.level}" ${!unlocked||proLocked||isClaimed?'disabled':''}>${isClaimed?'Получено':unlocked&&!proLocked?'Забрать':'Закрыто'}</button></article>`;
+    }).join('')||'<div class="empty-state">Награды ещё не добавлены.</div>';
+    grid.querySelectorAll('[data-claim-season]').forEach(btn=>btn.addEventListener('click',async()=>{
+      btn.disabled=true;const {data,error}=await supabase.rpc('claim_flamexbot_season_reward',{p_season_id:season.id,p_tier:selectedTier,p_level:Number(btn.dataset.claimSeason)});
+      if(error){toast(error.message.includes('already claimed')?'Награда уже получена':error.message);btn.disabled=false;return;}
+      claimed.add(selectedTier+':'+btn.dataset.claimSeason);toast('Сезонная награда получена: '+labelReward({reward_type:data.reward_type,reward_amount:data.reward_amount,reward_payload:{}}));draw();
+    }));
+  };
+  host.querySelectorAll('[data-season-tier]').forEach(btn=>btn.addEventListener('click',()=>{selectedTier=btn.dataset.seasonTier;draw();}));
+  host.querySelector('#season-upgrade')?.addEventListener('click',async()=>{
+    const button=host.querySelector('#season-upgrade');button.disabled=true;
+    const {data,error}=await supabase.rpc('upgrade_flamexbot_season_pass',{p_season_id:season.id,p_cost:500});
+    if(error){toast(error.message.includes('insufficient balance')?'Недостаточно монет. Пополни баланс.':error.message);button.disabled=false;return;}
+    toast('Pro Pass открыт!');await renderSeasonPass(host);
+  });
+  draw();
+}
+
+async function renderUserSupport(host) {
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · HELP DESK</div><h1>Техподдержка 🛟</h1><p class="muted">Напиши команде. Ответ появится здесь, в Mini App.</p></div><section class="support-thread active" id="user-support-thread"><div class="support-thread-placeholder">Загружаем обращение…</div></section>`;
+  const thread=host.querySelector('#user-support-thread');
+  const refresh=async()=>{
+    if(!thread.isConnected||state.page!=='support_user')return;
+    const {data,error}=await supabase.functions.invoke('flamexbot-user-support',{body:{action:'messages'}});
+    if(error||data?.error){thread.innerHTML='<div class="empty-state">'+esc(data?.error||error?.message||'Не удалось загрузить обращение')+'</div>';return;}
+    const messages=data.messages||[];
+    thread.innerHTML='<div class="support-thread-head"><div><b>Твоё обращение</b><small>'+(data.chat?.status==='closed'?'Закрыто':'Открыто')+'</small></div></div><div class="support-message-list">'+(messages.map(msg=>'<article class="support-message '+(msg.direction==='outgoing'?'outgoing':'incoming')+'"><p>'+esc(msg.content||'')+'</p><time>'+formatMskDateTime(msg.created_at)+'</time></article>').join('')||'<div class="empty-state">Опиши проблему в поле ниже — обращение будет создано.</div>')+'</div><form class="support-reply-form" id="user-support-form"><textarea name="content" maxlength="4000" placeholder="Опиши проблему…" required></textarea><button class="primary" type="submit">Отправить</button></form>';
+    const list=thread.querySelector('.support-message-list');if(list)list.scrollTop=list.scrollHeight;
+    thread.querySelector('#user-support-form')?.addEventListener('submit',async event=>{
+      event.preventDefault();const form=event.currentTarget;const content=String(new FormData(form).get('content')||'').trim();if(!content)return;
+      const button=form.querySelector('button');button.disabled=true;
+      const {data:sent,error:sendError}=await supabase.functions.invoke('flamexbot-user-support',{body:{action:'send',content}});
+      if(sendError||sent?.error)toast(sent?.error||sendError?.message||'Не удалось отправить обращение');else{toast('Сообщение отправлено в техподдержку');await refresh();}
+      button.disabled=false;
+    });
+  };
+  await refresh();
+  if(state.userSupportPollTimer)clearInterval(state.userSupportPollTimer);
+  state.userSupportPollTimer=setInterval(()=>{if(state.page==='support_user'&&!document.hidden)refresh();},5000);
+}
+
+async function renderBotBanners(host) {
+  const {data:rows,error}=await supabase.from('flamexbot_bot_banners').select('banner_key,image_url,caption,enabled').order('banner_key');
+  const map=new Map((rows||[]).map(x=>[x.banner_key,x]));
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FOUNDER SETTINGS</div><h1>Баннеры бота 🖼️</h1><p class="muted">Настрой изображения и подписи для приветствия /start и меню инструкции.</p></div>${['start','instruction'].map(key=>{const item=map.get(key)||{image_url:'',caption:'',enabled:true};return `<form class="business-card banner-form" data-banner-key="${key}"><div class="eyebrow">${key==='start'?'ПРИВЕТСТВИЕ /START':'ИНСТРУКЦИЯ'}</div><label>Ссылка на изображение<input name="image_url" type="url" value="${esc(item.image_url||'')}" placeholder="https://…"></label><label>Текст подписи<textarea name="caption" maxlength="900" rows="3">${esc(item.caption||'')}</textarea></label><label class="admin-owner-setting"><span><b>Баннер включён</b><small>Если выключить, бот отправит обычное текстовое сообщение.</small></span><input type="checkbox" name="enabled" ${item.enabled?'checked':''}></label><button class="primary" type="submit">Сохранить баннер</button></form>`;}).join('')}${error?'<p class="business-warning">'+esc(error.message)+'</p>':''}`;
+  host.querySelectorAll('[data-banner-key]').forEach(form=>form.addEventListener('submit',async event=>{
+    event.preventDefault();const fd=new FormData(form);const key=form.dataset.bannerKey;const image=String(fd.get('image_url')||'').trim();if(image&&!/^https:\/\//i.test(image)){toast('Нужна HTTPS-ссылка на изображение.');return;}
+    const {error:saveError}=await supabase.from('flamexbot_bot_banners').upsert({banner_key:key,image_url:image||null,caption:String(fd.get('caption')||''),enabled:fd.get('enabled')==='on',updated_by:state.session.user.id,updated_at:new Date().toISOString()},{onConflict:'banner_key'});
+    if(saveError)toast(saveError.message);else toast('Баннер сохранён.');
+  }));
 }
 
 async function renderStats(host) {
