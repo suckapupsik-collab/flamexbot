@@ -1582,3 +1582,11 @@ body{
 .bot-private-inbox .support-message.outgoing{align-self:flex-end;background:rgba(75,135,220,.12);border-color:rgba(75,135,220,.25)}
 .bot-private-inbox .support-message p{margin:0 0 5px;white-space:pre-wrap}.bot-private-inbox .support-message time{display:block;text-align:right;color:var(--muted);font-size:9px}.bot-private-inbox .support-attachment{margin:5px 0;color:#9fc8ff;font-size:11px}
 @media(max-width:700px){.admin-owner-settings-grid{grid-template-columns:1fr}.bot-private-inbox .support-thread{min-height:60dvh}.bot-private-inbox .support-message-list{max-height:calc(100dvh - 290px)}}
+
+
+/* FLAMEXBOT sign-in and archive refinements */
+.page-enter{animation:flamePageEnter .48s cubic-bezier(.2,.75,.25,1) both;transform-origin:50% 12%;}
+@keyframes flamePageEnter{0%{opacity:0;transform:translateY(18px) scale(.985);filter:blur(5px)}65%{opacity:1;filter:blur(0)}100%{opacity:1;transform:translateY(0) scale(1)}}
+.auth-card{animation:flameAuthEnter .75s cubic-bezier(.16,1,.3,1) both;}
+@keyframes flameAuthEnter{0%{opacity:0;transform:translateY(28px) scale(.96);filter:blur(9px)}65%{opacity:1;filter:blur(0)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@media(prefers-reduced-motion:reduce){.page-enter,.auth-card{animation:none!important}}
