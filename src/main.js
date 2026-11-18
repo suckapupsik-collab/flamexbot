@@ -2392,6 +2392,7 @@ async function renderSeasonPass(host) {
   const currentLevel = Math.max(1, Math.min(30, Number(progress.level || Math.floor(totalXp / 100) + 1)));
   const xpInLevel = currentLevel >= 30 ? 100 : totalXp % 100;
   const daysLeft = Math.max(0, Math.ceil((new Date(season.ends_at).getTime() - Date.now()) / 86400000));
+  const proCostLabel = Number(season.pro_cost||500).toLocaleString('ru-RU');
   const celebrateSeasonReward = () => {
     const card = host.querySelector('.season-progress-card');
     if (!card) return;
@@ -2423,7 +2424,7 @@ async function renderSeasonPass(host) {
     <div class="season-tier-row"><button class="season-tier active" data-season-tier="free">Free Pass</button><button class="season-tier" data-season-tier="pro">💎 Pro Pass</button></div>
     <section class="business-card season-pro-card">
       <div><div class="eyebrow">ДОПОЛНИТЕЛЬНАЯ ДОРОЖКА</div><h3>💎 Pro Pass</h3><p class="muted">Открой вторую дорожку и получай дополнительные награды: Premium-дни, прокрутки и полезные дополнения.</p></div>
-      <button class="primary small" id="season-upgrade" ${tier === 'pro' ? 'disabled' : ''}>${tier === 'pro' ? 'Уже куплен' : 'Открыть за ${Number(season.pro_cost||500).toLocaleString('ru-RU')} монет'}</button>
+      <button class="primary small" id="season-upgrade" ${tier === 'pro' ? 'disabled' : ''}>${tier === 'pro' ? 'Уже куплен' : 'Открыть за ' + proCostLabel + ' монет'}</button>
     </section>
     <div class="season-reward-summary"><span>Доступно наград: <b id="season-ready-count">0</b></span><span>Всего уровней: <b>30</b></span></div>
     <div class="season-level-grid" id="season-level-grid"></div>`;
