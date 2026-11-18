@@ -2290,6 +2290,13 @@ async function renderSeasonPass(host) {
   const currentLevel = Math.max(1, Math.min(30, Number(progress.level || Math.floor(totalXp / 100) + 1)));
   const xpInLevel = currentLevel >= 30 ? 100 : totalXp % 100;
   const daysLeft = Math.max(0, Math.ceil((new Date(season.ends_at).getTime() - Date.now()) / 86400000));
+  const celebrateSeasonReward = () => {
+    const card = host.querySelector('.season-progress-card');
+    if (!card) return;
+    card.classList.remove('season-reward-pop');
+    void card.offsetWidth;
+    card.classList.add('season-reward-pop');
+  };
   const labelReward = reward => reward.reward_type === 'coins' ? Number(reward.reward_amount) + ' монет'
     : reward.reward_type === 'premium_days' ? Number(reward.reward_amount) + ' дн. Premium'
     : reward.reward_type === 'wheel_spins' ? Number(reward.reward_amount) + ' прокруток'
@@ -2358,6 +2365,7 @@ async function renderSeasonPass(host) {
         if (balanceNode) balanceNode.textContent = balance.toLocaleString('ru-RU');
         const claimedNode = host.querySelector('#season-claimed-count');
         if (claimedNode) claimedNode.textContent = String(claimed.size);
+        celebrateSeasonReward();
         toast('🎉 Получено: ' + labelReward({ reward_type: data.reward_type, reward_amount: data.reward_amount, reward_payload: data.reward_payload || {} }));
         draw();
       } catch (error) {
