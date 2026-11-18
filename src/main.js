@@ -2814,6 +2814,8 @@ async function startNotificationRealtime(session) {
       if(!n.id||n.read_at)return;
       if(state.isAdmin&&n.type==='support_message')toast((n.title||'Новое сообщение в техподдержку')+(n.body?' · '+n.body:''));
       else if(n.type==='season_event_new')toast('🎯 '+(n.title||'Новое сезонное событие'));
+      else if(n.type==='season_event_reminder')toast('⏳ '+(n.title||'Событие скоро закончится')+(n.body?' · '+n.body:''));
+      else if(n.type==='season_event_final')toast('📊 '+(n.title||'Итоги сезонного события')+(n.body?' · '+n.body:''));
       else if(n.type==='season_event_reward')toast('🏆 '+(n.title||'Награда за событие')+(n.body?' · '+n.body:''));
       else if(n.type==='season_promo')toast('🎟️ '+(n.title||'Промокод активирован')+(n.body?' · '+n.body:''));
       const {error}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('id',n.id).eq('user_id',uid);
