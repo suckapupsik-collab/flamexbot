@@ -924,7 +924,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     if (isFounderTarget(chat.telegram_chat_id, chat.telegram_user_id)) { await reply(tgEmoji("lock") + " <b>Владелец FLAMEXBOT защищён.</b> Режимы управления для этого диалога отключены.", "HTML"); return true; }
     const { error: settingError } = await admin.from("flamexbot_business_chat_settings").upsert({ profile_id: profile.id, business_chat_id: chat.id, antimut_enabled: enabled }, { onConflict: "profile_id,business_chat_id" });
     if (settingError) throw settingError;
-    await reply(enabled ? tgEmoji("success") + " <b>Антимут включён</b>\nТвои сообщения будут удаляться и отправляться заново от имени твоего Telegram Business-аккаунта в этом же диалоге. Личка с ботом не используется." : tgEmoji("lock") + " <b>Антимут выключен</b>\nАнтимут отключён.", "HTML");
+    await reply(enabled ? tgEmoji("crown") + " <b>Анти мут включён, хаха думал ты здесь крутой? Я здесь крутой.</b>" : tgEmoji("lock") + " <b>Антимут выключен</b>\nАнтимут отключён.", "HTML");
     return true;
   }
   if (command === "timeprofile") {
