@@ -1729,3 +1729,16 @@ body{
 @media(max-width:620px){.season-event-form-grid{grid-template-columns:1fr}.season-event-admin-row{align-items:stretch;flex-direction:column}.season-event-admin-actions{justify-content:flex-start}.season-event-bottom button{flex:none}}
 
 .season-event-switch{display:flex;gap:8px;margin-top:12px}.season-event-switch button{min-width:104px}@media(max-width:420px){.season-event-switch{display:grid;grid-template-columns:1fr 1fr}.season-event-switch button{width:100%}}
+
+/* Seasonal promo codes */
+.season-promo-redeem,.season-promo-form{display:grid;gap:13px;padding:18px;margin:14px 0}
+.season-promo-redeem label,.season-promo-form label{display:grid;gap:7px;color:var(--muted);font-size:12px;font-weight:700}
+.season-promo-redeem input,.season-promo-form input{width:100%;min-width:0;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--text);font:inherit;font-size:14px}
+.season-promo-redeem button{justify-self:start;min-width:190px}
+.season-promo-history{display:grid;gap:10px}
+.season-promo-history-row,.season-promo-admin-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px}
+.season-promo-history-row>div,.season-promo-admin-row>div:first-child{display:grid;gap:5px;min-width:0}
+.season-promo-history-row small,.season-promo-admin-row small{color:var(--muted);font-size:11px;line-height:1.55}
+.season-promo-history-row>strong{color:var(--accent);font-size:14px;white-space:nowrap}
+.season-promo-admin-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:620px){.season-promo-redeem button{width:100%}.season-promo-admin-row{align-items:stretch;flex-direction:column}.season-promo-admin-actions{justify-content:flex-start}}
