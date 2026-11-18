@@ -122,7 +122,7 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
 const PAGE_LABELS = {
   home:'Обзор', support:'Техподдержка', support_user:'Написать в техподдержку', inbox:'Личные сообщения бота', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', wallet:'Баланс', season:'Сезонный пропуск', banners:'Баннеры бота', profile:'Профиль', achievements:'Достижения',
-  stats:'Статистика', commands:'Все команды', leaderboard:'Рейтинг сезона', season_admin:'Редактор сезона', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
+  stats:'Статистика', commands:'Все команды', leaderboard:'Рейтинг сезона', events:'Сезонные события', season_admin:'Редактор сезона', season_events_admin:'Управление событиями', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
 const BADGE_META = {
   verified:{label:'Подтверждён',icon:'✓',className:'verified'},
@@ -176,7 +176,7 @@ function closeProfileMenu() {
   if(trigger)trigger.setAttribute('aria-expanded','false');
 }
 function navigateTo(page) {
-  if(!PAGE_LABELS[page] || (['users','admin','banners','support'].includes(page)&&!state.isAdmin))return;
+  if(!PAGE_LABELS[page] || (['users','admin','banners','support'].includes(page)&&!state.isAdmin) || (['season_admin','season_events_admin'].includes(page)&&!isFounderProfile()))return;
   if(state.page==='messages'&&page!=='messages'){
     if(state.businessChatChannel){supabase.removeChannel(state.businessChatChannel);state.businessChatChannel=null;}
     if(state.businessListChannel){supabase.removeChannel(state.businessListChannel);state.businessListChannel=null;}
@@ -209,6 +209,7 @@ function renderApp() {
     ['missions','⚡','Ежедневные задания','Новые задания каждый день'],
     ['season','🎟️','Сезонный пропуск','Награды Free и Pro'],
     ['leaderboard','🏆','Рейтинг сезона','Топ участников по XP'],
+    ['events','🎯','Сезонные события','Временные испытания и награды'],
     ['wallet','🪙','Баланс','Монеты и пополнение'],
     ['achievements','🏆','Достижения','Коллекция наград'],
     ['support_user','🛟','Написать в техподдержку','Задать вопрос команде'],
@@ -336,6 +337,8 @@ async function loadPage() {
     else if(state.page==='wallet') await renderWallet(host);
     else if(state.page==='season') await renderSeasonPass(host);
     else if(state.page==='leaderboard') await renderSeasonLeaderboard(host);
+    else if(state.page==='events') await renderSeasonEvents(host);
+    else if(state.page==='season_events_admin'&&isFounderProfile()) await renderSeasonEventsAdmin(host);
     else if(state.page==='season_admin'&&isFounderProfile()) await renderSeasonAdmin(host);
     else if(state.page==='support_user') await renderUserSupport(host);
     else if(state.page==='banners'&&state.isAdmin) await renderBotBanners(host);
@@ -1298,7 +1301,7 @@ async function renderAdmin(host) {
       <button class="admin-module" data-admin-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
       <button class="admin-module" data-go="wallet"><span class="admin-module-icon premium">🪙</span><b>Управление балансом</b><small>Начисление и списание монет, история операций</small><i>Открыть →</i></button>
       <button class="admin-module" data-go="banners"><span class="admin-module-icon verify">🖼️</span><b>Баннеры бота</b><small>Изображения для /start и инструкции</small><i>Настроить →</i></button>
-      ${isFounderProfile()?'<button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button>':''}
+      ${isFounderProfile()?'<button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button><button class="admin-module" data-go="season_events_admin"><span class="admin-module-icon verify">🎯</span><b>Сезонные события</b><small>Создание испытаний, сроки и награды XP</small><i>Управлять →</i></button>':''}
     </div>
     <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки, снятия Premium, синей галочки и значков ролей. Значки администратора и разработчика не выдают доступ к панели.</small></div></div><span class="business-status is-connected">SECURE</span></section>
     <section class="admin-owner-settings">
@@ -2351,6 +2354,78 @@ function seasonRewardEditorRow(row,options) {
     <select data-reward-type aria-label="Тип награды уровня ${Number(row.level)}">${options.map(([value,label])=>`<option value="${value}" ${row.reward_type===value?'selected':''}>${label}</option>`).join('')}</select>
     <input data-reward-amount type="number" min="0" max="100000" value="${Number(row.reward_amount)||0}" aria-label="Количество награды">
   </div>`;
+}
+
+
+async function renderSeasonEvents(host) {
+  host.innerHTML='<div class="loading-state">Загружаем сезонные события…</div>';
+  const {data:events,error}=await supabase.rpc('get_flamexbot_season_events');
+  if(error){host.innerHTML='<div class="page-heading"><h1>🎯 Сезонные события</h1></div><div class="business-warning">'+esc(error.message)+'</div><button class="outline" id="events-retry">Повторить</button>';host.querySelector('#events-retry')?.addEventListener('click',()=>renderSeasonEvents(host));return;}
+  const now=Date.now();
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · LIMITED CHALLENGES</div><h1>🎯 Сезонные события</h1><p class="muted">Выполняй временные испытания, собирай ежедневные награды и получай дополнительный сезонный XP.</p></div>
+    <div class="season-event-list">${(events||[]).map(e=>{
+      const progress=Number(e.progress_count)||0,target=Math.max(1,Number(e.goal_count)||1),percent=Math.min(100,Math.round(progress/target*100));
+      const claimed=e.claimed===true,done=progress>=target,starts=new Date(e.starts_at).getTime()>now;
+      return `<article class="business-card season-event-card ${claimed?'claimed':done?'ready':''}">
+        <div class="season-event-top"><span class="season-event-icon">${esc(e.icon||'🔥')}</span><span class="season-event-time">${starts?'Начнётся '+formatMskDateTime(e.starts_at):'До '+formatMskDateTime(e.ends_at)}</span></div>
+        <h3>${esc(e.title)}</h3><p>${esc(e.description||'')}</p>
+        <div class="season-event-progress"><div><b>Выполнено заданий</b><strong>${Math.min(progress,target)} / ${target}</strong></div><span class="task-progress-track"><i style="width:${percent}%"></i></span></div>
+        <div class="season-event-bottom"><span>🏆 +${Number(e.reward_xp)} XP</span><button class="${done&&!claimed?'primary':'outline'} small" data-claim-event="${esc(e.event_id)}" ${!done||claimed||starts?'disabled':''}>${claimed?'Получено':done?'Забрать награду':starts?'Скоро':'Выполняй'}</button></div>
+      </article>`;
+    }).join('')||'<div class="empty-state">Активных событий пока нет. Загляни позже — новые испытания появятся здесь.</div>'}</div>
+    <section class="daily-task-footer"><span>⚡</span><div><b>Как считается прогресс</b><small>Учитываются только реально полученные награды за ежедневные задания в период события. Одну награду события можно забрать один раз.</small></div></section>`;
+  host.querySelectorAll('[data-claim-event]').forEach(btn=>btn.addEventListener('click',async()=>{
+    btn.disabled=true;btn.textContent='Проверяем…';
+    const {data,error}=await supabase.rpc('claim_flamexbot_season_event',{p_event_id:btn.dataset.claimEvent});
+    if(error){toast(error.message?.includes('already claimed')?'Награда уже получена':error.message?.includes('not completed')?'Испытание ещё не выполнено':'Не удалось забрать награду: '+error.message);await renderSeasonEvents(host);return;}
+    toast('Получено +'+Number(data?.reward_xp||0)+' сезонного XP');
+    await renderSeasonEvents(host);
+  }));
+}
+
+async function renderSeasonEventsAdmin(host) {
+  if(!isFounderProfile()){host.innerHTML='<div class="business-warning">Раздел доступен только основателю.</div>';return;}
+  host.innerHTML='<div class="loading-state">Загружаем управление событиями…</div>';
+  const {data:events,error}=await supabase.from('flamexbot_season_events').select('*').order('created_at',{ascending:false});
+  if(error){host.innerHTML='<div class="business-warning">'+esc(error.message)+'</div>';return;}
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FOUNDER ONLY · EVENT CONTROL</div><h1>🎯 Управление событиями</h1><p class="muted">Создавай ограниченные по времени испытания. Прогресс подтверждается сервером по истории ежедневных заданий.</p></div>
+    <form class="business-card season-event-form" id="season-event-form">
+      <h3>＋ Создать событие</h3>
+      <label>Название<input name="title" maxlength="100" minlength="3" required placeholder="Например: Неделя активности"></label>
+      <label>Описание<textarea name="description" maxlength="500" rows="2" placeholder="Что нужно сделать участникам?"></textarea></label>
+      <div class="season-event-form-grid">
+        <label>Начало<input name="starts_at" type="datetime-local" required></label>
+        <label>Окончание<input name="ends_at" type="datetime-local" required></label>
+        <label>Цель: забрать ежедневных наград<input name="goal_count" type="number" min="1" max="1000" value="5" required></label>
+        <label>Награда XP<input name="reward_xp" type="number" min="1" max="10000" value="100" required></label>
+      </div>
+      <label>Иконка<input name="icon" maxlength="8" value="🔥"></label>
+      <button class="primary" type="submit" id="season-event-create">Создать событие</button>
+      <p class="season-editor-status" id="season-event-status" aria-live="polite"></p>
+    </form>
+    <div class="section-heading"><div><div class="eyebrow">EVENT ARCHIVE</div><h3>Созданные события</h3></div><span class="admin-secure">${(events||[]).length} всего</span></div>
+    <div class="season-event-admin-list">${(events||[]).map(e=>`<article class="business-card season-event-admin-row">
+      <div><b>${esc(e.icon)} ${esc(e.title)}</b><small>${formatMskDateTime(e.starts_at)} — ${formatMskDateTime(e.ends_at)} · цель ${e.goal_count} · +${e.reward_xp} XP</small></div>
+      <div class="season-event-admin-actions"><span class="business-status ${e.is_active?'is-connected':'is-disconnected'}">${e.is_active?'Включено':'Выключено'}</span><button class="outline small" data-toggle-event="${e.id}" data-active="${e.is_active}">${e.is_active?'Выключить':'Включить'}</button><button class="outline small danger" data-delete-event="${e.id}">Удалить</button></div>
+    </article>`).join('')||'<div class="empty-state">Событий ещё нет. Создай первое выше.</div>'}</div>`;
+  host.querySelector('#season-event-form')?.addEventListener('submit',async ev=>{
+    ev.preventDefault();const form=ev.currentTarget,fd=new FormData(form),button=host.querySelector('#season-event-create'),status=host.querySelector('#season-event-status');
+    const start=new Date(fd.get('starts_at')),end=new Date(fd.get('ends_at'));
+    if(!(end>start)){status.textContent='Дата окончания должна быть позже начала.';return;}
+    button.disabled=true;button.textContent='Создаём…';
+    const {error}=await supabase.from('flamexbot_season_events').insert({title:String(fd.get('title')).trim(),description:String(fd.get('description')||'').trim(),starts_at:start.toISOString(),ends_at:end.toISOString(),goal_type:'daily_tasks',goal_count:Number(fd.get('goal_count')),reward_xp:Number(fd.get('reward_xp')),icon:String(fd.get('icon')||'🔥'),created_by:state.session.user.id});
+    if(error){status.textContent='Ошибка: '+error.message;button.disabled=false;button.textContent='Создать событие';return;}
+    toast('Событие создано');await renderSeasonEventsAdmin(host);
+  });
+  host.querySelectorAll('[data-toggle-event]').forEach(btn=>btn.addEventListener('click',async()=>{
+    btn.disabled=true;const {error}=await supabase.from('flamexbot_season_events').update({is_active:btn.dataset.active!=='true',updated_at:new Date().toISOString()}).eq('id',btn.dataset.toggleEvent);
+    if(error)toast('Не удалось изменить статус: '+error.message);else toast('Статус события обновлён');await renderSeasonEventsAdmin(host);
+  }));
+  host.querySelectorAll('[data-delete-event]').forEach(btn=>btn.addEventListener('click',async()=>{
+    if(!confirm('Удалить событие и связанные отметки о наградах?'))return;
+    btn.disabled=true;const {error}=await supabase.from('flamexbot_season_events').delete().eq('id',btn.dataset.deleteEvent);
+    if(error){toast('Не удалось удалить: '+error.message);btn.disabled=false;}else{toast('Событие удалено');await renderSeasonEventsAdmin(host);}
+  }));
 }
 
 async function renderSeasonPass(host) {
