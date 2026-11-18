@@ -1727,3 +1727,5 @@ body{
 .season-event-admin-row small{color:var(--muted);font-size:11px}
 .season-event-admin-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:620px){.season-event-form-grid{grid-template-columns:1fr}.season-event-admin-row{align-items:stretch;flex-direction:column}.season-event-admin-actions{justify-content:flex-start}.season-event-bottom button{flex:none}}
+
+.season-event-switch{display:flex;gap:8px;margin-top:12px}.season-event-switch button{min-width:104px}@media(max-width:420px){.season-event-switch{display:grid;grid-template-columns:1fr 1fr}.season-event-switch button{width:100%}}
