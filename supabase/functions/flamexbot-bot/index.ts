@@ -715,7 +715,7 @@ ${tgEmoji("settings")} <b>Автоматизация текущего диало
 ${tgEmoji("lock")} <b>Текущий диалог</b>
 <code>.ping</code> / <code>/ping</code> — проверить ответы Business-команд\n<code>.help</code> / <code>/help</code> / <code>.commands</code> — полный список команд\n<code>.streak 1-3650</code> — мгновенно установить серию (только администрация)\n<code>.mute</code> / <code>/mute</code> — удалять новые входящие сообщения
 <code>.unmute</code> — остановить удаление сообщений
-<code>.antimute</code> / <code>.unantimute</code> — отправлять новые сообщения от имени бота FLAMEXBOT (собеседник должен открыть бота и нажать Start)
+<code>.antimute</code> / <code>.unantimute</code> — пересылать твои сообщения заново от имени подключённого Telegram Business-аккаунта в том же чате
 <code>.profile</code> — анимированная публичная карточка собеседника
 
 ${tgEmoji("edit")} <b>Дополнительно</b>
@@ -832,14 +832,18 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
   }
   if (["antimute","antimut","unantimute","unantimut"].includes(command)) {
     if (!businessConnectionId) { await reply("Команда работает только внутри подключённого Business-чата."); return true; }
+    const enabled = command === "antimute" || command === "antimut";
+    if (enabled && connectionOverride?.rights?.can_delete_sent_messages !== true) {
+      await reply("⛔ Для антимута Telegram Business должен выдать право «Удалять отправленные сообщения». Включи его в настройках подключения и повтори команду.");
+      return true;
+    }
     const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats").select("id,telegram_chat_id,telegram_user_id,business_connection_id").eq("profile_id", profile.id).eq("telegram_chat_id", String(message.chat.id)).eq("business_connection_id", businessConnectionId).maybeSingle();
     if (chatError) throw chatError; if (!chat) { await reply("Не удалось определить этот Business-чат."); return true; }
     if (isFounderTarget(chat.telegram_chat_id, chat.telegram_user_id)) { await reply(tgEmoji("lock") + " <b>Владелец FLAMEXBOT защищён.</b> Режимы управления для этого диалога отключены.", "HTML"); return true; }
-    const enabled = command === "antimute" || command === "antimut";
     const { error: settingError } = await admin.from("flamexbot_business_chat_settings").upsert({ profile_id: profile.id, business_chat_id: chat.id, antimut_enabled: enabled }, { onConflict: "profile_id,business_chat_id" });
     if (settingError) throw settingError;
     const markup = { inline_keyboard: [[{ text: enabled ? "🔒 Отключить антимут" : "🛡 Включить антимут", callback_data: "fb:antimut_" + (enabled ? "off" : "on") + ":" + chat.id }]] };
-    await reply(enabled ? tgEmoji("success") + " <b>Антимут включён</b>\nНовые сообщения будут отправляться от имени бота FLAMEXBOT. Получатель должен открыть бота и нажать Start; блокировки Telegram не обходятся." : tgEmoji("lock") + " <b>Антимут выключен</b>\nДополнительное сохранение режима антимута отключено.", "HTML", markup);
+    await reply(enabled ? tgEmoji("success") + " <b>Антимут включён</b>\nТвои сообщения будут удаляться и отправляться заново от имени твоего Telegram Business-аккаунта в этом же диалоге. Личка с ботом не используется." : tgEmoji("lock") + " <b>Антимут выключен</b>\nДополнительное сохранение режима антимута отключено.", "HTML", markup);
     return true;
   }
   if (command === "timeprofile") {
@@ -1168,7 +1172,19 @@ async function handlePreCheckout(query: any) {
           if (profileError) throw profileError;
           ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id));
         }
-      } else if (parseWheelPayload(payload) && query.total_amount === 5) {
+      } else {
+        const walletMatch = /^flamexbot_wallet:([0-9a-f-]{36}):(\\d+):([0-9a-f-]{36})$/i.exec(payload);
+        if (walletMatch) {
+          const userId = walletMatch[1];
+          const stars = Number(walletMatch[2]);
+          const { data: profile, error: profileError } = await admin.from("profiles")
+            .select("id,telegram_id,is_banned").eq("id", userId).maybeSingle();
+          if (profileError) throw profileError;
+          ok = Boolean(stars >= 5 && stars <= 5000 && query.total_amount === stars
+            && profile && !profile.is_banned && profile.telegram_id === String(query.from?.id));
+        }
+      }
+      if (!ok && (parseWheelPayload(payload)) && query.total_amount === 5) {
         const { data: order, error: orderError } = await admin.from("flamexbot_wheel_orders")
           .select("user_id,telegram_user_id,status,price_stars").eq("invoice_payload",payload).maybeSingle();
         if (orderError) throw orderError;
@@ -1312,6 +1328,30 @@ async function handleSuccessfulPayment(message: any) {
       console.log("Resumed previously recorded Stars refund", chargeId);
       return;
     }
+  }
+  const walletMatch = /^flamexbot_wallet:([0-9a-f-]{36}):(\\d+):([0-9a-f-]{36})$/i.exec(invoicePayload);
+  if (walletMatch) {
+    const userId = walletMatch[1];
+    const stars = Number(walletMatch[2]);
+    if (payment.currency !== "XTR" || payment.total_amount !== stars || !chargeId || stars < 5 || stars > 5000) {
+      throw new Error("Wallet Stars payment mismatch");
+    }
+    const { data: profile, error: profileError } = await admin.from("profiles")
+      .select("id,telegram_id,is_banned").eq("id", userId).maybeSingle();
+    if (profileError) throw profileError;
+    if (!profile || profile.telegram_id !== String(message.from.id) || profile.is_banned) {
+      throw new Error("Wallet payer does not match an active profile");
+    }
+    const { data: balance, error: creditError } = await admin.rpc("credit_flamexbot_wallet_service", {
+      p_user_id: userId, p_amount: stars * 2, p_reason: `Пополнение через Telegram Stars (${stars} ⭐)`,
+      p_source: "telegram_stars", p_reference: chargeId,
+      p_metadata: { stars, telegram_payment_charge_id: chargeId, invoice_payload: invoicePayload },
+    });
+    if (creditError) throw creditError;
+    await sendRichTelegramMessage(message.chat.id,
+      `💰 <b>Баланс пополнен!</b>\\nНачислено: <b>${stars * 2} монет</b> (${stars} ⭐).\\nБаланс: <b>${balance} монет</b>.`,
+      "HTML", { inline_keyboard: [[{ text: "Открыть баланс", web_app: { url: APP_URL } }]] });
+    return;
   }
   const wheelUserId = parseWheelPayload(invoicePayload);
   if (wheelUserId) {
