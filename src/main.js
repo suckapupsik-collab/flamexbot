@@ -2299,12 +2299,12 @@ async function renderSeasonPass(host) {
       <div class="eyebrow">FLAMEXBOT · SEASON PASS</div>
       <h1>${esc(season.title)} 🎟️</h1>
       <p class="muted">90 дней активности, 30 уровней и две дорожки наград. Выполняй задания, набирай XP и забирай призы.</p>
-      <div class="season-meta"><span>⏳ Осталось дней: <b>${daysLeft}</b></span><span>🏆 Наград получено: <b>${claimed.size}</b></span></div>
+      <div class="season-meta"><span>⏳ Осталось дней: <b>${daysLeft}</b></span><span>🏆 Наград получено: <b id="season-claimed-count">${claimed.size}</b></span></div>
     </div>
     <section class="business-card season-progress-card">
       <div class="level-line"><div><small>ТВОЙ УРОВЕНЬ СЕЗОНА</small><h2>Уровень ${currentLevel} <span class="season-level-total">/ 30</span></h2></div><strong>${totalXp.toLocaleString('ru-RU')} XP</strong></div>
       <div class="xp-track"><span style="width:${Math.min(100, xpInLevel)}%"></span></div>
-      <div class="level-foot"><small>${currentLevel >= 30 ? 'Максимальный уровень достигнут' : 'До следующего уровня: ' + (100 - xpInLevel) + ' XP'} · Баланс: ${balance.toLocaleString('ru-RU')} монет</small><b>${tier === 'pro' ? '💎 PRO PASS' : 'FREE PASS'}</b></div>
+      <div class="level-foot"><small>${currentLevel >= 30 ? 'Максимальный уровень достигнут' : 'До следующего уровня: ' + (100 - xpInLevel) + ' XP'} · Баланс: <b id="season-balance">${balance.toLocaleString('ru-RU')}</b> монет</small><b>${tier === 'pro' ? '💎 PRO PASS' : 'FREE PASS'}</b></div>
     </section>
     <section class="business-card season-missions-link">
       <div><div class="eyebrow">ПОЛУЧАЙ СЕЗОННЫЙ XP</div><b>Ежедневные задания</b><p class="muted">Выполняй задания FLAMEXBOT — получай опыт для уровней сезонного пропуска.</p></div>
@@ -2353,6 +2353,10 @@ async function renderSeasonPass(host) {
         ]);
         if (freshProgress.data) { progress = freshProgress.data; tier = progress.pass_tier || tier; }
         if (freshWallet.data) balance = Number(freshWallet.data.balance || 0);
+        const balanceNode = host.querySelector('#season-balance');
+        if (balanceNode) balanceNode.textContent = balance.toLocaleString('ru-RU');
+        const claimedNode = host.querySelector('#season-claimed-count');
+        if (claimedNode) claimedNode.textContent = String(claimed.size);
         toast('🎉 Получено: ' + labelReward({ reward_type: data.reward_type, reward_amount: data.reward_amount, reward_payload: data.reward_payload || {} }));
         draw();
       } catch (error) {
