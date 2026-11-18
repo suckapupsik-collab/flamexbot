@@ -2376,6 +2376,7 @@ async function startNotificationRealtime(session) {
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:`user_id=eq.${uid}`},async payload=>{
       const n=payload.new||{};
       if(!n.id||n.read_at)return;
+      if(state.isAdmin&&n.type==='support_message')toast((n.title||'Новое сообщение в техподдержку')+(n.body?' · '+n.body:''));
       const {error}=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('id',n.id).eq('user_id',uid);
       if(error)console.warn('Auto-read notification:',error.message);
     })
