@@ -216,7 +216,7 @@ async function sendRichTelegramMessage(
   };
   try {
     const sent = await telegram("sendMessage", payload);
-    if (archiveInbox && !connectionId && admin && /^\\d+$/.test(String(chatId)) && sent?.message_id) {
+    if (archiveInbox && !connectionId && admin && /^\d+$/.test(String(chatId)) && sent?.message_id) {
       try {
         const { data: supportChat } = await admin.from("flamexbot_bot_inbox_chats")
           .select("id").eq("telegram_chat_id", String(chatId)).maybeSingle();
@@ -1173,7 +1173,7 @@ async function handlePreCheckout(query: any) {
           ok = Boolean(profile && !profile.is_banned && profile.telegram_id === String(query.from?.id));
         }
       } else {
-        const walletMatch = /^flamexbot_wallet:([0-9a-f-]{36}):(\\d+):([0-9a-f-]{36})$/i.exec(payload);
+        const walletMatch = /^flamexbot_wallet:([0-9a-f-]{36}):(\d+):([0-9a-f-]{36})$/i.exec(payload);
         if (walletMatch) {
           const userId = walletMatch[1];
           const stars = Number(walletMatch[2]);
@@ -1329,7 +1329,7 @@ async function handleSuccessfulPayment(message: any) {
       return;
     }
   }
-  const walletMatch = /^flamexbot_wallet:([0-9a-f-]{36}):(\\d+):([0-9a-f-]{36})$/i.exec(invoicePayload);
+  const walletMatch = /^flamexbot_wallet:([0-9a-f-]{36}):(\d+):([0-9a-f-]{36})$/i.exec(invoicePayload);
   if (walletMatch) {
     const userId = walletMatch[1];
     const stars = Number(walletMatch[2]);
@@ -1849,12 +1849,27 @@ async function processTelegramUpdate(update: any) {
         update.business_message.from?.id != null;
       const isBusinessCommand = hasCommandPrefix &&
         String(update.business_message.from.id) === String(ownerConnection?.telegram_user_id ?? "");
+      const businessMessage = update.business_message;
+      const ownerAuthored = String(businessMessage.from?.id ?? "") === String(ownerConnection?.telegram_user_id ?? "");
+      let isAntimutEcho = false;
+      if (ownerAuthored && ownerConnection?.profile_id) {
+        const { data: echoChat, error: echoChatError } = await admin.from("flamexbot_business_chats")
+          .select("id").eq("profile_id",ownerConnection.profile_id)
+          .eq("telegram_chat_id",String(businessMessage.chat.id))
+          .eq("business_connection_id",businessMessage.business_connection_id).maybeSingle();
+        if (echoChatError) throw echoChatError;
+        if (echoChat) {
+          const { data: echoMessage, error: echoMessageError } = await admin.from("flamexbot_business_messages")
+            .select("raw").eq("business_chat_id",echoChat.id)
+            .eq("telegram_message_id",businessMessage.message_id).maybeSingle();
+          if (echoMessageError) throw echoMessageError;
+          isAntimutEcho = echoMessage?.raw?._flamexbot_antimut_resent === true;
+        }
+      }
       // Only commands authored by the connected account owner are executable.
       // Messages from the other participant (including dot-prefixed text) stay in the archive.
-      if (!isBusinessCommand) {
-        await saveBusinessMessage(update.business_message, ownerConnection);
-        const businessMessage = update.business_message;
-        const ownerAuthored = String(businessMessage.from?.id ?? "") === String(ownerConnection?.telegram_user_id ?? "");
+      if (!isBusinessCommand && !isAntimutEcho) {
+        await saveBusinessMessage(businessMessage, ownerConnection);
         if (ownerAuthored && ownerConnection?.is_enabled && ownerConnection.rights?.can_delete_sent_messages === true) {
           const { data: antimutChat, error: antimutChatError } = await admin.from("flamexbot_business_chats")
             .select("id").eq("profile_id", ownerConnection.profile_id)
@@ -1909,7 +1924,7 @@ async function processTelegramUpdate(update: any) {
                   business_chat_id: antimutChat.id, telegram_message_id: sentMessage.message_id, direction: "outbound",
                   sender_profile_id: ownerConnection.profile_id, content: sentMessage.text ?? sentMessage.caption ?? textContent,
                   message_type: media.type, media_file_id: sentMedia?.file_id ?? media.fileId, media_url: null,
-                  reply_to_message_id: businessMessage.reply_to_message?.message_id ?? null, created_at: sentAt, raw: sentMessage,
+                  reply_to_message_id: businessMessage.reply_to_message?.message_id ?? null, created_at: sentAt, raw: { ...sentMessage, _flamexbot_antimut_resent: true },
                 }, { onConflict: "business_chat_id,telegram_message_id" });
                 if (sentSaveError) throw sentSaveError;
                 const deletedAt = new Date().toISOString();
