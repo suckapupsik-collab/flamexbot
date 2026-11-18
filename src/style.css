@@ -1701,3 +1701,29 @@ body{
 }
 @media(prefers-reduced-motion:reduce){.leaderboard-row{animation:none}}
 
+
+/* Seasonal events */
+.season-event-list,.season-event-admin-list{display:grid;gap:12px}
+.season-event-card{display:grid;gap:12px;padding:18px}
+.season-event-card h3{margin:0;font-size:17px}
+.season-event-card p{margin:0;color:var(--muted);font-size:12px;line-height:1.55}
+.season-event-card.claimed{border-color:rgba(126,214,160,.35);opacity:.82}
+.season-event-top,.season-event-bottom,.season-event-progress>div{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.season-event-icon{font-size:25px}
+.season-event-time{font-size:11px;color:var(--muted)}
+.season-event-progress{display:grid;gap:8px}
+.season-event-progress>div{font-size:11px;color:var(--muted)}
+.season-event-progress strong{color:var(--text)}
+.season-event-progress .task-progress-track{display:block;height:7px;border-radius:99px;background:var(--line);overflow:hidden}
+.season-event-progress .task-progress-track i{display:block;height:100%;border-radius:inherit;background:var(--accent);transition:width .35s ease}
+.season-event-bottom>span{font-size:13px;font-weight:800;color:var(--accent)}
+.season-event-form{display:grid;gap:12px;padding:18px}
+.season-event-form h3{margin:0 0 4px}
+.season-event-form label{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700}
+.season-event-form input,.season-event-form textarea{width:100%;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--text);font:inherit;font-size:13px}
+.season-event-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.season-event-admin-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px}
+.season-event-admin-row>div:first-child{display:grid;gap:6px;min-width:0}
+.season-event-admin-row small{color:var(--muted);font-size:11px}
+.season-event-admin-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:620px){.season-event-form-grid{grid-template-columns:1fr}.season-event-admin-row{align-items:stretch;flex-direction:column}.season-event-admin-actions{justify-content:flex-start}.season-event-bottom button{flex:none}}
