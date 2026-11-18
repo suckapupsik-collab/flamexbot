@@ -1123,6 +1123,86 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
 
 
 async function handleBusinessActionCallback(query: any) {
+  const panicMatch=/^fb:panic_(yes|no):([0-9a-f-]{36})$/i.exec(String(query?.data??""));
+  if(panicMatch&&admin&&query?.from?.id){
+    const [,decision,panicChatId]=panicMatch;
+    const {data:panicChat,error:panicChatError}=await admin.from("flamexbot_business_chats")
+      .select("id,profile_id,telegram_chat_id,telegram_user_id,business_connection_id")
+      .eq("id",panicChatId).maybeSingle();
+    if(panicChatError)throw panicChatError;
+    if(!panicChat||isFounderTarget(panicChat.telegram_chat_id,panicChat.telegram_user_id)){
+      await telegram("answerCallbackQuery",{callback_query_id:query.id,text:"Этот диалог недоступен для очистки.",show_alert:true});return;
+    }
+    const {data:panicConnection,error:panicConnectionError}=await admin.from("flamexbot_business_connections")
+      .select("connection_id,telegram_user_id,is_enabled,rights")
+      .eq("profile_id",panicChat.profile_id).eq("connection_id",panicChat.business_connection_id).maybeSingle();
+    if(panicConnectionError)throw panicConnectionError;
+    if(!panicConnection||String(query.from.id)!==String(panicConnection.telegram_user_id)){
+      await telegram("answerCallbackQuery",{callback_query_id:query.id,text:"Подтвердить действие может только владелец подключения.",show_alert:true});return;
+    }
+    if(decision==="no"){
+      await telegram("answerCallbackQuery",{callback_query_id:query.id,text:"Удаление отменено."});
+      if(query.message?.chat?.id&&query.message?.message_id){
+        await telegram("editMessageText",{chat_id:query.message.chat.id,message_id:query.message.message_id,text:"Удаление переписки отменено."});
+      }
+      return;
+    }
+    if(!panicConnection.is_enabled||panicConnection.rights?.can_delete_all_messages!==true){
+      await telegram("answerCallbackQuery",{callback_query_id:query.id,text:"Нет активного Business-подключения или права удалять все сообщения.",show_alert:true});return;
+    }
+    if(String(panicConnection.telegram_user_id)!==FOUNDER_TELEGRAM_ID){
+      const targetId=String(panicChat.telegram_user_id||panicChat.telegram_chat_id||"");
+      const {data:protection,error:protectionError}=await admin.from("profiles")
+        .select("command_protection_expires_at,command_protection_disabled").eq("telegram_id",targetId).maybeSingle();
+      if(protectionError)throw protectionError;
+      if(protection?.command_protection_expires_at&&new Date(protection.command_protection_expires_at).getTime()>Date.now()&&protection.command_protection_disabled!==true){
+        await telegram("answerCallbackQuery",{callback_query_id:query.id,text:"На аккаунте включена защита от команд.",show_alert:true});return;
+      }
+    }
+    const cutoff=new Date(Date.now()-48*60*60*1000).toISOString();
+    const {data:rows,error:rowsError}=await admin.from("flamexbot_business_messages")
+      .select("telegram_message_id,content,message_type,media_file_id,media_url,raw,created_at")
+      .eq("business_chat_id",panicChat.id).is("deleted_at",null).gte("created_at",cutoff)
+      .order("created_at",{ascending:true}).limit(5000);
+    if(rowsError)throw rowsError;
+    const deletedRows:any[]=[];
+    for(let i=0;i<(rows||[]).length;i+=100){
+      const batch=(rows||[]).slice(i,i+100);
+      const ids=batch.map((row:any)=>Number(row.telegram_message_id)).filter((id:number)=>Number.isInteger(id)&&id>0);
+      if(!ids.length)continue;
+      try{
+        await telegram("deleteBusinessMessages",{business_connection_id:panicChat.business_connection_id,message_ids:ids});
+        deletedRows.push(...batch);
+      }catch(deleteError){
+        console.warn("Panic delete batch failed",deleteError?.message??deleteError);
+      }
+    }
+    const deletedAt=new Date().toISOString();
+    const deletedIds=deletedRows.map((row:any)=>Number(row.telegram_message_id));
+    if(deletedRows.length){
+      const events=deletedRows.map((row:any)=>({
+        profile_id:panicChat.profile_id,business_chat_id:panicChat.id,
+        telegram_message_id:Number(row.telegram_message_id),event_type:"deleted",
+        original_content:row.content??"",message_type:row.message_type??"text",
+        media_file_id:row.media_file_id??null,media_url:row.media_url??null,
+        original_raw:row.raw??{},occurred_at:deletedAt
+      }));
+      const {error:eventError}=await admin.from("flamexbot_business_message_events")
+        .upsert(events,{onConflict:"business_chat_id,telegram_message_id,event_type,occurred_at",ignoreDuplicates:true});
+      if(eventError)throw eventError;
+      const {error:updateError}=await admin.from("flamexbot_business_messages").update({deleted_at:deletedAt})
+        .eq("business_chat_id",panicChat.id).in("telegram_message_id",deletedIds);
+      if(updateError)throw updateError;
+    }
+    const summary=deletedRows.length
+      ? \`Удалено сообщений у обоих: \${deletedRows.length}. Telegram позволяет удалять только сообщения за последние 48 часов.\`
+      : "За последние 48 часов не найдено доступных для удаления сообщений.";
+    if(query.message?.chat?.id&&query.message?.message_id){
+      await telegram("editMessageText",{chat_id:query.message.chat.id,message_id:query.message.message_id,text:summary});
+    }
+    await telegram("answerCallbackQuery",{callback_query_id:query.id,text:deletedRows.length?"Переписка очищена.":"Нет сообщений для удаления."});
+    return;
+  }
   const match = /^fb:(mute|antimut)_(on|off):([0-9a-f-]{36})$/i.exec(String(query?.data ?? ""));
   if (!match || !admin || !query?.from?.id) return;
   const [, action, mode, chatId] = match;
