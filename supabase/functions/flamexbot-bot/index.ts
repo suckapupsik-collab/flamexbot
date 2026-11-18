@@ -444,6 +444,12 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
     raw: message,
   }, { onConflict: "business_chat_id,telegram_message_id" });
   if (messageError) throw messageError;
+  if (direction === "outbound") {
+    const {error:warnResetError}=await admin.from("flamexbot_business_chat_settings")
+      .update({warn_count:0,updated_at:new Date().toISOString()})
+      .eq("profile_id",connection.profile_id).eq("business_chat_id",chat.id).eq("warn_enabled",true);
+    if(warnResetError)throw warnResetError;
+  }
   if (direction === "inbound") {
     const placeholder = "[Текст не был сохранён до получения события об удалении]";
     const { data: pendingDeletion, error: pendingDeletionError } = await admin.from("flamexbot_business_message_events")
@@ -467,8 +473,24 @@ async function saveBusinessMessage(message: any, connectionOverride?: any) {
       if (markLateDeleteError) throw markLateDeleteError;
     }
     const { data: currentPrefs, error: currentPrefsError } = await admin.from("flamexbot_business_chat_settings")
-      .select("is_muted,auto_flood_muted").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
+      .select("is_muted,auto_flood_muted,warn_enabled,warn_threshold,warn_count").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
     if (currentPrefsError) throw currentPrefsError;
+    if(currentPrefs?.warn_enabled&&!currentPrefs?.is_muted&&!currentPrefs?.auto_flood_muted&&!isFounderTarget(chatId)){
+      const nextCount=Number(currentPrefs.warn_count||0)+1;
+      const threshold=Math.max(2,Number(currentPrefs.warn_threshold||0));
+      const reached=nextCount>=threshold;
+      const {error:warnUpdateError}=await admin.from("flamexbot_business_chat_settings").update({
+        warn_count:reached?0:nextCount,
+        ...(reached?{is_muted:true,auto_flood_muted:true,warn_enabled:false}:{}),
+        updated_at:new Date().toISOString()
+      }).eq("profile_id",connection.profile_id).eq("business_chat_id",chat.id);
+      if(warnUpdateError)throw warnUpdateError;
+      if(reached){
+        try{await sendRichTelegramMessage(connection.telegram_user_id,
+          `${tgEmoji("warning")} <b>Автомут по .warn сработал</b>\\nСобеседник отправил ${threshold} сообщений подряд. Мут включён в этом диалоге.`,"HTML");}
+        catch(notifyError){console.warn("Could not notify owner about .warn automute:",notifyError?.message??notifyError);}
+      }
+    }
     if (!currentPrefs?.is_muted && !currentPrefs?.auto_flood_muted && senderId && !isFounderTarget(chatId)) {
       const { data: floodData, error: floodError } = await admin.rpc("record_flamexbot_business_flood", {
         p_profile_id: connection.profile_id,
