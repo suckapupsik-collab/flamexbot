@@ -770,6 +770,15 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     profile = data;
   }
   if (!profile) { await reply("Сначала открой FLAMEXBOT и войди через Telegram."); return true; }
+  let warnChatId: string | null = null;
+  if(command==="warn"||command==="unwarn"){
+    const {data:warnChat,error:warnChatError}=await admin.from("flamexbot_business_chats")
+      .select("id").eq("profile_id",profile.id).eq("telegram_chat_id",String(message.chat.id))
+      .eq("business_connection_id",businessConnectionId).maybeSingle();
+    if(warnChatError)throw warnChatError;
+    if(!warnChat){await reply("Не удалось определить текущий Business-диалог.");return true;}
+    warnChatId=warnChat.id;
+  }
   if (command === "advertising") {
     const {data:existingCode,error:codeError}=await admin.from("flamexbot_referral_codes").select("code").eq("user_id",profile.id).maybeSingle();
     if(codeError)throw codeError;
@@ -834,7 +843,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       return true;
     }
     const {error:warnError}=await admin.from("flamexbot_business_chat_settings").upsert({
-      profile_id:profile.id,business_chat_id:chat.id,warn_enabled:true,warn_threshold:threshold,warn_count:0,updated_at:new Date().toISOString()
+      profile_id:profile.id,business_chat_id:warnChatId,warn_enabled:true,warn_threshold:threshold,warn_count:0,updated_at:new Date().toISOString()
     },{onConflict:"profile_id,business_chat_id"});
     if(warnError)throw warnError;
     await reply(`Автомут включён: после ${threshold} сообщений собеседника подряд FLAMEXBOT включит мут в этом диалоге.`);
@@ -842,7 +851,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
   }
   if(command==="unwarn"){
     const {error:warnError}=await admin.from("flamexbot_business_chat_settings").upsert({
-      profile_id:profile.id,business_chat_id:chat.id,warn_enabled:false,warn_threshold:0,warn_count:0,updated_at:new Date().toISOString()
+      profile_id:profile.id,business_chat_id:warnChatId,warn_enabled:false,warn_threshold:0,warn_count:0,updated_at:new Date().toISOString()
     },{onConflict:"profile_id,business_chat_id"});
     if(warnError)throw warnError;
     await reply("Автомут по .warn отключён.");
@@ -874,7 +883,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     await reply(`${tgEmoji("sparkles")} <b>Огонёк установлен мгновенно!</b>\nСерия: <b>${days} дн.</b>\nПользователь добавлен в друзья, если вы ещё не были друзьями. Дальше огонёк будет продлеваться обычной взаимной перепиской.`, "HTML");
     return true;
   }
-  const commandNeedsPremium = ["mute","profile","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat","warn"].includes(command);
+  const commandNeedsPremium = ["mute","profile","afk","timeprofile","bold","dumb","link","time","copyp","antimute","antimut","autoread","autotyping","autovoice","mutestick","antimat"].includes(command);
   let premium = false;
   if (commandNeedsPremium) {
     const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
@@ -947,7 +956,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     if (isFounderTarget(chat.telegram_chat_id, chat.telegram_user_id)) { await reply(tgEmoji("lock") + " <b>Владелец FLAMEXBOT защищён.</b> Режимы управления для этого диалога отключены.", "HTML"); return true; }
     const { error: settingError } = await admin.from("flamexbot_business_chat_settings").upsert({ profile_id: profile.id, business_chat_id: chat.id, antimut_enabled: enabled }, { onConflict: "profile_id,business_chat_id" });
     if (settingError) throw settingError;
-    await reply(enabled ? tgEmoji("crown") + " <b>Анти мут включён, хаха думал ты здесь крутой? Я здесь крутой.</b>" : tgEmoji("lock") + " <b>Антимут выключен</b>\nАнтимут отключён.", "HTML");
+    await reply(enabled ? tgEmoji("diamond") + " <b>Анти мут включён, хаха думал ты здесь крутой? Я здесь крутой.</b>" : tgEmoji("lock") + " <b>Антимут выключен</b>\nАнтимут отключён.", "HTML");
     return true;
   }
   if (command === "timeprofile") {
