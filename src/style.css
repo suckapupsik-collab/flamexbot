@@ -1655,3 +1655,7 @@ body{
 .season-missions-link p{margin:5px 0 0;font-size:11px}
 .season-missions-link button{flex:none}
 @media(max-width:700px){.season-missions-link{align-items:stretch;flex-direction:column}.season-missions-link button{width:100%}}
+
+@keyframes season-reward-pop{0%{transform:scale(1);box-shadow:0 0 0 0 rgba(255,177,66,0)}38%{transform:scale(1.018);box-shadow:0 0 0 5px rgba(255,177,66,.14),0 14px 36px rgba(255,177,66,.12)}100%{transform:scale(1);box-shadow:0 0 0 0 rgba(255,177,66,0)}}
+.season-reward-pop{animation:season-reward-pop .58s cubic-bezier(.2,.8,.2,1)}
+@media(prefers-reduced-motion:reduce){.season-reward-pop{animation:none}}
