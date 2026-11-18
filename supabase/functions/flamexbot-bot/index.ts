@@ -956,7 +956,17 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     if (isFounderTarget(chat.telegram_chat_id, chat.telegram_user_id)) { await reply(tgEmoji("lock") + " <b>Владелец FLAMEXBOT защищён.</b> Режимы управления для этого диалога отключены.", "HTML"); return true; }
     const { error: settingError } = await admin.from("flamexbot_business_chat_settings").upsert({ profile_id: profile.id, business_chat_id: chat.id, antimut_enabled: enabled }, { onConflict: "profile_id,business_chat_id" });
     if (settingError) throw settingError;
-    await reply(enabled ? tgEmoji("diamond") + " <b>Анти мут включён, хаха думал ты здесь крутой? Я здесь крутой.</b>" : tgEmoji("lock") + " <b>Антимут выключен</b>\nАнтимут отключён.", "HTML");
+    const antimutMarkup = { inline_keyboard: [[{
+      text: enabled ? "Выключить антимут" : "Включить антимут",
+      callback_data: `fb:antimut_${enabled ? "off" : "on"}:${chat.id}`,
+    }]] };
+    await reply(
+      enabled
+        ? `${tgEmoji("diamond")} <b>Антимут включён</b>\n\nFLAMEXBOT будет повторно отправлять ваши исходящие сообщения в этом же Business-чате, если Telegram сообщит об их удалении.\n\nРежим можно отключить кнопкой ниже или командой <code>.unantimute</code>.`
+        : `${tgEmoji("lock")} <b>Антимут выключен</b>\nПовторная отправка ваших сообщений остановлена. Включить режим снова можно кнопкой ниже или командой <code>.antimute</code>.`,
+      "HTML",
+      antimutMarkup,
+    );
     return true;
   }
   if (command === "timeprofile") {
@@ -1271,6 +1281,9 @@ async function handleBusinessActionCallback(query: any) {
     }
     if (action === "mute" && connection.rights?.can_delete_all_messages !== true) {
       await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Не выдано право «Удалять все сообщения»." });
+      return;
+    }    if (action === "antimut" && connection.rights?.can_delete_sent_messages !== true) {
+      await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Не выдано право «Удалять отправленные сообщения»." });
       return;
     }
   }
