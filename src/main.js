@@ -2219,7 +2219,7 @@ async function renderSeasonPass(host) {
   const claimed=new Set((claimsResult.data||[]).map(x=>x.pass_tier+':'+x.level));
   const levels=levelsResult.data||[];
   const tier=progress.pass_tier||'free';
-  const labelReward=r=>r.reward_type==='coins'?r.reward_amount+' монет':r.reward_type==='premium_days'?r.reward_amount+' дн. Premium':r.reward_type==='wheel_spins'?r.reward_amount+' прокрутка(и)':r.reward_type==='addon'?'Дополнение: '+(r.reward_payload?.addon_code||'бонус'):'Награда';
+  const labelReward=r=>r.reward_type==='coins'?r.reward_amount+' монет':r.reward_type==='premium_days'?r.reward_amount+' дн. Premium':r.reward_type==='wheel_spins'?r.reward_amount+' прокрутка(и)':r.reward_type==='addon'?(r.reward_payload?.addon_code==='command_protection_5d'?'Защита от команд · 5 дней':'Дополнение: '+(r.reward_payload?.addon_code||'бонус')):'Награда';
   host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT SEASON PASS</div><h1>${esc(season.title)} 🎟️</h1><p class="muted">Выполняй ежедневные задания, получай сезонный опыт и забирай награды. Free открыт всем, Pro открывает дополнительную дорожку.</p></div>
     <section class="business-card season-progress-card"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ СЕЗОНА</small><h2>Уровень ${progress.level||1}</h2></div><strong>${progress.xp||0} XP</strong></div><div class="xp-track"><span style="width:${Math.min(100,(Number(progress.xp||0)%100))}%"></span></div><div class="level-foot"><small>Баланс: ${Number(walletResult.data?.balance||0)} монет</small><b>${tier==='pro'?'PRO PASS АКТИВЕН':'FREE PASS'}</b></div></section>
     <div class="season-tier-row"><button class="season-tier active" data-season-tier="free">Free Pass</button><button class="season-tier" data-season-tier="pro">Pro Pass</button></div>
@@ -2240,7 +2240,7 @@ async function renderSeasonPass(host) {
     grid.querySelectorAll('[data-claim-season]').forEach(btn=>btn.addEventListener('click',async()=>{
       btn.disabled=true;const {data,error}=await supabase.rpc('claim_flamexbot_season_reward',{p_season_id:season.id,p_tier:selectedTier,p_level:Number(btn.dataset.claimSeason)});
       if(error){toast(error.message.includes('already claimed')?'Награда уже получена':error.message);btn.disabled=false;return;}
-      claimed.add(selectedTier+':'+btn.dataset.claimSeason);toast('Сезонная награда получена: '+labelReward({reward_type:data.reward_type,reward_amount:data.reward_amount,reward_payload:{}}));draw();
+      claimed.add(selectedTier+':'+btn.dataset.claimSeason);toast('Сезонная награда получена: '+labelReward({reward_type:data.reward_type,reward_amount:data.reward_amount,reward_payload:data.reward_payload||{}}));draw();
     }));
   };
   host.querySelectorAll('[data-season-tier]').forEach(btn=>btn.addEventListener('click',()=>{selectedTier=btn.dataset.seasonTier;draw();}));
