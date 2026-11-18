@@ -34,7 +34,7 @@ async function telegram(method: string, body: Record<string, unknown>) {
       const available = await getAvailablePremiumEmojiIds();
       const icons: Record<string, keyof typeof PREMIUM_EMOJI> = {
         open: "sparkles", settings: "settings", back: "back", home: "home",
-        refresh: "refresh", success: "success", confirm: "success",
+        refresh: "refresh", success: "success", confirm: "success", unlock: "success",
         cancel: "cancel", help: "help", download: "download", export: "download",
         security: "lock", premium: "diamond", star: "star", upload: "upload",
         search: "search", folder: "folder", profile: "user",
@@ -60,7 +60,7 @@ async function telegram(method: string, body: Record<string, unknown>) {
             : /профил|аккаунт/.test(label) ? "profile"
             : /оплат|stars|звезд/.test(label) ? "star"
             : /premium|тариф/.test(label) ? "diamond"
-            : /выключить мут|размут|unmute/.test(label) ? "unlock"
+            : /выключить антимут|выключить мут|размут|unmute/.test(label) ? "unlock"
              : /включить мут|мут|mute/.test(label) ? "lock"
              : /защит|безопас|lock/.test(label) ? "security"
             : /загруз|отправ|upload/.test(label) ? "upload"
