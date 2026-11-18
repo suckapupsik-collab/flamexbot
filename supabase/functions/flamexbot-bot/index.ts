@@ -1282,7 +1282,8 @@ async function handleBusinessActionCallback(query: any) {
     if (action === "mute" && connection.rights?.can_delete_all_messages !== true) {
       await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Не выдано право «Удалять все сообщения»." });
       return;
-    }    if (action === "antimut" && connection.rights?.can_delete_sent_messages !== true) {
+    }
+    if (action === "antimut" && connection.rights?.can_delete_sent_messages !== true) {
       await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Не выдано право «Удалять отправленные сообщения»." });
       return;
     }
