@@ -1610,3 +1610,42 @@ body{
 .admin-detail-badge-form{display:flex;flex-wrap:wrap;align-items:end;gap:10px}
 .admin-detail-badge-form label{flex:1 1 240px;min-width:0}
 #admin-detail-badge{width:100%;min-height:44px;position:relative;z-index:50}
+
+
+/* Season Pass polish: readable progress, responsive cards and restrained motion */
+.season-heading{animation:flame-rise .32s ease-out both}
+.season-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.season-meta span,.season-reward-summary span{display:inline-flex;align-items:center;gap:5px;padding:8px 11px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font-size:11px}
+.season-meta b,.season-reward-summary b{color:var(--text)}
+.season-progress-card{overflow:hidden;position:relative}
+.season-progress-card .level-line{align-items:center}
+.season-level-total{font-size:13px;color:var(--muted);font-weight:600}
+.season-progress-card .xp-track{height:10px;overflow:hidden;border-radius:999px;background:var(--line);margin:14px 0 10px}
+.season-progress-card .xp-track span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),#ffc36c);transition:width .55s cubic-bezier(.2,.8,.2,1)}
+.season-tier{transition:background .2s ease,border-color .2s ease,transform .2s ease}
+.season-tier:active,.season-level-card button:active{transform:scale(.98)}
+.season-reward-summary{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:14px 0 10px}
+.season-level-card{transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease;animation:flame-rise .28s ease both}
+.season-level-card.ready{box-shadow:0 8px 24px rgba(255,177,66,.06)}
+.season-level-card.ready:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(255,177,66,.12)}
+.season-level-card.locked{opacity:.78}
+.season-level-card.claimed{border-color:rgba(126,214,160,.28);opacity:.82}
+.antimut-control-card{grid-column:1/-1}
+.antimut-control-card button{justify-self:start;min-width:180px}
+.antimut-control-card button:disabled{opacity:.55;cursor:not-allowed}
+.loading-state{display:grid;place-items:center;min-height:160px;color:var(--muted);font-size:13px}
+@media(max-width:700px){
+  .season-meta{display:grid;grid-template-columns:1fr 1fr}
+  .season-meta span{justify-content:center;text-align:center}
+  .season-reward-summary{font-size:11px}
+  .season-level-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .antimut-control-card button{width:100%}
+}
+@media(max-width:390px){
+  .season-level-grid{grid-template-columns:1fr}
+  .season-meta{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+  .season-heading,.season-level-card{animation:none}
+  .season-progress-card .xp-track span,.season-tier,.season-level-card{transition:none}
+}
