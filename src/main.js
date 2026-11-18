@@ -2280,6 +2280,7 @@ async function renderSeasonPass(host) {
     host.querySelector('#season-retry')?.addEventListener('click', () => renderSeasonPass(host));
     return;
   }
+  const hasProgress = Boolean(progressResult.data);
   let progress = progressResult.data || { xp: 0, level: 1, pass_tier: 'free' };
   let tier = progress.pass_tier || 'free';
   let balance = Number(walletResult.data?.balance || 0);
@@ -2328,14 +2329,14 @@ async function renderSeasonPass(host) {
     grid.innerHTML = rows.map(row => {
       const key = selectedTier + ':' + row.level;
       const isClaimed = claimed.has(key);
-      const unlocked = currentLevel >= Number(row.level);
+      const unlocked = hasProgress && currentLevel >= Number(row.level);
       const proLocked = selectedTier === 'pro' && tier !== 'pro';
       const requiredXp = Math.max(0, (Number(row.level) - 1) * 100);
       const ready = unlocked && !proLocked && !isClaimed;
       return `<article class="season-level-card ${isClaimed ? 'claimed' : ready ? 'ready' : 'locked'}">
         <div class="season-level-number">УРОВЕНЬ ${Number(row.level)}</div>
         <b>${esc(labelReward(row))}</b>
-        <small>${isClaimed ? 'Награда уже получена' : proLocked ? 'Открой Pro Pass' : ready ? 'Награда доступна' : 'Нужно ' + requiredXp.toLocaleString('ru-RU') + ' XP'}</small>
+        <small>${isClaimed ? 'Награда уже получена' : !hasProgress ? 'Выполни первое ежедневное задание' : proLocked ? 'Открой Pro Pass' : ready ? 'Награда доступна' : 'Нужно ' + requiredXp.toLocaleString('ru-RU') + ' XP'}</small>
         <button type="button" class="${ready ? 'primary' : 'outline'} small" data-claim-season="${Number(row.level)}" ${!ready ? 'disabled' : ''}>${isClaimed ? 'Получено ✓' : ready ? 'Забрать награду' : 'Закрыто'}</button>
       </article>`;
     }).join('') || '<div class="empty-state">Для этой дорожки пока не добавлены награды.</div>';
