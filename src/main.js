@@ -122,7 +122,7 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
 const PAGE_LABELS = {
   home:'Обзор', support:'Техподдержка', support_user:'Написать в техподдержку', inbox:'Личные сообщения бота', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', wallet:'Баланс', season:'Сезонный пропуск', banners:'Баннеры бота', profile:'Профиль', achievements:'Достижения',
-  stats:'Статистика', commands:'Все команды', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
+  stats:'Статистика', commands:'Все команды', leaderboard:'Рейтинг сезона', season_admin:'Редактор сезона', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
 const BADGE_META = {
   verified:{label:'Подтверждён',icon:'✓',className:'verified'},
@@ -208,6 +208,7 @@ function renderApp() {
     ['streaks','🔥','Огоньки','Общие серии'],
     ['missions','⚡','Ежедневные задания','Новые задания каждый день'],
     ['season','🎟️','Сезонный пропуск','Награды Free и Pro'],
+    ['leaderboard','🏆','Рейтинг сезона','Топ участников по XP'],
     ['wallet','🪙','Баланс','Монеты и пополнение'],
     ['achievements','🏆','Достижения','Коллекция наград'],
     ['support_user','🛟','Написать в техподдержку','Задать вопрос команде'],
@@ -334,6 +335,8 @@ async function loadPage() {
     else if(state.page==='missions') await renderDailyMissions(host);
     else if(state.page==='wallet') await renderWallet(host);
     else if(state.page==='season') await renderSeasonPass(host);
+    else if(state.page==='leaderboard') await renderSeasonLeaderboard(host);
+    else if(state.page==='season_admin'&&isFounderProfile()) await renderSeasonAdmin(host);
     else if(state.page==='support_user') await renderUserSupport(host);
     else if(state.page==='banners'&&state.isAdmin) await renderBotBanners(host);
     else if(state.page==='profile') await renderProfile(host);
@@ -1295,6 +1298,7 @@ async function renderAdmin(host) {
       <button class="admin-module" data-admin-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
       <button class="admin-module" data-go="wallet"><span class="admin-module-icon premium">🪙</span><b>Управление балансом</b><small>Начисление и списание монет, история операций</small><i>Открыть →</i></button>
       <button class="admin-module" data-go="banners"><span class="admin-module-icon verify">🖼️</span><b>Баннеры бота</b><small>Изображения для /start и инструкции</small><i>Настроить →</i></button>
+      ${isFounderProfile()?'<button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button>':''}
     </div>
     <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки, снятия Premium, синей галочки и значков ролей. Значки администратора и разработчика не выдают доступ к панели.</small></div></div><span class="business-status is-connected">SECURE</span></section>
     <section class="admin-owner-settings">
@@ -2251,12 +2255,110 @@ async function renderWallet(host) {
   });
 }
 
+
+function seasonLocalDateTime(value) {
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0,16);
+}
+
+async function renderSeasonLeaderboard(host) {
+  host.innerHTML = '<div class="loading-state">Загружаем рейтинг сезона…</div>';
+  const [seasonResult, boardResult] = await Promise.all([
+    supabase.from('flamexbot_seasons').select('title,ends_at').eq('is_active',true).lte('starts_at',new Date().toISOString()).gt('ends_at',new Date().toISOString()).order('starts_at',{ascending:false}).limit(1).maybeSingle(),
+    supabase.rpc('get_flamexbot_season_leaderboard',{p_limit:100})
+  ]);
+  if (seasonResult.error || boardResult.error) {
+    const error = seasonResult.error || boardResult.error;
+    host.innerHTML = `<div class="page-heading"><h1>🏆 Рейтинг сезона</h1></div><div class="business-warning">${esc(error.message)}</div><button class="outline" id="season-board-retry">Повторить</button>`;
+    host.querySelector('#season-board-retry')?.addEventListener('click',()=>renderSeasonLeaderboard(host));
+    return;
+  }
+  const rows = boardResult.data || [];
+  const medals = ['🥇','🥈','🥉'];
+  host.innerHTML = `
+    <div class="page-heading"><div class="eyebrow">FLAMEXBOT · SEASON RANKING</div><h1>🏆 Рейтинг сезона</h1><p class="muted">${esc(seasonResult.data?.title||'Текущий сезон')} · Топ участников по сезонному опыту</p></div>
+    <section class="business-card leaderboard-summary"><b>${rows.length}</b><span>участников в рейтинге</span><button class="outline small" data-go="season">К пропуску →</button></section>
+    <section class="business-card leaderboard-list">
+      ${rows.map(row=>`<article class="leaderboard-row ${Number(row.rank_position)<=3?'top-three':''}">
+        <span class="leaderboard-rank">${medals[Number(row.rank_position)-1]||'#'+row.rank_position}</span>
+        <span class="leaderboard-avatar">${row.avatar_url?`<img src="${esc(row.avatar_url)}" alt="">`:'🔥'}</span>
+        <span class="leaderboard-person"><b>${esc(row.display_name||row.username||'Участник')}</b><small>${row.username?'@'+esc(row.username):'Участник FLAMEXBOT'} · Уровень ${Number(row.level)||1}</small></span>
+        <strong>${Number(row.xp||0).toLocaleString('ru-RU')} <small>XP</small></strong>
+      </article>`).join('') || '<div class="empty-state">Пока нет участников с сезонным опытом. Выполни первое задание и стань первым!</div>'}
+    </section>`;
+}
+
+async function renderSeasonAdmin(host) {
+  if (!isFounderProfile()) {
+    host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Редактор сезона доступен только основателю.</p></div>';
+    return;
+  }
+  host.innerHTML='<div class="loading-state">Загружаем редактор сезона…</div>';
+  const {data:season,error:seasonError}=await supabase.from('flamexbot_seasons').select('id,title,starts_at,ends_at,pro_cost,is_active').eq('is_active',true).order('starts_at',{ascending:false}).limit(1).maybeSingle();
+  if(seasonError||!season){host.innerHTML=`<div class="page-heading"><h1>Редактор сезона</h1></div><div class="business-warning">${esc(seasonError?.message||'Активный сезон не найден')}</div>`;return;}
+  const {data:levels,error}=await supabase.from('flamexbot_season_pass_levels').select('pass_tier,level,reward_type,reward_amount,reward_payload').eq('season_id',season.id).order('level');
+  if(error){host.innerHTML=`<div class="business-warning">${esc(error.message)}</div>`;return;}
+  const rewardOptions=[['coins','Монеты'],['premium_days','Дни Premium'],['wheel_spins','Прокрутки'],['addon','Дополнение'],['none','Без награды']];
+  host.innerHTML=`
+    <div class="page-heading"><div class="eyebrow">FOUNDER ONLY · SEASON CONTROL</div><h1>🎟️ Редактор сезона</h1><p class="muted">Изменения применяются сразу после сохранения. Сервер отдельно проверяет права основателя.</p></div>
+    <form id="season-admin-form" class="season-editor-form">
+      <section class="business-card season-editor-settings">
+        <label>Название сезона<input name="title" maxlength="100" minlength="3" required value="${esc(season.title)}"></label>
+        <div class="season-editor-two">
+          <label>Начало сезона<input name="starts_at" type="datetime-local" required value="${seasonLocalDateTime(season.starts_at)}"></label>
+          <label>Окончание сезона<input name="ends_at" type="datetime-local" required value="${seasonLocalDateTime(season.ends_at)}"></label>
+        </div>
+        <label>Стоимость Pro Pass в монетах<input name="pro_cost" type="number" min="1" max="100000" required value="${Number(season.pro_cost||500)}"></label>
+        <div class="season-editor-note">Сейчас в сезоне ${levels.length} наград. Редактирование наград не сбрасывает уже полученные пользователями призы.</div>
+      </section>
+      <div class="section-heading"><div><div class="eyebrow">REWARD CONFIGURATION</div><h3>Награды по уровням</h3></div><span class="admin-secure">60 ячеек</span></div>
+      <div class="season-editor-tier"><h3>Free Pass</h3><div class="season-editor-grid">${levels.filter(x=>x.pass_tier==='free').map(row=>seasonRewardEditorRow(row,rewardOptions)).join('')}</div></div>
+      <div class="season-editor-tier"><h3>💎 Pro Pass</h3><div class="season-editor-grid">${levels.filter(x=>x.pass_tier==='pro').map(row=>seasonRewardEditorRow(row,rewardOptions)).join('')}</div></div>
+      <div class="season-editor-actions"><button class="primary" type="submit" id="season-admin-save">Сохранить изменения</button><button class="outline" type="button" data-go="admin">Назад в админку</button></div>
+      <div id="season-admin-status" class="season-editor-status" aria-live="polite"></div>
+    </form>`;
+  host.querySelector('#season-admin-form')?.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const form=event.currentTarget,button=host.querySelector('#season-admin-save'),status=host.querySelector('#season-admin-status');
+    const fd=new FormData(form);
+    const rewards=[...form.querySelectorAll('[data-season-reward]')].map(row=>({
+      pass_tier:row.dataset.tier,level:Number(row.dataset.level),
+      reward_type:row.querySelector('[data-reward-type]').value,
+      reward_amount:Number(row.querySelector('[data-reward-amount]').value),
+      reward_payload:row.dataset.payload?JSON.parse(row.dataset.payload):{}
+    }));
+    const starts=new Date(fd.get('starts_at')),ends=new Date(fd.get('ends_at'));
+    if(!(ends>starts)){toast('Дата окончания должна быть позже даты начала.');return;}
+    button.disabled=true;button.textContent='Сохраняем…';status.textContent='';
+    try{
+      const {data,error}=await supabase.rpc('update_flamexbot_season',{
+        p_season_id:season.id,p_title:String(fd.get('title')).trim(),
+        p_starts_at:starts.toISOString(),p_ends_at:ends.toISOString(),
+        p_pro_cost:Number(fd.get('pro_cost')),p_rewards:rewards
+      });
+      if(error)throw error;
+      status.textContent='✓ Сохранено. Обновлено наград: '+Number(data?.updated_rewards||0)+'.';
+      toast('Настройки сезона сохранены');
+    }catch(err){status.textContent='Не удалось сохранить: '+(err?.message||'ошибка');toast('Ошибка сохранения сезона');}
+    finally{button.disabled=false;button.textContent='Сохранить изменения';}
+  });
+}
+
+function seasonRewardEditorRow(row,options) {
+  return `<div class="season-editor-reward" data-season-reward data-tier="${esc(row.pass_tier)}" data-level="${Number(row.level)}" data-payload='${esc(JSON.stringify(row.reward_payload||{}))}'>
+    <b>Уровень ${Number(row.level)}</b>
+    <select data-reward-type aria-label="Тип награды уровня ${Number(row.level)}">${options.map(([value,label])=>`<option value="${value}" ${row.reward_type===value?'selected':''}>${label}</option>`).join('')}</select>
+    <input data-reward-amount type="number" min="0" max="100000" value="${Number(row.reward_amount)||0}" aria-label="Количество награды">
+  </div>`;
+}
+
 async function renderSeasonPass(host) {
   const uid = state.session.user.id;
   host.innerHTML = '<div class="loading-state">Загружаем сезонный пропуск…</div>';
   const now = new Date();
   const { data: season, error: seasonError } = await supabase.from('flamexbot_seasons')
-    .select('id,season_key,title,starts_at,ends_at')
+    .select('id,season_key,title,starts_at,ends_at,pro_cost')
     .eq('is_active', true).lte('starts_at', now.toISOString()).gt('ends_at', now.toISOString())
     .order('starts_at', { ascending: false }).limit(1).maybeSingle();
   if (seasonError) {
@@ -2316,12 +2418,12 @@ async function renderSeasonPass(host) {
     </section>
     <section class="business-card season-missions-link">
       <div><div class="eyebrow">ПОЛУЧАЙ СЕЗОННЫЙ XP</div><b>Ежедневные задания</b><p class="muted">Выполняй задания FLAMEXBOT — получай опыт для уровней сезонного пропуска.</p></div>
-      <button type="button" class="outline small" data-go="missions">Открыть задания →</button>
+      <div class="season-quick-actions"><button type="button" class="outline small" data-go="missions">Открыть задания →</button><button type="button" class="outline small" data-go="leaderboard">🏆 Рейтинг сезона</button></div>
     </section>
     <div class="season-tier-row"><button class="season-tier active" data-season-tier="free">Free Pass</button><button class="season-tier" data-season-tier="pro">💎 Pro Pass</button></div>
     <section class="business-card season-pro-card">
       <div><div class="eyebrow">ДОПОЛНИТЕЛЬНАЯ ДОРОЖКА</div><h3>💎 Pro Pass</h3><p class="muted">Открой вторую дорожку и получай дополнительные награды: Premium-дни, прокрутки и полезные дополнения.</p></div>
-      <button class="primary small" id="season-upgrade" ${tier === 'pro' ? 'disabled' : ''}>${tier === 'pro' ? 'Уже куплен' : 'Открыть за 500 монет'}</button>
+      <button class="primary small" id="season-upgrade" ${tier === 'pro' ? 'disabled' : ''}>${tier === 'pro' ? 'Уже куплен' : 'Открыть за ${Number(season.pro_cost||500).toLocaleString('ru-RU')} монет'}</button>
     </section>
     <div class="season-reward-summary"><span>Доступно наград: <b id="season-ready-count">0</b></span><span>Всего уровней: <b>30</b></span></div>
     <div class="season-level-grid" id="season-level-grid"></div>`;
@@ -2382,7 +2484,7 @@ async function renderSeasonPass(host) {
     button.disabled = true;
     button.textContent = 'Открываем…';
     try {
-      const { error } = await supabase.rpc('upgrade_flamexbot_season_pass', { p_season_id: season.id, p_cost: 500 });
+      const { error } = await supabase.rpc('upgrade_flamexbot_season_pass', { p_season_id: season.id, p_cost: Number(season.pro_cost||500) });
       if (error) throw error;
       const [freshProgress, freshWallet] = await Promise.all([
         supabase.from('flamexbot_season_pass_progress').select('xp,level,pass_tier').eq('user_id', uid).eq('season_id', season.id).maybeSingle(),
