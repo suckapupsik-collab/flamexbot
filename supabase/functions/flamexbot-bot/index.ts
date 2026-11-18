@@ -721,7 +721,7 @@ async function handleBusinessChatCommand(message: any, businessConnectionId: str
     }
   }
   if (command === "ping") {
-    await reply(\`\${tgEmoji("success")} <b>PONG!</b>\nBusiness-команды получены. Текущий диалог определён, обработчик отвечает.\`, "HTML");
+    await reply(`${tgEmoji("success")} <b>PONG!</b>\nBusiness-команды получены. Текущий диалог определён, обработчик отвечает.`, "HTML");
     return true;
   }
 
@@ -782,8 +782,8 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       if(createdError)throw createdError;
       referralCode=created.code;
     }
-    const referralLink=\`https://t.me/Flamexgame?start=ref_\${referralCode}\`;
-    await reply(\`Я использую @Flamexgame, и я очень рад его использовать. Используй мою реферальную ссылку и получи Premium на 3 дня бесплатно!\\n\\n\${referralLink}\`);
+    const referralLink=`https://t.me/Flamexgame?start=ref_${referralCode}`;
+    await reply(`Я использую @Flamexgame, и я очень рад его использовать. Используй мою реферальную ссылку и получи Premium на 3 дня бесплатно!\n\n${referralLink}`);
     return true;
   }
   if(command==="clone"){
@@ -794,7 +794,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
     }
     const sourceMedia=messageMedia(source);
     const sourceText=String(source.text??source.caption??"").trim();
-    const attribution="📋 Копия сообщения собеседника:\\n";
+    const attribution="📋 Копия сообщения собеседника:\n";
     if(sourceMedia.fileId){
       const methods:Record<string,{method:string;field:string}>={photo:{method:"sendPhoto",field:"photo"},video:{method:"sendVideo",field:"video"},animation:{method:"sendAnimation",field:"animation"},document:{method:"sendDocument",field:"document"},audio:{method:"sendAudio",field:"audio"},voice:{method:"sendVoice",field:"voice"}};
       const selected=methods[sourceMedia.type];
@@ -818,8 +818,8 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       await reply("Для удаления переписки у обоих Telegram Business должен выдать право «Удалять все сообщения».");
       return true;
     }
-    await reply("⚠️ <b>Удалить переписку у обоих?</b>\\nБудут удалены доступные Telegram сообщения за последние 48 часов. Это действие нельзя отменить.", "HTML", {
-      inline_keyboard:[[{text:"🗑 Да, удалить переписку",callback_data:\`fb:panic_yes:\${panicChat.id}\`}],[{text:"Отмена",callback_data:\`fb:panic_no:\${panicChat.id}\`}]]
+    await reply("⚠️ <b>Удалить переписку у обоих?</b>\nБудут удалены доступные Telegram сообщения за последние 48 часов. Это действие нельзя отменить.", "HTML", {
+      inline_keyboard:[[{text:"🗑 Да, удалить переписку",callback_data:`fb:panic_yes:${panicChat.id}`}],[{text:"Отмена",callback_data:`fb:panic_no:${panicChat.id}`}]]
     });
     return true;
   }
@@ -837,7 +837,7 @@ ${tgEmoji("help")} <b>Как пользоваться</b>
       profile_id:profile.id,business_chat_id:chat.id,warn_enabled:true,warn_threshold:threshold,warn_count:0,updated_at:new Date().toISOString()
     },{onConflict:"profile_id,business_chat_id"});
     if(warnError)throw warnError;
-    await reply(\`Автомут включён: после \${threshold} сообщений собеседника подряд FLAMEXBOT включит мут в этом диалоге.\`);
+    await reply(`Автомут включён: после ${threshold} сообщений собеседника подряд FLAMEXBOT включит мут в этом диалоге.`);
     return true;
   }
   if(command==="unwarn"){
