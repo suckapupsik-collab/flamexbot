@@ -252,6 +252,8 @@ Deno.serve(async (req: Request) => {
       }
       if (action === "set_mute" && enabled && connection.rights?.can_delete_all_messages !== true) {
         return reply({ error: "Telegram Business не выдал право «Удалять все сообщения»." }, 403);
+      }      if (action === "set_antimute" && enabled && connection.rights?.can_delete_sent_messages !== true) {
+        return reply({ error: "Telegram Business не выдал право «Удалять отправленные сообщения»." }, 403);
       }
       if (action === "set_preference" && enabled && ["mutestick","antimat"].includes(String(body?.preference)) &&
           connection.rights?.can_delete_all_messages !== true) {
