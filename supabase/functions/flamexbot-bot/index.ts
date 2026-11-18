@@ -1701,6 +1701,13 @@ async function saveSupportRequestMessage(message: any,content: string) {
         data:{support_chat_id:chat.id,telegram_message_id:message.message_id}
       })));
       if(noticeError)throw noticeError;
+      const {data:adminProfiles,error:adminProfilesError}=await admin.from("profiles").select("telegram_id").in("id",recipients);
+      if(adminProfilesError)throw adminProfilesError;
+      for(const recipient of adminProfiles||[]){
+        if(!recipient.telegram_id||String(recipient.telegram_id)===String(message.from.id))continue;
+        try{await telegram("sendMessage",{chat_id:recipient.telegram_id,text:"🛟 Новое сообщение в техподдержку\n"+(message.from.username?"@"+message.from.username:message.from.first_name||"Пользователь")+": "+content.slice(0,900)+"\n\nОткрой FLAMEXBOT → Техподдержка."});}
+        catch(notifyError){console.warn("Could not send support notification to admin:",notifyError?.message??notifyError);}
+      }
     }
   }
 }
