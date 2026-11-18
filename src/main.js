@@ -122,7 +122,7 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
 const PAGE_LABELS = {
   home:'Обзор', support:'Техподдержка', support_user:'Написать в техподдержку', inbox:'Личные сообщения бота', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', wallet:'Баланс', season:'Сезонный пропуск', banners:'Баннеры бота', profile:'Профиль', achievements:'Достижения',
-  stats:'Статистика', commands:'Все команды', leaderboard:'Рейтинг сезона', events:'Сезонные события', season_admin:'Редактор сезона', season_events_admin:'Управление событиями', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
+  stats:'Статистика', commands:'Все команды', leaderboard:'Рейтинг сезона', events:'Сезонные события', promos:'Промокоды сезона', promo_admin:'Управление промокодами', season_admin:'Редактор сезона', season_events_admin:'Управление событиями', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
 const BADGE_META = {
   verified:{label:'Подтверждён',icon:'✓',className:'verified'},
@@ -176,7 +176,7 @@ function closeProfileMenu() {
   if(trigger)trigger.setAttribute('aria-expanded','false');
 }
 function navigateTo(page) {
-  if(!PAGE_LABELS[page] || (['users','admin','banners','support'].includes(page)&&!state.isAdmin) || (['season_admin','season_events_admin'].includes(page)&&!isFounderProfile()))return;
+  if(!PAGE_LABELS[page] || (['users','admin','banners','support'].includes(page)&&!state.isAdmin) || (['season_admin','season_events_admin','promo_admin'].includes(page)&&!isFounderProfile()))return;
   if(state.page==='messages'&&page!=='messages'){
     if(state.businessChatChannel){supabase.removeChannel(state.businessChatChannel);state.businessChatChannel=null;}
     if(state.businessListChannel){supabase.removeChannel(state.businessListChannel);state.businessListChannel=null;}
@@ -210,6 +210,7 @@ function renderApp() {
     ['season','🎟️','Сезонный пропуск','Награды Free и Pro'],
     ['leaderboard','🏆','Рейтинг сезона','Топ участников по XP'],
     ['events','🎯','Сезонные события','Временные испытания и награды'],
+    ['promos','🎟️','Промокоды сезона','Активируй код и получай XP'],
     ['wallet','🪙','Баланс','Монеты и пополнение'],
     ['achievements','🏆','Достижения','Коллекция наград'],
     ['support_user','🛟','Написать в техподдержку','Задать вопрос команде'],
@@ -338,6 +339,8 @@ async function loadPage() {
     else if(state.page==='season') await renderSeasonPass(host);
     else if(state.page==='leaderboard') await renderSeasonLeaderboard(host);
     else if(state.page==='events') await renderSeasonEvents(host);
+    else if(state.page==='promos') await renderSeasonPromos(host);
+    else if(state.page==='promo_admin'&&isFounderProfile()) await renderSeasonPromoAdmin(host);
     else if(state.page==='season_events_admin'&&isFounderProfile()) await renderSeasonEventsAdmin(host);
     else if(state.page==='season_admin'&&isFounderProfile()) await renderSeasonAdmin(host);
     else if(state.page==='support_user') await renderUserSupport(host);
@@ -1301,7 +1304,7 @@ async function renderAdmin(host) {
       <button class="admin-module" data-admin-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
       <button class="admin-module" data-go="wallet"><span class="admin-module-icon premium">🪙</span><b>Управление балансом</b><small>Начисление и списание монет, история операций</small><i>Открыть →</i></button>
       <button class="admin-module" data-go="banners"><span class="admin-module-icon verify">🖼️</span><b>Баннеры бота</b><small>Изображения для /start и инструкции</small><i>Настроить →</i></button>
-      ${isFounderProfile()?'<button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button><button class="admin-module" data-go="season_events_admin"><span class="admin-module-icon verify">🎯</span><b>Сезонные события</b><small>Создание испытаний, сроки и награды XP</small><i>Управлять →</i></button>':''}
+      ${isFounderProfile()?'<button class="admin-module" data-go="promo_admin"><span class="admin-module-icon premium">🎟️</span><b>Промокоды сезона</b><small>Создание кодов, XP и лимиты активаций</small><i>Управлять →</i></button><button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button><button class="admin-module" data-go="season_events_admin"><span class="admin-module-icon verify">🎯</span><b>Сезонные события</b><small>Создание испытаний, сроки и награды XP</small><i>Управлять →</i></button>':''}
     </div>
     <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки, снятия Premium, синей галочки и значков ролей. Значки администратора и разработчика не выдают доступ к панели.</small></div></div><span class="business-status is-connected">SECURE</span></section>
     <section class="admin-owner-settings">
@@ -2426,6 +2429,84 @@ async function renderSeasonEventsAdmin(host) {
     if(!confirm('Удалить событие и связанные отметки о наградах?'))return;
     btn.disabled=true;const {error}=await supabase.from('flamexbot_season_events').delete().eq('id',btn.dataset.deleteEvent);
     if(error){toast('Не удалось удалить: '+error.message);btn.disabled=false;}else{toast('Событие удалено');await renderSeasonEventsAdmin(host);}
+  }));
+}
+
+
+async function renderSeasonPromos(host) {
+  host.innerHTML='<div class="loading-state">Загружаем промокоды…</div>';
+  const {data:history,error}=await supabase.rpc('get_flamexbot_season_promo_history');
+  if(error){host.innerHTML='<div class="page-heading"><h1>🎟️ Промокоды сезона</h1></div><div class="business-warning">'+esc(error.message)+'</div>';return;}
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · SEASON REWARDS</div><h1>🎟️ Промокоды сезона</h1><p class="muted">Введи промокод, чтобы получить дополнительный сезонный опыт. Каждый код можно активировать один раз на аккаунт.</p></div>
+    <form class="business-card season-promo-redeem" id="season-promo-redeem"><label>Промокод<input name="code" maxlength="32" minlength="4" autocomplete="off" autocapitalize="characters" placeholder="ВВЕДИ-КОД" required></label><button class="primary" type="submit">Активировать код</button><p class="season-editor-status" id="season-promo-status" aria-live="polite"></p></form>
+    <div class="section-heading"><div><div class="eyebrow">REDEEM HISTORY</div><h3>Мои активации</h3></div><span class="admin-secure">${(history||[]).length} получено</span></div>
+    <div class="season-promo-history">${(history||[]).map(item=>`<article class="business-card season-promo-history-row"><div><b>${esc(item.title||item.code)}</b><small>${esc(item.code)} · ${formatMskDateTime(item.claimed_at)}</small></div><strong>+${Number(item.reward_xp)} XP</strong></article>`).join('')||'<div class="empty-state">Ты ещё не активировал промокоды. Следи за новостями сезона!</div>'}</div>`;
+  const form=host.querySelector('#season-promo-redeem');
+  const input=form.querySelector('[name="code"]');
+  input.addEventListener('input',()=>{input.value=input.value.toUpperCase().replace(/\\s+/g,'');});
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const button=form.querySelector('button'),status=host.querySelector('#season-promo-status');
+    const code=input.value.trim().toUpperCase();
+    if(!/^[A-Z0-9_-]{4,32}$/.test(code)){status.textContent='Код должен содержать 4–32 латинских буквы, цифры, дефис или подчёркивание.';return;}
+    button.disabled=true;button.textContent='Проверяем…';status.textContent='';
+    const {data,error}=await supabase.rpc('redeem_flamexbot_season_promo',{p_code:code});
+    if(error){
+      const message=error.message||'Не удалось активировать код.';
+      status.textContent=message.includes('already redeemed')?'Ты уже активировал этот промокод.':message.includes('not found')?'Промокод не найден или отключён.':message.includes('expired')?'Срок действия промокода закончился.':message.includes('limit reached')?'Лимит активаций этого промокода исчерпан.':message.includes('not active yet')?'Промокод ещё не начал действовать.':message.includes('no active season')?'Сейчас нет активного сезона.':'Ошибка: '+message;
+      button.disabled=false;button.textContent='Активировать код';return;
+    }
+    toast('Промокод принят: +'+Number(data?.reward_xp||0)+' сезонного XP');
+    await renderSeasonPromos(host);
+  });
+}
+
+async function renderSeasonPromoAdmin(host) {
+  if(!isFounderProfile()){host.innerHTML='<div class="business-warning">Раздел доступен только основателю.</div>';return;}
+  host.innerHTML='<div class="loading-state">Загружаем промокоды…</div>';
+  const {data:rows,error}=await supabase.rpc('admin_list_flamexbot_season_promos');
+  if(error){host.innerHTML='<div class="business-warning">'+esc(error.message)+'</div>';return;}
+  const dateValue=(d)=>{const x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,16);};
+  const start=new Date(Date.now()+60000),end=new Date(Date.now()+7*86400000);
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FOUNDER ONLY · SEASON REWARDS</div><h1>🎟️ Управление промокодами</h1><p class="muted">Создавай коды с наградой XP, сроком действия и общим лимитом активаций.</p></div>
+    <form class="business-card season-promo-form" id="season-promo-create">
+      <h3>＋ Создать промокод</h3>
+      <label>Код<input name="code" maxlength="32" minlength="4" pattern="[A-Za-z0-9_-]{4,32}" placeholder="FLAMEX2026" required></label>
+      <label>Название / описание<input name="title" maxlength="120" placeholder="Подарок к запуску сезона"></label>
+      <div class="season-event-form-grid">
+        <label>Награда XP<input name="reward_xp" type="number" min="1" max="100000" value="250" required></label>
+        <label>Лимит активаций<input name="max_redemptions" type="number" min="1" max="1000000" placeholder="Без лимита"></label>
+        <label>Начало<input name="starts_at" type="datetime-local" value="${dateValue(start)}" required></label>
+        <label>Окончание<input name="ends_at" type="datetime-local" value="${dateValue(end)}" required></label>
+      </div>
+      <button class="primary" type="submit" id="season-promo-create-button">Создать промокод</button>
+      <p class="season-editor-status" id="season-promo-admin-status" aria-live="polite"></p>
+    </form>
+    <div class="section-heading"><div><div class="eyebrow">PROMO CODE CONTROL</div><h3>Все промокоды</h3></div><span class="admin-secure">${(rows||[]).length} всего</span></div>
+    <div class="season-promo-history">${(rows||[]).map(item=>`<article class="business-card season-promo-admin-row"><div><b>${esc(item.code)} · +${Number(item.reward_xp)} XP</b><small>${esc(item.title||'Без названия')} · ${Number(item.claim_count)||0}${item.max_redemptions==null?'':' / '+Number(item.max_redemptions)} активаций<br>${formatMskDateTime(item.starts_at)} — ${formatMskDateTime(item.ends_at)}</small></div><div class="season-promo-admin-actions"><span class="business-status ${item.is_active?'is-connected':'is-disconnected'}">${item.is_active?'Включён':'Выключен'}</span><button class="outline small" data-promo-toggle="${item.id}" data-active="${item.is_active}">${item.is_active?'Выключить':'Включить'}</button><button class="outline small danger" data-promo-delete="${item.id}">Удалить</button></div></article>`).join('')||'<div class="empty-state">Промокодов ещё нет. Создай первый выше.</div>'}</div>`;
+  const form=host.querySelector('#season-promo-create');
+  form.querySelector('[name="code"]').addEventListener('input',e=>{e.currentTarget.value=e.currentTarget.value.toUpperCase().replace(/\\s+/g,'');});
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();const fd=new FormData(form),button=host.querySelector('#season-promo-create-button'),status=host.querySelector('#season-promo-admin-status');
+    const startAt=new Date(fd.get('starts_at')),endAt=new Date(fd.get('ends_at')),limit=String(fd.get('max_redemptions')||'').trim();
+    if(!(endAt>startAt)){status.textContent='Дата окончания должна быть позже начала.';return;}
+    button.disabled=true;button.textContent='Создаём…';
+    const {error:createError}=await supabase.rpc('admin_create_flamexbot_season_promo',{
+      p_code:String(fd.get('code')||'').trim().toUpperCase(),p_title:String(fd.get('title')||'').trim(),
+      p_reward_xp:Number(fd.get('reward_xp')),p_starts_at:startAt.toISOString(),p_ends_at:endAt.toISOString(),
+      p_max_redemptions:limit?Number(limit):null
+    });
+    if(createError){status.textContent='Ошибка: '+createError.message;button.disabled=false;button.textContent='Создать промокод';return;}
+    toast('Промокод создан');await renderSeasonPromoAdmin(host);
+  });
+  host.querySelectorAll('[data-promo-toggle]').forEach(btn=>btn.addEventListener('click',async()=>{
+    btn.disabled=true;const {error:toggleError}=await supabase.rpc('admin_set_flamexbot_season_promo_active',{p_id:btn.dataset.promoToggle,p_active:btn.dataset.active!=='true'});
+    if(toggleError)toast('Не удалось изменить статус: '+toggleError.message);else toast('Статус промокода обновлён');await renderSeasonPromoAdmin(host);
+  }));
+  host.querySelectorAll('[data-promo-delete]').forEach(btn=>btn.addEventListener('click',async()=>{
+    if(!confirm('Удалить промокод и его историю активаций?'))return;
+    btn.disabled=true;const {error:deleteError}=await supabase.rpc('admin_delete_flamexbot_season_promo',{p_id:btn.dataset.promoDelete});
+    if(deleteError){toast('Не удалось удалить: '+deleteError.message);btn.disabled=false;}else{toast('Промокод удалён');await renderSeasonPromoAdmin(host);}
   }));
 }
 
