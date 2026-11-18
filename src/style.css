@@ -1649,3 +1649,9 @@ body{
   .season-heading,.season-level-card{animation:none}
   .season-progress-card .xp-track span,.season-tier,.season-level-card{transition:none}
 }
+
+.season-missions-link{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:12px 0}
+.season-missions-link b{font-size:14px}
+.season-missions-link p{margin:5px 0 0;font-size:11px}
+.season-missions-link button{flex:none}
+@media(max-width:700px){.season-missions-link{align-items:stretch;flex-direction:column}.season-missions-link button{width:100%}}
