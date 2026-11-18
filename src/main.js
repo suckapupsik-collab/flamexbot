@@ -860,7 +860,52 @@ async function openBusinessChat(id) {
     }
   });
   const controlsHost = box.querySelector('#business-chat-controls');
-  if(controlsHost) controlsHost.innerHTML='';
+  const renderBusinessControls = () => {
+    if (!controlsHost) return;
+    const active = antimutEnabled && !founderChat;
+    const canEnable = state.businessRights?.can_delete_sent_messages === true;
+    const buttonLabel = active ? 'Выключить антимут' : 'Включить антимут';
+    controlsHost.innerHTML = founderChat ? '' : `
+      <div class="business-control-grid">
+        <section class="business-control-card antimut-control-card">
+          <div class="business-control-title">
+            <b>💎 Антимут</b>
+            <span class="business-control-state ${active ? 'active' : ''}">${active ? 'АКТИВЕН' : 'ВЫКЛЮЧЕН'}</span>
+          </div>
+          <p>${active
+            ? 'Режим включён: FLAMEXBOT повторно отправляет ваши исходящие сообщения в этом же Business-чате, если Telegram присылает событие об их удалении.'
+            : 'Если Telegram сообщает об удалении вашего исходящего сообщения, FLAMEXBOT попробует отправить его повторно в этом же диалоге.'}</p>
+          ${!active && !premiumAccess ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
+          ${!active && !canEnable ? '<small class="business-control-note">Нужно разрешение Telegram Business «Удалять отправленные сообщения».</small>' : ''}
+          <button type="button" class="${active ? 'outline' : 'primary'} small" data-toggle-antimut>${buttonLabel}</button>
+        </section>
+      </div>`;
+    const toggle = controlsHost.querySelector('[data-toggle-antimut]');
+    if (!toggle) return;
+    toggle.disabled = !active && (!premiumAccess || !canEnable);
+    toggle.addEventListener('click', async () => {
+      const next = !antimutEnabled;
+      if (next && !premiumAccess) { toast('Для включения антимута нужна активная Premium-подписка.'); return; }
+      if (next && !canEnable) { toast('Выдай Business-боту право «Удалять отправленные сообщения» в настройках Telegram.'); return; }
+      toggle.disabled = true;
+      toggle.textContent = next ? 'Включаем…' : 'Выключаем…';
+      try {
+        const { data, error } = await supabase.functions.invoke('business-chat-send', {
+          body: { action: 'set_antimute', chat_id: id, enabled: next }
+        });
+        if (error || data?.error) throw new Error(data?.error || error?.message || 'Не удалось изменить антимут.');
+        antimutEnabled = next;
+        chat.antimut_enabled = next;
+        renderBusinessControls();
+        toast(next ? '💎 Антимут включён.' : 'Антимут выключен.');
+        await refreshBusinessChatList(document.querySelector('#page-content'));
+      } catch (error) {
+        toast(error?.message || 'Не удалось изменить антимут.');
+        renderBusinessControls();
+      }
+    });
+  };
+  renderBusinessControls();
   box.querySelector('#business-chat-back')?.addEventListener('click', () => {
     state.activeBusinessChat = null;
     if(state.businessChatPollTimer){clearInterval(state.businessChatPollTimer);state.businessChatPollTimer=null;}
@@ -2207,53 +2252,137 @@ async function renderWallet(host) {
 }
 
 async function renderSeasonPass(host) {
-  const uid=state.session.user.id;
-  const {data:season,error:seasonError}=await supabase.from('flamexbot_seasons').select('id,season_key,title,starts_at,ends_at').eq('is_active',true).lte('starts_at',new Date().toISOString()).gt('ends_at',new Date().toISOString()).order('starts_at',{ascending:false}).limit(1).maybeSingle();
-  if(seasonError||!season){host.innerHTML='<div class="page-heading"><h1>Сезонный пропуск 🎟️</h1></div><div class="empty-state">Активный сезон пока не запущен.</div>';return;}
-  const [progressResult,levelsResult,claimsResult,walletResult]=await Promise.all([
-    supabase.from('flamexbot_season_pass_progress').select('xp,level,pass_tier').eq('user_id',uid).eq('season_id',season.id).maybeSingle(),
-    supabase.from('flamexbot_season_pass_levels').select('pass_tier,level,reward_type,reward_amount,reward_payload').eq('season_id',season.id).order('level'),
-    supabase.from('flamexbot_season_pass_claims').select('pass_tier,level').eq('user_id',uid).eq('season_id',season.id),
-    supabase.from('flamexbot_wallets').select('balance').eq('user_id',uid).maybeSingle()
+  const uid = state.session.user.id;
+  host.innerHTML = '<div class="loading-state">Загружаем сезонный пропуск…</div>';
+  const now = new Date();
+  const { data: season, error: seasonError } = await supabase.from('flamexbot_seasons')
+    .select('id,season_key,title,starts_at,ends_at')
+    .eq('is_active', true).lte('starts_at', now.toISOString()).gt('ends_at', now.toISOString())
+    .order('starts_at', { ascending: false }).limit(1).maybeSingle();
+  if (seasonError) {
+    host.innerHTML = `<div class="page-heading"><h1>Сезонный пропуск 🎟️</h1></div><div class="business-warning">Не удалось загрузить сезон: ${esc(seasonError.message)}</div><button class="outline" id="season-retry">Повторить</button>`;
+    host.querySelector('#season-retry')?.addEventListener('click', () => renderSeasonPass(host));
+    return;
+  }
+  if (!season) {
+    host.innerHTML = '<div class="page-heading"><h1>Сезонный пропуск 🎟️</h1><p class="muted">Новый сезон скоро начнётся.</p></div><div class="empty-state">Сейчас нет активного сезона. Загляни чуть позже — награды и задания появятся здесь.</div>';
+    return;
+  }
+  const [progressResult, levelsResult, claimsResult, walletResult] = await Promise.all([
+    supabase.from('flamexbot_season_pass_progress').select('xp,level,pass_tier').eq('user_id', uid).eq('season_id', season.id).maybeSingle(),
+    supabase.from('flamexbot_season_pass_levels').select('pass_tier,level,reward_type,reward_amount,reward_payload').eq('season_id', season.id).order('level'),
+    supabase.from('flamexbot_season_pass_claims').select('pass_tier,level').eq('user_id', uid).eq('season_id', season.id),
+    supabase.from('flamexbot_wallets').select('balance').eq('user_id', uid).maybeSingle()
   ]);
-  const progress=progressResult.data||{xp:0,level:0,pass_tier:'free'};
-  const claimed=new Set((claimsResult.data||[]).map(x=>x.pass_tier+':'+x.level));
-  const levels=levelsResult.data||[];
-  const tier=progress.pass_tier||'free';
-  const labelReward=r=>r.reward_type==='coins'?r.reward_amount+' монет':r.reward_type==='premium_days'?r.reward_amount+' дн. Premium':r.reward_type==='wheel_spins'?r.reward_amount+' прокрутка(и)':r.reward_type==='addon'?(r.reward_payload?.addon_code==='command_protection_5d'?'Защита от команд · 5 дней':'Дополнение: '+(r.reward_payload?.addon_code||'бонус')):'Награда';
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT SEASON PASS</div><h1>${esc(season.title)} 🎟️</h1><p class="muted">Выполняй ежедневные задания, получай сезонный опыт и забирай награды. Free открыт всем, Pro открывает дополнительную дорожку.</p></div>
-    <section class="business-card season-progress-card"><div class="level-line"><div><small>ТВОЙ УРОВЕНЬ СЕЗОНА</small><h2>Уровень ${progress.level||1}</h2></div><strong>${progress.xp||0} XP</strong></div><div class="xp-track"><span style="width:${Math.min(100,(Number(progress.xp||0)%100))}%"></span></div><div class="level-foot"><small>Баланс: ${Number(walletResult.data?.balance||0)} монет</small><b>${tier==='pro'?'PRO PASS АКТИВЕН':'FREE PASS'}</b></div></section>
-    <div class="season-tier-row"><button class="season-tier active" data-season-tier="free">Free Pass</button><button class="season-tier" data-season-tier="pro">Pro Pass</button></div>
-    <section class="business-card season-pro-card"><div><div class="eyebrow">ДОПОЛНИТЕЛЬНАЯ ДОРОЖКА</div><h3>Pro Pass</h3><p class="muted">Дополнительные награды: Premium-дни, прокрутки и дополнения.</p></div><button class="primary small" id="season-upgrade" ${tier==='pro'?'disabled':''}>${tier==='pro'?'Уже куплен':'Открыть за 500 монет'}</button></section>
-    <div class="season-level-grid" id="season-level-grid"></div>
-    ${progressResult.error||levelsResult.error||claimsResult.error?'<p class="business-warning">Не удалось загрузить прогресс сезонного пропуска.</p>':''}`;
-  let selectedTier='free';
-  const draw=()=>{
-    const grid=host.querySelector('#season-level-grid');
-    host.querySelectorAll('[data-season-tier]').forEach(btn=>btn.classList.toggle('active',btn.dataset.seasonTier===selectedTier));
-    const rows=levels.filter(x=>x.pass_tier===selectedTier);
-    grid.innerHTML=rows.map(r=>{
-      const isClaimed=claimed.has(selectedTier+':'+r.level);
-      const unlocked=Number(progress.level||1)>=r.level;
-      const proLocked=selectedTier==='pro'&&tier!=='pro';
-      return `<article class="season-level-card ${isClaimed?'claimed':unlocked&&!proLocked?'ready':'locked'}"><div class="season-level-number">LEVEL ${r.level}</div><b>${esc(labelReward(r))}</b><small>${unlocked&&!proLocked?'Награда доступна':proLocked?'Нужен Pro Pass':'Нужно '+r.level*100+' XP'}</small><button class="${unlocked&&!proLocked&&!isClaimed?'primary':'outline'} small" data-claim-season="${r.level}" ${!unlocked||proLocked||isClaimed?'disabled':''}>${isClaimed?'Получено':unlocked&&!proLocked?'Забрать':'Закрыто'}</button></article>`;
-    }).join('')||'<div class="empty-state">Награды ещё не добавлены.</div>';
-    grid.querySelectorAll('[data-claim-season]').forEach(btn=>btn.addEventListener('click',async()=>{
-      btn.disabled=true;const {data,error}=await supabase.rpc('claim_flamexbot_season_reward',{p_season_id:season.id,p_tier:selectedTier,p_level:Number(btn.dataset.claimSeason)});
-      if(error){toast(error.message.includes('already claimed')?'Награда уже получена':error.message);btn.disabled=false;return;}
-      claimed.add(selectedTier+':'+btn.dataset.claimSeason);toast('Сезонная награда получена: '+labelReward({reward_type:data.reward_type,reward_amount:data.reward_amount,reward_payload:data.reward_payload||{}}));draw();
+  const failed = [progressResult, levelsResult, claimsResult, walletResult].find(result => result.error);
+  if (failed) {
+    host.innerHTML = `<div class="page-heading"><h1>${esc(season.title)} 🎟️</h1></div><div class="business-warning">Не удалось загрузить данные пропуска: ${esc(failed.error.message)}</div><button class="outline" id="season-retry">Повторить</button>`;
+    host.querySelector('#season-retry')?.addEventListener('click', () => renderSeasonPass(host));
+    return;
+  }
+  let progress = progressResult.data || { xp: 0, level: 1, pass_tier: 'free' };
+  let tier = progress.pass_tier || 'free';
+  let balance = Number(walletResult.data?.balance || 0);
+  const claimed = new Set((claimsResult.data || []).map(row => row.pass_tier + ':' + row.level));
+  const levels = levelsResult.data || [];
+  const totalXp = Math.max(0, Number(progress.xp || 0));
+  const currentLevel = Math.max(1, Math.min(30, Number(progress.level || Math.floor(totalXp / 100) + 1)));
+  const xpInLevel = currentLevel >= 30 ? 100 : totalXp % 100;
+  const daysLeft = Math.max(0, Math.ceil((new Date(season.ends_at).getTime() - Date.now()) / 86400000));
+  const labelReward = reward => reward.reward_type === 'coins' ? Number(reward.reward_amount) + ' монет'
+    : reward.reward_type === 'premium_days' ? Number(reward.reward_amount) + ' дн. Premium'
+    : reward.reward_type === 'wheel_spins' ? Number(reward.reward_amount) + ' прокруток'
+    : reward.reward_type === 'addon' ? (reward.reward_payload?.addon_code === 'command_protection_5d' ? 'Защита от команд · 5 дней' : 'Дополнение: ' + (reward.reward_payload?.addon_code || 'бонус'))
+    : 'Награда';
+  host.innerHTML = `
+    <div class="page-heading season-heading">
+      <div class="eyebrow">FLAMEXBOT · SEASON PASS</div>
+      <h1>${esc(season.title)} 🎟️</h1>
+      <p class="muted">90 дней активности, 30 уровней и две дорожки наград. Выполняй задания, набирай XP и забирай призы.</p>
+      <div class="season-meta"><span>⏳ Осталось дней: <b>${daysLeft}</b></span><span>🏆 Наград получено: <b>${claimed.size}</b></span></div>
+    </div>
+    <section class="business-card season-progress-card">
+      <div class="level-line"><div><small>ТВОЙ УРОВЕНЬ СЕЗОНА</small><h2>Уровень ${currentLevel} <span class="season-level-total">/ 30</span></h2></div><strong>${totalXp.toLocaleString('ru-RU')} XP</strong></div>
+      <div class="xp-track"><span style="width:${Math.min(100, xpInLevel)}%"></span></div>
+      <div class="level-foot"><small>${currentLevel >= 30 ? 'Максимальный уровень достигнут' : 'До следующего уровня: ' + (100 - xpInLevel) + ' XP'} · Баланс: ${balance.toLocaleString('ru-RU')} монет</small><b>${tier === 'pro' ? '💎 PRO PASS' : 'FREE PASS'}</b></div>
+    </section>
+    <div class="season-tier-row"><button class="season-tier active" data-season-tier="free">Free Pass</button><button class="season-tier" data-season-tier="pro">💎 Pro Pass</button></div>
+    <section class="business-card season-pro-card">
+      <div><div class="eyebrow">ДОПОЛНИТЕЛЬНАЯ ДОРОЖКА</div><h3>💎 Pro Pass</h3><p class="muted">Открой вторую дорожку и получай дополнительные награды: Premium-дни, прокрутки и полезные дополнения.</p></div>
+      <button class="primary small" id="season-upgrade" ${tier === 'pro' ? 'disabled' : ''}>${tier === 'pro' ? 'Уже куплен' : 'Открыть за 500 монет'}</button>
+    </section>
+    <div class="season-reward-summary"><span>Доступно наград: <b id="season-ready-count">0</b></span><span>Всего уровней: <b>30</b></span></div>
+    <div class="season-level-grid" id="season-level-grid"></div>`;
+  let selectedTier = 'free';
+  const draw = () => {
+    const grid = host.querySelector('#season-level-grid');
+    if (!grid) return;
+    host.querySelectorAll('[data-season-tier]').forEach(button => button.classList.toggle('active', button.dataset.seasonTier === selectedTier));
+    const rows = levels.filter(row => row.pass_tier === selectedTier).sort((a, b) => Number(a.level) - Number(b.level));
+    const readyCount = rows.filter(row => currentLevel >= Number(row.level) && !claimed.has(selectedTier + ':' + row.level) && (selectedTier !== 'pro' || tier === 'pro')).length;
+    host.querySelector('#season-ready-count').textContent = String(readyCount);
+    grid.innerHTML = rows.map(row => {
+      const key = selectedTier + ':' + row.level;
+      const isClaimed = claimed.has(key);
+      const unlocked = currentLevel >= Number(row.level);
+      const proLocked = selectedTier === 'pro' && tier !== 'pro';
+      const requiredXp = Math.max(0, (Number(row.level) - 1) * 100);
+      const ready = unlocked && !proLocked && !isClaimed;
+      return `<article class="season-level-card ${isClaimed ? 'claimed' : ready ? 'ready' : 'locked'}">
+        <div class="season-level-number">УРОВЕНЬ ${Number(row.level)}</div>
+        <b>${esc(labelReward(row))}</b>
+        <small>${isClaimed ? 'Награда уже получена' : proLocked ? 'Открой Pro Pass' : ready ? 'Награда доступна' : 'Нужно ' + requiredXp.toLocaleString('ru-RU') + ' XP'}</small>
+        <button type="button" class="${ready ? 'primary' : 'outline'} small" data-claim-season="${Number(row.level)}" ${!ready ? 'disabled' : ''}>${isClaimed ? 'Получено ✓' : ready ? 'Забрать награду' : 'Закрыто'}</button>
+      </article>`;
+    }).join('') || '<div class="empty-state">Для этой дорожки пока не добавлены награды.</div>';
+    grid.querySelectorAll('[data-claim-season]').forEach(button => button.addEventListener('click', async () => {
+      const level = Number(button.dataset.claimSeason);
+      button.disabled = true;
+      button.textContent = 'Получаем…';
+      try {
+        const { data, error } = await supabase.rpc('claim_flamexbot_season_reward', { p_season_id: season.id, p_tier: selectedTier, p_level: level });
+        if (error) throw error;
+        claimed.add(selectedTier + ':' + level);
+        const [freshProgress, freshWallet] = await Promise.all([
+          supabase.from('flamexbot_season_pass_progress').select('xp,level,pass_tier').eq('user_id', uid).eq('season_id', season.id).maybeSingle(),
+          supabase.from('flamexbot_wallets').select('balance').eq('user_id', uid).maybeSingle()
+        ]);
+        if (freshProgress.data) { progress = freshProgress.data; tier = progress.pass_tier || tier; }
+        if (freshWallet.data) balance = Number(freshWallet.data.balance || 0);
+        toast('🎉 Получено: ' + labelReward({ reward_type: data.reward_type, reward_amount: data.reward_amount, reward_payload: data.reward_payload || {} }));
+        draw();
+      } catch (error) {
+        toast(error?.message || 'Не удалось получить награду.');
+        button.disabled = false;
+        button.textContent = 'Повторить';
+      }
     }));
   };
-  host.querySelectorAll('[data-season-tier]').forEach(btn=>btn.addEventListener('click',()=>{selectedTier=btn.dataset.seasonTier;draw();}));
-  host.querySelector('#season-upgrade')?.addEventListener('click',async()=>{
-    const button=host.querySelector('#season-upgrade');button.disabled=true;
-    const {data,error}=await supabase.rpc('upgrade_flamexbot_season_pass',{p_season_id:season.id,p_cost:500});
-    if(error){toast(error.message.includes('insufficient balance')?'Недостаточно монет. Пополни баланс.':error.message);button.disabled=false;return;}
-    toast('Pro Pass открыт!');await renderSeasonPass(host);
+  host.querySelectorAll('[data-season-tier]').forEach(button => button.addEventListener('click', () => { selectedTier = button.dataset.seasonTier; draw(); }));
+  host.querySelector('#season-upgrade')?.addEventListener('click', async () => {
+    const button = host.querySelector('#season-upgrade');
+    if (!button || tier === 'pro') return;
+    button.disabled = true;
+    button.textContent = 'Открываем…';
+    try {
+      const { error } = await supabase.rpc('upgrade_flamexbot_season_pass', { p_season_id: season.id, p_cost: 500 });
+      if (error) throw error;
+      const [freshProgress, freshWallet] = await Promise.all([
+        supabase.from('flamexbot_season_pass_progress').select('xp,level,pass_tier').eq('user_id', uid).eq('season_id', season.id).maybeSingle(),
+        supabase.from('flamexbot_wallets').select('balance').eq('user_id', uid).maybeSingle()
+      ]);
+      if (freshProgress.data) { progress = freshProgress.data; tier = progress.pass_tier || 'pro'; }
+      if (freshWallet.data) balance = Number(freshWallet.data.balance || 0);
+      toast('💎 Pro Pass успешно открыт!');
+      await renderSeasonPass(host);
+    } catch (error) {
+      toast(error?.message?.includes('insufficient balance') ? 'Недостаточно монет. Пополни баланс.' : error?.message || 'Не удалось открыть Pro Pass.');
+      button.disabled = false;
+      button.textContent = 'Открыть за 500 монет';
+    }
   });
   draw();
 }
-
 async function renderUserSupport(host) {
   host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · HELP DESK</div><h1>Техподдержка 🛟</h1><p class="muted">Напиши команде. Ответ появится здесь, в Mini App.</p></div><section class="support-thread active" id="user-support-thread"><div class="support-thread-placeholder">Загружаем обращение…</div></section>`;
   const thread=host.querySelector('#user-support-thread');
