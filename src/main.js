@@ -2336,7 +2336,7 @@ async function renderSeasonPass(host) {
       return `<article class="season-level-card ${isClaimed ? 'claimed' : ready ? 'ready' : 'locked'}">
         <div class="season-level-number">УРОВЕНЬ ${Number(row.level)}</div>
         <b>${esc(labelReward(row))}</b>
-        <small>${isClaimed ? 'Награда уже получена' : !hasProgress ? 'Выполни первое ежедневное задание' : proLocked ? 'Открой Pro Pass' : ready ? 'Награда доступна' : 'Нужно ' + requiredXp.toLocaleString('ru-RU') + ' XP'}</small>
+        <small>${isClaimed ? 'Награда уже получена' : proLocked ? 'Открой Pro Pass' : !hasProgress ? 'Выполни первое ежедневное задание' : ready ? 'Награда доступна' : 'Нужно ' + requiredXp.toLocaleString('ru-RU') + ' XP'}</small>
         <button type="button" class="${ready ? 'primary' : 'outline'} small" data-claim-season="${Number(row.level)}" ${!ready ? 'disabled' : ''}>${isClaimed ? 'Получено ✓' : ready ? 'Забрать награду' : 'Закрыто'}</button>
       </article>`;
     }).join('') || '<div class="empty-state">Для этой дорожки пока не добавлены награды.</div>';
