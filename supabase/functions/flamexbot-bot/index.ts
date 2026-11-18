@@ -1153,7 +1153,7 @@ async function handleBusinessActionCallback(query: any) {
     if(decision==="no"){
       await telegram("answerCallbackQuery",{callback_query_id:query.id,text:"Удаление отменено."});
       if(query.message?.chat?.id&&query.message?.message_id){
-        await telegram("editMessageText",{chat_id:query.message.chat.id,message_id:query.message.message_id,text:"Удаление переписки отменено."});
+        await telegram("editMessageText",{business_connection_id:panicChat.business_connection_id,chat_id:query.message.chat.id,message_id:query.message.message_id,text:"Удаление переписки отменено."});
       }
       return;
     }
@@ -1205,10 +1205,10 @@ async function handleBusinessActionCallback(query: any) {
       if(updateError)throw updateError;
     }
     const summary=deletedRows.length
-      ? \`Удалено сообщений у обоих: \${deletedRows.length}. Telegram позволяет удалять только сообщения за последние 48 часов.\`
+      ? `Удалено сообщений у обоих: ${deletedRows.length}. Telegram позволяет удалять только сообщения за последние 48 часов.`
       : "За последние 48 часов не найдено доступных для удаления сообщений.";
     if(query.message?.chat?.id&&query.message?.message_id){
-      await telegram("editMessageText",{chat_id:query.message.chat.id,message_id:query.message.message_id,text:summary});
+      await telegram("editMessageText",{business_connection_id:panicChat.business_connection_id,chat_id:query.message.chat.id,message_id:query.message.message_id,text:summary});
     }
     await telegram("answerCallbackQuery",{callback_query_id:query.id,text:deletedRows.length?"Переписка очищена.":"Нет сообщений для удаления."});
     return;
