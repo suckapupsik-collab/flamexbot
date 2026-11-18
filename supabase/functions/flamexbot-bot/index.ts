@@ -2004,7 +2004,7 @@ async function processTelegramUpdate(update: any) {
     }
 
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
-        /^[./](ping|help|inf|commands|mute|unmute|profile|afk|unafk|antimute|antimut|unantimute|unantimut|autoread|unautoread|autotyping|unautotyping|autovoice|unautovoice|mutestick|unmutestick|antimat|unantimat|timeprofile|bold|dumb|link|time|untime|streak|copyp|qr|id|chatid|date|calc|upper|lower|reverse|count|wordcount|choose|roll)(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
+        /^[./](ping|help|inf|commands|mute|unmute|profile|afk|unafk|antimute|antimut|unantimute|unantimut|autoread|unautoread|autotyping|unautotyping|autovoice|unautovoice|mutestick|unmutestick|antimat|unantimat|timeprofile|bold|dumb|link|time|untime|streak|copyp|qr|id|chatid|date|calc|upper|lower|reverse|count|wordcount|choose|roll|advertising|clone|panic|warn|unwarn)(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
       await sendRichTelegramMessage(
         update.message.chat.id,
         "Эта команда выполняется не в чате с ботом, а прямо в нужной личной переписке Telegram Business.\n\nОткрой диалог с человеком и отправь команду там. Для проверки бота используй /ping, для статуса подключения — /status.",
