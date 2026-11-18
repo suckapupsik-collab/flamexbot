@@ -1762,9 +1762,13 @@ async function processTelegramUpdate(update: any) {
     }
     if (update.callback_query?.data === "fx:connect_guide") {
       await telegram("answerCallbackQuery",{callback_query_id:update.callback_query.id});
-      await sendRichTelegramMessage(update.callback_query.message.chat.id,
-        `<b>Инструкция по подключению FLAMEXBOT</b>\n\n1. Открой Telegram → Настройки → Telegram Business.\n2. Выбери «Чат-боты» → «Добавить чат-бота».\n3. Найди FLAMEXBOT и подключи его.\n4. Разреши доступ к сообщениям и отправке ответов. Для автоматического удаления сообщений также включи право удаления.\n5. Вернись в Mini App → Профиль и проверь статус подключения.`,
-        "HTML",{inline_keyboard:[[{text:"Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]});
+      const guideMarkup={inline_keyboard:[[{text:"Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]};
+      const {data:guideBanner,error:guideBannerError}=await admin.from("flamexbot_bot_banners")
+        .select("image_url,caption,enabled").eq("banner_key","instruction").maybeSingle();
+      if(guideBannerError)console.warn("Instruction banner settings unavailable:",guideBannerError.message);
+      const guideText=guideBanner?.caption||`<b>Инструкция по подключению FLAMEXBOT</b>\\n\\n1. Открой Telegram → Настройки → Telegram Business.\\n2. Выбери «Чат-боты» → «Добавить чат-бота».\\n3. Найди FLAMEXBOT и подключи его.\\n4. Разреши доступ к сообщениям и отправке ответов. Для автоматического удаления сообщений также включи право удаления.\\n5. Вернись в Mini App → Профиль и проверь статус подключения.`;
+      if(guideBanner?.enabled&&guideBanner.image_url)await telegram("sendPhoto",{chat_id:update.callback_query.message.chat.id,photo:guideBanner.image_url,caption:guideText.slice(0,1024),parse_mode:"HTML",reply_markup:guideMarkup});
+      else await sendRichTelegramMessage(update.callback_query.message.chat.id,guideText,"HTML",guideMarkup);
     } else if (update.callback_query) await handleBusinessActionCallback(update.callback_query);
     if (update.message?.successful_payment) await handleSuccessfulPayment(update.message);
     if (update.message?.chat?.type === "private" && update.message.from?.id
@@ -2004,19 +2008,23 @@ async function processTelegramUpdate(update: any) {
         chat_id: chatId,
         menu_button: { type: "web_app", text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } },
       });
-      await sendRichTelegramMessage(
-        chatId,
-        `${tgEmoji("sparkles")} <b>Добро пожаловать в FLAMEXBOT!</b>
+      const startMarkup = { inline_keyboard: [
+        [{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }],
+        [{ text: "📖 Инструкция к подключению", callback_data: "fx:connect_guide" }]
+      ] };
+      const { data: startBanner, error: startBannerError } = await admin.from("flamexbot_bot_banners")
+        .select("image_url,caption,enabled").eq("banner_key","start").maybeSingle();
+      if (startBannerError) console.warn("Start banner settings unavailable:", startBannerError.message);
+      const startCaption = startBanner?.caption || `${tgEmoji("sparkles")} <b>Добро пожаловать в FLAMEXBOT!</b>
 
 ${tgEmoji("users")} Общайся с друзьями, поддерживай ваши огоньки и возвращайся к важным диалогам каждый день.
 
-${tgEmoji("settings")} Подключение Telegram Business и управление разрешениями доступны в профиле приложения.`,
-        "HTML",
-        { inline_keyboard: [
-          [{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }],
-          [{ text: "📖 Инструкция к подключению", callback_data: "fx:connect_guide" }]
-        ] },
-      );
+${tgEmoji("settings")} Подключение Telegram Business и управление разрешениями доступны в профиле приложения.`;
+      if (startBanner?.enabled && startBanner.image_url) {
+        await telegram("sendPhoto", { chat_id: chatId, photo: startBanner.image_url, caption: startCaption.slice(0,1024), parse_mode:"HTML", reply_markup:startMarkup });
+      } else {
+        await sendRichTelegramMessage(chatId,startCaption,"HTML",startMarkup);
+      }
     }
 
     return new Response("OK", { status: 200 });
