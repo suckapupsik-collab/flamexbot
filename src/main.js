@@ -2357,12 +2357,12 @@ function seasonRewardEditorRow(row,options) {
 }
 
 
-async function renderSeasonEvents(host) {
+async function renderSeasonEvents(host,showHistory=false) {
   host.innerHTML='<div class="loading-state">Загружаем сезонные события…</div>';
-  const {data:events,error}=await supabase.rpc('get_flamexbot_season_events');
+  const {data:events,error}=await supabase.rpc(showHistory?'get_flamexbot_season_event_history':'get_flamexbot_season_events');
   if(error){host.innerHTML='<div class="page-heading"><h1>🎯 Сезонные события</h1></div><div class="business-warning">'+esc(error.message)+'</div><button class="outline" id="events-retry">Повторить</button>';host.querySelector('#events-retry')?.addEventListener('click',()=>renderSeasonEvents(host));return;}
   const now=Date.now();
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · LIMITED CHALLENGES</div><h1>🎯 Сезонные события</h1><p class="muted">Выполняй временные испытания, собирай ежедневные награды и получай дополнительный сезонный XP.</p></div>
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · LIMITED CHALLENGES</div><h1>🎯 Сезонные события</h1><p class="muted">Выполняй временные испытания, собирай ежедневные награды и получай дополнительный сезонный XP.</p><div class="season-event-switch"><button class="outline small" data-event-view="active">Активные</button><button class="outline small" data-event-view="history">Архив</button></div></div>
     <div class="season-event-list">${(events||[]).map(e=>{
       const progress=Number(e.progress_count)||0,target=Math.max(1,Number(e.goal_count)||1),percent=Math.min(100,Math.round(progress/target*100));
       const claimed=e.claimed===true,done=progress>=target,starts=new Date(e.starts_at).getTime()>now;
@@ -2374,12 +2374,13 @@ async function renderSeasonEvents(host) {
       </article>`;
     }).join('')||'<div class="empty-state">Активных событий пока нет. Загляни позже — новые испытания появятся здесь.</div>'}</div>
     <section class="daily-task-footer"><span>⚡</span><div><b>Как считается прогресс</b><small>Учитываются только реально полученные награды за ежедневные задания в период события. Одну награду события можно забрать один раз.</small></div></section>`;
+  host.querySelectorAll('[data-event-view]').forEach(btn=>btn.addEventListener('click',()=>renderSeasonEvents(host,btn.dataset.eventView==='history')));
   host.querySelectorAll('[data-claim-event]').forEach(btn=>btn.addEventListener('click',async()=>{
     btn.disabled=true;btn.textContent='Проверяем…';
     const {data,error}=await supabase.rpc('claim_flamexbot_season_event',{p_event_id:btn.dataset.claimEvent});
-    if(error){toast(error.message?.includes('already claimed')?'Награда уже получена':error.message?.includes('not completed')?'Испытание ещё не выполнено':'Не удалось забрать награду: '+error.message);await renderSeasonEvents(host);return;}
+    if(error){toast(error.message?.includes('already claimed')?'Награда уже получена':error.message?.includes('not completed')?'Испытание ещё не выполнено':'Не удалось забрать награду: '+error.message);await renderSeasonEvents(host,showHistory);return;}
     toast('Получено +'+Number(data?.reward_xp||0)+' сезонного XP');
-    await renderSeasonEvents(host);
+    await renderSeasonEvents(host,showHistory);
   }));
 }
 
