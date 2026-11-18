@@ -44,7 +44,7 @@ Deno.serve(async(req:Request)=>{
     last_message_preview:content.slice(0,240),last_message_at:now,status:"open",closed_at:null,updated_at:now
    },{onConflict:"telegram_chat_id"}).select("id,unread_count").single();
    if(ticketError)throw ticketError;
-   const localMessageId=Number(Date.now()%2000000000)+1;
+   const localMessageId=Date.now()*1000+Math.floor(Math.random()*1000);
    const {error:messageError}=await admin.from("flamexbot_support_messages").insert({
     support_chat_id:ticket.id,telegram_message_id:localMessageId,direction:"incoming",
     content,message_type:"text",created_at:now
