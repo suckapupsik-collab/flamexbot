@@ -445,7 +445,8 @@ async function renderBusinessMessageEvents(host,eventType) {
     .eq('profile_id',uid).eq('event_type',eventType).order('occurred_at',{ascending:false}).limit(100);
   if(error){list.innerHTML=`<div class="empty-state">Не удалось загрузить историю: ${esc(error.message)}</div>`;return;}
   if(!events?.length){list.innerHTML=`<div class="empty-state">${deleted?'Удалённых сообщений пока нет.':'Изменённых сообщений пока нет.'}</div>`;return;}
-  const visibleEvents=deleted?events.filter(event=>{const raw=event.original_raw||{};const body=String(event.original_content||raw.text||raw.caption||'').trim();return Boolean(body||event.media_url||event.media_file_id||(event.message_type&&event.message_type!=='text'));}):events;
+  const missingTextPlaceholder='[Текст не был сохранён до получения события об удалении]';
+  const visibleEvents=deleted?events.filter(event=>{const raw=event.original_raw||{};const body=String(event.original_content||raw.text||raw.caption||'').trim();return body!==missingTextPlaceholder&&Boolean(body||event.media_url||event.media_file_id||(event.message_type&&event.message_type!=='text'));}):events;
   if(!visibleEvents.length){list.innerHTML='<div class="empty-state">Удалённых сообщений с сохранённым содержимым пока нет.</div>';return;}
   const chatIds=[...new Set(visibleEvents.map(e=>e.business_chat_id))];
   const {data:chats,error:chatError}=await supabase.from('flamexbot_business_chats')
@@ -513,7 +514,7 @@ async function renderBusinessMessages(host) {
   const connection=chatData?.connection;
   const connected = Boolean(connection?.is_enabled);
   state.businessRights = connection?.rights || {};
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ПЕРЕПИСКИ TELEGRAM BUSINESS</div><h1>Переписки</h1><p class="muted">Все диалоги синхронизируются через Telegram Business. Сообщения отправляются от имени подключённого аккаунта — только в пределах выданных Telegram разрешений.</p></div>
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ПЕРЕПИСКИ TELEGRAM BUSINESS</div><h1>Переписки</h1><p class="muted">Все диалоги синхронизируются через Telegram Business. Сообщения отправляются от имени подключённого аккаунта — только в пределах выданных Telegram разрешений.</p><button class="outline small" type="button" data-go="inbox">✉ Личные сообщения бота</button></div>
     <div class="business-inbox-status ${connected ? 'online' : ''}"><span></span><div><b>${connected ? 'Telegram Business подключён' : 'Telegram Business не подключён'}</b><small>${connected ? 'Список диалогов обновляется автоматически.' : 'Подключи FLAMEXBOT в Telegram → Настройки → Telegram Business → Чат-боты.'}</small></div></div>
     <div class="business-inbox-tools"><input id="business-chat-search" type="search" placeholder="Найти диалог по имени"/></div><div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
     <section class="chat-window" id="business-chat-window"><div class="chat-placeholder"><span>✈</span><b>Твои переписки</b><small>Выбери диалог, чтобы открыть историю сообщений и настройки.</small></div></section></div>`;
@@ -661,7 +662,7 @@ async function refreshBusinessMessagesNow(chatId) {
     }
   }
   await renderBusinessMessagesList(chatId,{
-    scrollToBottom:initialLoad||wasNearBottom,
+    scrollToBottom:true,
     scrollTop:oldScrollTop
   });
 }
