@@ -176,7 +176,7 @@ function closeProfileMenu() {
   if(trigger)trigger.setAttribute('aria-expanded','false');
 }
 function navigateTo(page) {
-  if(!PAGE_LABELS[page] || (['users','admin'].includes(page)&&!state.isAdmin))return;
+  if(!PAGE_LABELS[page] || (['users','admin','banners','support'].includes(page)&&!state.isAdmin))return;
   if(state.page==='messages'&&page!=='messages'){
     if(state.businessChatChannel){supabase.removeChannel(state.businessChatChannel);state.businessChatChannel=null;}
     if(state.businessListChannel){supabase.removeChannel(state.businessListChannel);state.businessListChannel=null;}
