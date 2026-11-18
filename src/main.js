@@ -273,6 +273,7 @@ async function loadPage() {
   const host=document.querySelector('#page-content');
   if(!host)return;
   const p=state.profile||{};
+  host.classList.remove('page-enter');void host.offsetWidth;host.classList.add('page-enter');
   host.innerHTML=`<div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем FLAMEXBOT</strong><small>Подготавливаем твоё пространство…</small></div>`;
   try {
     if(state.page==='home'){
@@ -2212,7 +2213,7 @@ async function renderSeasonPass(host) {
     supabase.from('flamexbot_season_pass_claims').select('pass_tier,level').eq('user_id',uid).eq('season_id',season.id),
     supabase.from('flamexbot_wallets').select('balance').eq('user_id',uid).maybeSingle()
   ]);
-  const progress=progressResult.data||{xp:0,level:1,pass_tier:'free'};
+  const progress=progressResult.data||{xp:0,level:0,pass_tier:'free'};
   const claimed=new Set((claimsResult.data||[]).map(x=>x.pass_tier+':'+x.level));
   const levels=levelsResult.data||[];
   const tier=progress.pass_tier||'free';
@@ -2258,7 +2259,11 @@ async function renderUserSupport(host) {
     const {data,error}=await supabase.functions.invoke('flamexbot-user-support',{body:{action:'messages'}});
     if(error||data?.error){thread.innerHTML='<div class="empty-state">'+esc(data?.error||error?.message||'Не удалось загрузить обращение')+'</div>';return;}
     const messages=data.messages||[];
+    const previousDraft=thread.querySelector('textarea[name="content"]')?.value||'';
+    const keepFocus=document.activeElement===thread.querySelector('textarea[name="content"]');
     thread.innerHTML='<div class="support-thread-head"><div><b>Твоё обращение</b><small>'+(data.chat?.status==='closed'?'Закрыто':'Открыто')+'</small></div></div><div class="support-message-list">'+(messages.map(msg=>'<article class="support-message '+(msg.direction==='outgoing'?'outgoing':'incoming')+'"><p>'+esc(msg.content||'')+'</p><time>'+formatMskDateTime(msg.created_at)+'</time></article>').join('')||'<div class="empty-state">Опиши проблему в поле ниже — обращение будет создано.</div>')+'</div><form class="support-reply-form" id="user-support-form"><textarea name="content" maxlength="4000" placeholder="Опиши проблему…" required></textarea><button class="primary" type="submit">Отправить</button></form>';
+    const draftInput=thread.querySelector('textarea[name="content"]');
+    if(draftInput){draftInput.value=previousDraft;if(keepFocus)draftInput.focus({preventScroll:true});}
     const list=thread.querySelector('.support-message-list');if(list)list.scrollTop=list.scrollHeight;
     thread.querySelector('#user-support-form')?.addEventListener('submit',async event=>{
       event.preventDefault();const form=event.currentTarget;const content=String(new FormData(form).get('content')||'').trim();if(!content)return;
