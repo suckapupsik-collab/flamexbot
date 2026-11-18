@@ -2196,8 +2196,9 @@ async function renderWallet(host) {
     if(!/^[0-9]{5,20}$/.test(telegramId)||!Number.isSafeInteger(amount)||amount===0){toast('Проверь Telegram ID и количество монет.');return;}
     const button=event.currentTarget.querySelector('button');button.disabled=true;
     try{
-      const {data:profile,error:profileError}=await supabase.from('profiles').select('id,username,display_name').eq('telegram_id',telegramId).maybeSingle();
-      if(profileError)throw profileError;if(!profile)throw new Error('Пользователь с таким Telegram ID не найден.');
+      const {data:matches,error:profileError}=await supabase.rpc('admin_list_flamexbot_users',{p_search:telegramId,p_verified:'all',p_premium:'all',p_banned:'all',p_limit:5,p_offset:0});
+      if(profileError)throw profileError;const profile=(matches||[]).find(item=>String(item.telegram_id||'')===telegramId);
+      if(!profile)throw new Error('Пользователь с таким Telegram ID не найден.');
       const {data,error}=await supabase.rpc('admin_adjust_flamexbot_balance',{p_user_id:profile.id,p_amount:amount,p_reason:reason});
       if(error)throw error;toast('Баланс изменён. Новый баланс: '+data+' монет.');await renderWallet(host);
     }catch(error){toast(error?.message||'Не удалось изменить баланс');}
