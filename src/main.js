@@ -954,9 +954,9 @@ async function openBusinessChat(id) {
         const next=!Boolean(chat.antimut_enabled);
         if(args){button.disabled=false;toast('Команда не принимает аргументы: .antimute');return;}
         if(next&&!isPremium()){button.disabled=false;toast('Включение антимута доступно только в Premium.');return;}
-        const {data:antiSettingData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next,command_mode:true,command_name:name}});
+        const {data:antiSettingData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next,toggle:true,command_mode:true,command_name:name}});
         button.disabled=false;if(antiError||antiSettingData?.error){toast(antiSettingData?.error||antiError?.message||'Не удалось изменить антимут');return;}
-        chat.antimut_enabled=next;toast(next?'Антимут включён: сообщения будут отправляться от имени бота':'Антимут выключен');form.reset();return;
+        chat.antimut_enabled=Boolean(antiSettingData?.antimut_enabled);toast(chat.antimut_enabled?'Антимут включён: сообщения будут отправляться от имени Business-аккаунта':'Антимут выключен');form.reset();return;
       }
       const preferenceCommands={
         autoread:['autoread','autoread_enabled','Автопрочтение'],
