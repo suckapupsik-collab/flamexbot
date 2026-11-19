@@ -267,6 +267,8 @@ function renderApp() {
     state.menuListenersBound=true;
   }
   loadPage();
+  if(state.profileClockTimer)clearInterval(state.profileClockTimer);
+  state.profileClockTimer=setInterval(()=>{if(state.profile?.show_profile_time!==false)updateHeaderProfile();},60000);
 }
 
 async function loadPage() {
@@ -981,8 +983,8 @@ async function openBusinessChat(id) {
     const command=!file&&text.startsWith('.')?text.trim():'';
     if(command){
       const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
-      if(['help','inf'].includes(name)){toast('.mute (повтори для выключения) · .antimute · .unantimute · .autoread · .unautoread · .autotyping · .unautotyping · .autovoice · .unautovoice · .mutestick · .unmutestick · .antimat · .unantimat · .copyp · .qr текст');button.disabled=false;return;}
-      const freeCommand=['unmute','unantimute','unantimut','untime','unafk','unautoread','unautotyping','unautovoice','unmutestick','unantimat','qr'].includes(name);
+      if(['help','inf'].includes(name)){toast('.mute · .antimute · .autoread · .autotyping · .autovoice · .mutestick · .antimat · .afk причина · .time · .copyp · .qr текст. Повтори команду, чтобы выключить режим.');button.disabled=false;return;}
+      const freeCommand=['qr'].includes(name);
       if(!isPremium()&&!freeCommand){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
       if(name==='mute'){
         const next=!chatMuted;
@@ -994,7 +996,7 @@ async function openBusinessChat(id) {
       }
       if(['antimute','antimut'].includes(name)){
         const next=!antimutEnabled;
-        if(args){button.disabled=false;toast('Команда не принимает аргументы: .antimute или .unantimute');return;}
+        if(args){button.disabled=false;toast('Команда не принимает аргументы: .antimute');return;}
         if(next&&!isPremium()){button.disabled=false;toast('Включение антимута доступно только в Premium.');return;}
         const {data:antiSettingData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next,command_mode:true,command_name:name}});
         button.disabled=false;if(antiError||antiSettingData?.error){toast(antiSettingData?.error||antiError?.message||'Не удалось изменить антимут');return;}
@@ -1544,9 +1546,9 @@ async function renderTariffs(host, initialTab='premium') {
     <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2>
     <p class="muted">Дополнительные инструменты для управления Telegram Business-переписками.</p>
     <ul>
-     <li><code>.mute</code> / <code>.unmute</code> — управление новыми входящими сообщениями</li>
-     <li><code>.antimute</code> / <code>.unantimute</code> — альтернативная отправка от имени FLAMEXBOT, когда это разрешает Telegram</li>
-     <li><code>.antimat</code> / <code>.unantimat</code> — фильтр ненормативной лексики</li>
+     <li><code>.mute</code> — переключатель удаления новых входящих сообщений (повтори для выключения)</li>
+     <li><code>.antimute</code> — альтернативная отправка от имени FLAMEXBOT (повтори для выключения)</li>
+     <li><code>.antimat</code> — фильтр ненормативной лексики (повтори для выключения)</li>
      <li>Персональный AFK-автоответ и автоматическое прочтение</li>
      <li>Статусы «печатает…» и «записывает голосовое»</li>
      <li>Фильтр стикеров, время профиля по МСК и оформление текста</li>
@@ -2140,23 +2142,15 @@ async function renderCommands(host) {
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Переключить мут',description:'Первый запуск включает удаление новых входящих сообщений, повторный .mute выключает. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
     {syntax:'.antimute',title:'Включить антимут',description:'Отправляет новые сообщения от имени бота FLAMEXBOT. Получатель должен открыть бота и нажать Start. Нужен Premium.',access:'premium',group:'Управление чатом'},
-    {syntax:'.unantimute',title:'Выключить антимут',description:'Выключает режим антимута. Доступно бесплатно.',access:'free',group:'Управление чатом'},
     
     {syntax:'.afk причина',title:'Переключить автоответ',description:'Повторный запуск .afk выключает автоответ. При включении можно указать текст ответа.',access:'premium',group:'Автоматизация'},
-    {syntax:'.unafk',title:'Выключить автоответ',description:'Отключает автоответ только в этом диалоге. Доступно бесплатно.',access:'free',group:'Автоматизация'},
     {syntax:'.autoread',title:'Автопрочтение',description:'Автоматически отмечает входящие сообщения прочитанными только в этом диалоге.',access:'premium',group:'Автоматизация'},
-    {syntax:'.unautoread',title:'Выключить автопрочтение',description:'Отключает автоматическое прочтение сообщений.',access:'free',group:'Автоматизация'},
     {syntax:'.autotyping',title:'Статус набора',description:'Включает статус «печатает…» только в этом диалоге.',access:'premium',group:'Автоматизация'},
-    {syntax:'.unautotyping',title:'Отключить статус набора',description:'Выключает статус «печатает…».',access:'free',group:'Автоматизация'},
     {syntax:'.autovoice',title:'Статус записи голосового',description:'Включает статус записи голосового только в этом диалоге.',access:'premium',group:'Автоматизация'},
-    {syntax:'.unautovoice',title:'Отключить статус записи',description:'Выключает статус записи голосового.',access:'free',group:'Автоматизация'},
     {syntax:'.mutestick',title:'Фильтр стикеров',description:'Автоматически удаляет входящие стикеры только в этом диалоге.',access:'premium',group:'Фильтры'},
-    {syntax:'.unmutestick',title:'Отключить фильтр стикеров',description:'Отключает фильтр входящих стикеров.',access:'free',group:'Фильтры'},
     {syntax:'.antimat',title:'Антимат',description:'Фильтрует часть ненормативной лексики только в этом диалоге.',access:'premium',group:'Фильтры'},
-    {syntax:'.unantimat',title:'Отключить антимат',description:'Отключает фильтр ненормативной лексики.',access:'free',group:'Фильтры'},
     {syntax:'.timeprofile',title:'Московское время',description:'Закрепляет часовой пояс FLAMEXBOT: Москва, UTC+3.',access:'premium',group:'Профиль'},
     {syntax:'.time',title:'Время в имени',description:'Добавляет или убирает московское время рядом с именем внутри FLAMEXBOT.',access:'premium',group:'Профиль'},
-    {syntax:'.untime',title:'Скрыть время',description:'Выключает отображение времени в профиле. Доступно бесплатно.',access:'free',group:'Профиль'},
     {syntax:'.bold текст',title:'Жирный текст',description:'Отправляет указанный текст жирным начертанием.',access:'premium',group:'Оформление'},
     {syntax:'.dumb текст',title:'Игровое оформление',description:'Преобразует текст в шуточный стиль.',access:'premium',group:'Оформление'},
     {syntax:'.link текст',title:'Ссылка на диалог',description:'Создаёт ссылку на текущий Telegram-диалог.',access:'premium',group:'Оформление'},
