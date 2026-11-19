@@ -1327,8 +1327,8 @@ async function renderPaymentJournal(host){
   if(!chargeId||!confirm('Вернуть Stars за эту покупку и отменить начисленные ею дни Premium? Это действие нельзя отменить.'))return;
   button.disabled=true;button.textContent='Выполняю возврат…';
   const {data,error}=await supabase.functions.invoke('admin-premium-refund',{body:{charge_id:chargeId,reason:'Возврат из журнала платежей Основателем'}});
-  if(error||data?.error){showToast('Ошибка возврата: '+(data?.error||error?.message||'неизвестная ошибка'),'error');button.disabled=false;button.textContent='Повторить возврат';return;}
-  showToast('Возврат выполнен, дни Premium отменены','success');
+  if(error||data?.error){toast('Ошибка возврата: '+(data?.error||error?.message||'неизвестная ошибка'));button.disabled=false;button.textContent='Повторить возврат';return;}
+  toast('Возврат выполнен, дни Premium отменены');
   renderPaymentJournal(host);
  }));
 }
