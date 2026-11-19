@@ -944,7 +944,7 @@ async function openBusinessChat(id) {
         if(next && !state.businessRights?.can_delete_all_messages){button.disabled=false;toast('Для мута нужно разрешение Telegram Business «Удалять все сообщения».');return;}
         const {data:settingData,error:settingError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_mute',chat_id:id,enabled:next}});
         button.disabled=false;if(settingError||settingData?.error){toast(settingData?.error||settingError?.message||'Не удалось изменить настройку чата');return;}
-        chatMuted=next;chat.is_muted=next;renderBusinessControls();toast(next?'Мут включён':'Мут выключен');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
+        chatMuted=next;chat.is_muted=next;toast(next?'Мут включён':'Мут выключен');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
       }
       if(['antimute','antimut'].includes(name)){
         const next=!Boolean(chat.antimut_enabled);
@@ -999,7 +999,7 @@ async function openBusinessChat(id) {
       button.disabled=false;toast('Неизвестная команда. Напиши .help');return;
     }
     const replyId=form.querySelector('[name=reply_to_message_id]').value||null;
-    const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id:id,text,storage_path:storagePath,media_type:mediaType,reply_to_message_id:replyId,antimut_mode:antimutEnabled } });
+    const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id:id,text,storage_path:storagePath,media_type:mediaType,reply_to_message_id:replyId,antimut_mode:Boolean(chat.antimut_enabled) } });
     button.disabled = false;
     if (error || data?.error) {
       if(storagePath) await supabase.storage.from('flamex-business-media').remove([storagePath]);
