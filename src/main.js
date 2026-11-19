@@ -2230,8 +2230,8 @@ async function renderSeasonLeaderboard(host) {
   host.innerHTML = `
     <div class="page-heading"><div class="eyebrow">FLAMEXBOT · SEASON RANKING</div><h1>🏆 Рейтинг сезона</h1><p class="muted">${esc(seasonResult.data?.title||'Текущий сезон')} · Топ участников по сезонному опыту</p></div>
     <section class="business-card leaderboard-summary"><b>${rows.length}</b><span>участников в рейтинге</span><button class="outline small" data-go="season">К пропуску →</button></section>
-    <section class="business-card leaderboard-list">
-      ${rows.map(row=>`<article class="leaderboard-row ${Number(row.rank_position)<=3?'top-three':''}">
+    <section class="business-card leaderboard-list leaderboard-v2">
+      ${rows.map(row=>`<article class="leaderboard-row community-leaderboard-row ${Number(row.rank_position)<=3?'top-three':''}">
         <span class="leaderboard-rank">${medals[Number(row.rank_position)-1]||'#'+row.rank_position}</span>
         <span class="leaderboard-avatar">${row.avatar_url?`<img src="${esc(row.avatar_url)}" alt="">`:'🔥'}</span>
         <span class="leaderboard-person"><b>${esc(row.display_name||row.username||'Участник')}</b><small>${row.username?'@'+esc(row.username):'Участник FLAMEXBOT'} · Уровень ${Number(row.level)||1}</small></span>
