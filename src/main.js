@@ -199,6 +199,7 @@ function navigateTo(page) {
 }
 function renderApp() {
   const p=state.profile||{};
+  const profileDisplayName=(p.display_name||p.username||'Пользователь')+(p.show_profile_time===false?'':' · '+formatMskTime()+' МСК');
   const profileAvatar=p.avatar_url||p.telegram_photo_url;
   const items=[
     ['home','⌂','Обзор','Главная'],
@@ -224,15 +225,15 @@ function renderApp() {
           <div class="top-right"><span class="top-status"><i></i> Система активна</span>
             <div class="profile-menu-wrap">
               <button type="button" class="profile-menu-trigger" id="profile-menu-trigger" aria-expanded="false" aria-label="Открыть меню профиля">
-                <span id="top-avatar">${avatar(profileAvatar,p.display_name||p.username)}</span>
-                <span class="profile-trigger-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p)&&p.show_badges!==false)}</span>
+                <span id="top-avatar">${avatar(profileAvatar,profileDisplayName)}</span>
+                <span class="profile-trigger-name">${esc(profileDisplayName)}${verifiedMarkMarkup(isFounderProfile(p)&&p.show_badges!==false)}</span>
                 <span id="top-profile-badges">${badgeMarkup(state.profileBadges,true)}</span>
                 <span class="profile-chevron">⌄</span>
               </button>
               <div class="profile-menu" id="profile-menu">
                 <div class="profile-menu-head">
                   <span id="menu-avatar">${avatar(profileAvatar,p.display_name||p.username,'avatar-lg')}</span>
-                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(p.display_name||p.username||'Пользователь')}${verifiedMarkMarkup(isFounderProfile(p)&&p.show_badges!==false)}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${state.profile?.show_subscription===false?'':isPremium()?'✦ '+planLabel()+' MEMBER':'FREE MEMBER'}</small></div>
+                  <div class="profile-menu-identity"><b id="menu-display-name">${esc(profileDisplayName)}${verifiedMarkMarkup(isFounderProfile(p)&&p.show_badges!==false)}</b><div id="menu-profile-badges">${badgeMarkup(state.profileBadges)}</div><small>${state.profile?.show_subscription===false?'':isPremium()?'✦ '+planLabel()+' MEMBER':'FREE MEMBER'}</small></div>
                 </div>
                 <div class="profile-menu-label">РАЗДЕЛЫ</div>
                 <nav class="profile-menu-nav">${items.map(([key,icon,label,sub])=>`<button type="button" class="profile-menu-item ${state.page===key?'selected':''}" data-page="${key}"><span class="menu-item-icon">${icon}</span><span><b>${label}</b><small>${sub}</small></span><i>›</i></button>`).join('')}</nav>
@@ -440,7 +441,8 @@ async function renderBusinessMessageEvents(host,eventType) {
   const deleted=eventType==='deleted';
   const title=deleted?'Удалённые сообщения':'Изменённые сообщения';
   const icon=deleted?'🗑️':'✏️';
-  host.innerHTML=`<div class="page-heading"><button class="outline small" type="button" data-go="home">← Назад</button><div class="eyebrow">TELEGRAM BUSINESS · ИСТОРИЯ</div><h1>${icon} ${title}</h1><p class="muted">История сгруппирована по отдельным перепискам.</p></div><div class="message-events-list"><div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем историю</strong></div></div>`;
+  host.innerHTML=`<div class="page-heading"><button class="outline small" type="button" id="message-history-back">← К перепискам</button><div class="eyebrow">TELEGRAM BUSINESS · ИСТОРИЯ</div><h1>${icon} ${title}</h1><p class="muted">История сгруппирована по отдельным перепискам.</p></div><div class="message-events-list"><div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем историю</strong></div></div>`;
+  host.querySelector('#message-history-back')?.addEventListener('click',()=>navigateTo('messages'));
   const list=host.querySelector('.message-events-list');
   const {data:events,error}=await supabase.from('flamexbot_business_message_events')
     .select('id,business_chat_id,telegram_message_id,event_type,original_content,message_type,media_file_id,media_url,original_raw,occurred_at')
@@ -2135,7 +2137,6 @@ async function renderCommands(host) {
     {syntax:'/help',title:'Помощь в личном чате',description:'Объясняет, что команды управления нужно отправлять в переписке с человеком.',access:'free',group:'Личный чат с ботом'},
     {syntax:'/commands',title:'Справка по командам',description:'Открывает ту же справку, что и /help.',access:'free',group:'Личный чат с ботом'},
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
-        {syntax:'.unantimute',title:'Выключить антимут',description:'Отключает альтернативную отправку от имени бота.',access:'free',group:'Управление чатом'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Переключить мут',description:'Первый запуск включает удаление новых входящих сообщений, повторный .mute выключает. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
     {syntax:'.antimute',title:'Включить антимут',description:'Отправляет новые сообщения от имени бота FLAMEXBOT. Получатель должен открыть бота и нажать Start. Нужен Premium.',access:'premium',group:'Управление чатом'},
