@@ -329,6 +329,7 @@ async function loadPage() {
     else if(state.page==='leaderboard') await renderSeasonLeaderboard(host);
     else if(state.page==='events') await renderSeasonEvents(host);
     else if(state.page==='promos') await renderSeasonPromos(host);
+    else if(state.page==='wheel_admin'&&isFounderProfile()) await renderWheelAdmin(host);
     else if(state.page==='promo_admin'&&isFounderProfile()) await renderSeasonPromoAdmin(host);
     else if(state.page==='season_events_admin'&&isFounderProfile()) await renderSeasonEventsAdmin(host);
     else if(state.page==='season_admin'&&isFounderProfile()) await renderSeasonAdmin(host);
@@ -1264,7 +1265,7 @@ async function renderAdmin(host) {
       <button class="admin-module" data-admin-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
       <button class="admin-module" data-go="wallet"><span class="admin-module-icon premium">🪙</span><b>Управление балансом</b><small>Начисление и списание монет, история операций</small><i>Открыть →</i></button>
       <button class="admin-module" data-go="banners"><span class="admin-module-icon verify">🖼️</span><b>Баннеры бота</b><small>Изображения для /start и инструкции</small><i>Настроить →</i></button>
-      ${isFounderProfile()?'<button class="admin-module" data-go="promo_admin"><span class="admin-module-icon premium">🎟️</span><b>Промокоды сезона</b><small>Создание кодов, XP и лимиты активаций</small><i>Управлять →</i></button><button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button><button class="admin-module" data-go="season_events_admin"><span class="admin-module-icon verify">🎯</span><b>Сезонные события</b><small>Создание испытаний, сроки и награды XP</small><i>Управлять →</i></button>':''}
+      <button class="admin-module" data-go="wheel_admin"><span class="admin-module-icon premium">🎡</span><b>Колесо фортуны</b><small>Статистика прокруток, монеты, награды и история выигрышей</small><i>Управлять →</i></button>${isFounderProfile()?'<button class="admin-module" data-go="promo_admin"><span class="admin-module-icon premium">🎟️</span><b>Промокоды сезона</b><small>Создание кодов, XP и лимиты активаций</small><i>Управлять →</i></button><button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button><button class="admin-module" data-go="season_events_admin"><span class="admin-module-icon verify">🎯</span><b>Сезонные события</b><small>Создание испытаний, сроки и награды XP</small><i>Управлять →</i></button>':''}
     </div>
     <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки, снятия Premium, синей галочки и значков ролей. Значки администратора и разработчика не выдают доступ к панели.</small></div></div><span class="business-status is-connected">SECURE</span></section>
     <section class="admin-owner-settings">
@@ -1303,6 +1304,15 @@ async function renderAdmin(host) {
     state.userFilters={...state.userFilters,verified:filter==='verified'?'verified':'all',premium:filter==='premium'?'premium':'all',banned:filter==='banned'?'banned':'all',offset:0};
     navigateTo('users');
   }));
+}
+
+async function renderWheelAdmin(host){
+  const {data,error}=await supabase.rpc('admin_get_flamexbot_wheel_overview',{p_limit:100});
+  if(error){host.innerHTML='<section class="business-card"><h2>🎡 Колесо фортуны</h2><p class="business-warning">'+esc(error.message)+'</p><button class="outline" data-go="admin">Назад</button></section>';return;}
+  const stats=data?.stats||{},orders=data?.orders||[];
+  const rows=orders.map(o=>'<article class="admin-audit-row"><span class="admin-audit-icon">🎁</span><div class="admin-audit-copy"><b>'+esc(o.username||'Пользователь')+' · '+esc(o.prize_label||'Награда не определена')+'</b><small>'+esc(o.status==='paid'?'Оплачено':'Ожидает оплаты')+' · '+Number(o.price_stars||0)+' ⭐ · '+esc(o.telegram_user_id||'')+'</small></div><time>'+esc(o.paid_at?formatMskDateTime(o.paid_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):formatMskDateTime(o.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</time></article>').join('');
+  host.innerHTML='<div class="page-heading"><div class="eyebrow">FOUNDER CONTROL</div><h1>🎡 Колесо фортуны</h1><p class="muted">Статистика и последние операции. Награды начисляются сервером после подтверждения платежа.</p></div><div class="admin-stats-grid"><article class="admin-stat"><span>🎯</span><small>ВЫИГРЫШЕЙ</small><b>'+Number(stats.total_spins||0)+'</b></article><article class="admin-stat"><span>⭐</span><small>ОПЛАЧЕННЫХ</small><b>'+Number(stats.paid_spins||0)+'</b></article><article class="admin-stat"><span>🪙</span><small>МОНЕТ ВЫДАНО</small><b>'+Number(stats.coins_awarded||0).toLocaleString('ru-RU')+'</b></article><article class="admin-stat"><span>🎁</span><small>БЕСПЛАТНЫХ</small><b>'+Number(stats.free_spins||0)+'</b></article></div><section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">PRIZE DISTRIBUTION</div><h3>Выданные награды</h3></div></div><div class="admin-stats-grid"><article class="admin-stat"><small>PREMIUM 7 ДНЕЙ</small><b>'+Number(stats.premium_7d||0)+'</b></article><article class="admin-stat"><small>PREMIUM 30 ДНЕЙ</small><b>'+Number(stats.premium_30d||0)+'</b></article><article class="admin-stat"><small>PREMIUM 90 ДНЕЙ</small><b>'+Number(stats.premium_90d||0)+'</b></article></div></section><section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">RECENT ACTIVITY</div><h3>Последние 100 операций</h3></div><button class="outline small" id="wheel-admin-refresh">Обновить</button></div><div class="admin-audit-list">'+(rows||'<div class="empty-state">Операций пока нет.</div>')+'</div></section><button class="outline" data-go="admin">← Назад в админ-меню</button>';
+  host.querySelector('#wheel-admin-refresh')?.addEventListener('click',()=>renderWheelAdmin(host));
 }
 
 async function renderUsers(host) {
