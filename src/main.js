@@ -1488,7 +1488,9 @@ async function renderTariffs(host, initialTab='premium') {
  const premium=isPremium();
  const weeklySpins=premium?2:0;
  const rareLuck=premium?10:0;
- const {data:wheelOddsConfig,error:wheelOddsError}=await supabase.rpc('get_flamexbot_wheel_odds');
+ const [{data:wheelOddsConfig,error:wheelOddsError},{data:wheelPublicSettings}]=await Promise.all([supabase.rpc('get_flamexbot_wheel_odds'),supabase.rpc('get_flamexbot_wheel_public_settings')]);
+ const wheelPriceStars=Number(wheelPublicSettings?.spin_price_stars||5);
+ const wheelWeeklySpins=Number(wheelPublicSettings?.premium_weekly_spins||0);
  const wheelOddsRows=wheelOddsConfig||[];
  const wheelOddsTotal=wheelOddsRows.filter(p=>p.is_active).reduce((sum,p)=>sum+Number(p.weight||0),0);
  const wheelOddsHtml=wheelOddsError?'<span>Не удалось загрузить актуальные шансы.</span>':wheelOddsRows.map(p=>'<span>'+((p.is_active&&wheelOddsTotal>0?Number(p.weight)/wheelOddsTotal*100:0)).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+esc(p.prize_label)+'</span>').join('');
@@ -1584,10 +1586,10 @@ async function renderTariffs(host, initialTab='premium') {
      <span class="fortune-wheel-center">✦</span>
     </div>
    </div>
-   <p class="muted">Прокрутка стоит 5 ⭐. Выигрывай Premium на 7, 30 и 90 дней, защиту от команд, бесплатные прокрутки или монеты на баланс: 10, 50, 100 и 250.</p>
+   <p class="muted">Прокрутка стоит '+wheelPriceStars+' ⭐. Выигрывай Premium на 7, 30 и 90 дней, защиту от команд, бесплатные прокрутки или монеты на баланс: 10, 50, 100 и 250.</p>
    <div class="wheel-odds-controls"><button class="outline small" type="button" id="toggle-wheel-odds" aria-expanded="false">Показать шансы</button><div class="wheel-odds" id="wheel-odds-panel" hidden>${wheelOddsHtml}</div></div>
-   <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐'}</button>
-   <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${weeklySpins} для текущего тарифа${rareLuck?' · веса редких наград +' + rareLuck + '%':''}.</small>
+   <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐'}</button>
+   <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${premium?wheelWeeklySpins:0} для текущего тарифа${rareLuck?' · веса редких наград +' + rareLuck + '%':''}.</small>
   </section>
  </section>
  <section class="tariff-tab-panel" data-tariff-panel="addons" hidden>
@@ -1740,7 +1742,7 @@ async function renderTariffs(host, initialTab='premium') {
      });
      if(!opened)toast('Счёт открыт в Telegram.');
    }catch(error){toast('Колесо: '+(error.message||'ошибка'));}
-   finally{if(host.contains(wheelButton)){wheelButton.disabled=false;wheelButton.textContent=(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐';}}
+   finally{if(host.contains(wheelButton)){wheelButton.disabled=false;wheelButton.textContent=(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐';}}
  });
  const addonButton=host.querySelector('#buy-command-protection');
  addonButton?.addEventListener('click',async()=>{
