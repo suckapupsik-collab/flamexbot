@@ -1896,3 +1896,8 @@ body{
   .business-inbox.chat-open .send-form{gap:6px;padding:9px}
   .banner-form{padding:14px}
 }
+
+
+.banner-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.banner-editor-grid>.banner-form{min-width:0}
+@media(max-width:760px){.banner-editor-grid{grid-template-columns:minmax(0,1fr)}}
