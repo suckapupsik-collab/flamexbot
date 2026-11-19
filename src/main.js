@@ -1153,6 +1153,7 @@ async function renderBotInbox(host) {
     <div class="support-inbox bot-private-inbox"><aside class="support-chat-list"><div class="support-list-head"><b>Диалоги</b><button class="outline small" id="bot-inbox-refresh" type="button">↻</button></div><div class="support-chat-items"><div class="empty-state">Загрузка диалогов…</div></div></aside>
     <section class="support-thread"><div class="support-thread-placeholder"><span>✉</span><b>Выбери личный чат</b><small>Здесь появятся сообщения пользователя и ответы бота.</small></div></section></div>`;
   const list=host.querySelector('.support-chat-items'),thread=host.querySelector('.support-thread');
+  const pendingUserId=state.pendingBotInboxUserId;state.pendingBotInboxUserId=null;
   let activeId=null,polling=false;
   const parseMedia=raw=>{try{const value=JSON.parse(raw||'');return value&&value._fx_media===1?value:null;}catch{return null;}};
   const renderMessages=messages=>(messages||[]).map(msg=>{
@@ -1191,6 +1192,11 @@ async function renderBotInbox(host) {
   };
   host.querySelector('#bot-inbox-refresh')?.addEventListener('click',loadList);
   await loadList();
+  if(pendingUserId){
+    const started=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_start',target_user_id:pendingUserId}});
+    if(started.error||started.data?.error){toast(started.data?.error||started.error?.message||'Не удалось открыть диалог');}
+    else {await loadList();if(started.data?.chat?.id)await openChat(started.data.chat.id);}
+  }
   const timer=setInterval(async()=>{
     if(!host.isConnected||state.page!=='inbox'){clearInterval(timer);return;}
     if(polling||document.hidden)return;
@@ -1343,7 +1349,7 @@ async function renderUsers(host) {
       return `<article class="admin-user-card" data-user-card="${u.id}">
         <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':u.business_connected?'<span class="user-flag active">● Business подключён</span>':'<span class="user-flag free">○ Business не подключён</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
         <div class="admin-user-actions">
-          <button class="admin-action" data-admin-open="${u.id}">Открыть управление →</button>
+          <button class="admin-action" data-admin-open="${u.id}">Открыть управление →</button><button class="admin-action" data-admin-message="${u.id}" ${u.telegram_id?"":"disabled title=\"Telegram не привязан\""}>✉ Написать</button>
           <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
           <button class="admin-action ${u.is_banned?'safe':''}" data-user-action="${u.is_banned?'unban':'ban'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
           <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${locked?'disabled':''}>✦ ${u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
@@ -1358,6 +1364,7 @@ async function renderUsers(host) {
   host.querySelectorAll('[data-role-picker]').forEach(picker=>{const trigger=picker.querySelector('[data-role-picker-toggle]');const menu=picker.querySelector('.role-picker-menu');const hidden=picker.querySelector('input[type=hidden]');trigger?.addEventListener('click',()=>{host.querySelectorAll('.role-picker-menu').forEach(other=>{if(other!==menu)other.hidden=true;});if(menu)menu.hidden=!menu.hidden;});picker.querySelectorAll('[data-role-option]').forEach(option=>option.addEventListener('click',()=>{if(hidden)hidden.value=option.dataset.roleOption||'';if(trigger)trigger.innerHTML=esc(option.textContent.trim())+' <span>⌄</span>';if(menu)menu.hidden=true;}));});
   host.addEventListener('click',event=>{if(!event.target.closest('[data-role-picker]'))host.querySelectorAll('.role-picker-menu').forEach(menu=>menu.hidden=true);});
   host.querySelectorAll('[data-admin-open]').forEach(btn=>btn.addEventListener('click',()=>{state.selectedAdminUserId=btn.dataset.adminOpen;navigateTo('admin_user');}));
+  host.querySelectorAll('[data-admin-message]').forEach(btn=>btn.addEventListener('click',()=>{state.pendingBotInboxUserId=btn.dataset.adminMessage;navigateTo('inbox');}));
   host.querySelector('#users-prev')?.addEventListener('click',()=>{state.userFilters.offset=Math.max(0,(filters.offset||0)-50);renderUsers(host);});
   host.querySelector('#users-next')?.addEventListener('click',()=>{state.userFilters.offset=(filters.offset||0)+50;renderUsers(host);});
   host.querySelector('#users-filter-form')?.addEventListener('submit',event=>{
