@@ -1757,3 +1757,14 @@ body{
 .season-event-winner>strong,.season-event-winner>em{font-size:11px;white-space:nowrap}
 .season-event-winner>em{font-style:normal;color:var(--accent);font-weight:800}
 @media(max-width:620px){.season-event-bottom{align-items:flex-start;flex-direction:column;gap:10px}.season-event-actions{width:100%;justify-content:flex-start}.season-event-winner{grid-template-columns:24px 30px minmax(0,1fr) auto;gap:7px}.season-event-winner-avatar{width:30px;height:30px}.season-event-winner>strong{display:none}}
+
+
+/* Consolidated navigation groups */
+.season-hub-tabs,.message-archive-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 20px}
+.season-hub-tab{flex:1 1 120px;min-height:44px;border:1px solid var(--line,rgba(255,255,255,.1));border-radius:14px;padding:10px 14px;background:rgba(255,255,255,.035);color:var(--text,#f5f6fa);font:inherit;font-weight:700;cursor:pointer;transition:background .18s,border-color .18s,transform .18s}
+.season-hub-tab:hover{transform:translateY(-1px);background:rgba(255,255,255,.07)}
+.season-hub-tab.active{border-color:rgba(255,139,83,.42);background:linear-gradient(110deg,rgba(255,112,70,.16),rgba(64,126,255,.12));box-shadow:inset 0 0 0 1px rgba(255,255,255,.025)}
+.season-hub-content{min-width:0}
+.message-archive-tabs{margin:0 0 14px}
+.message-archive-tabs .outline{flex:1 1 190px;min-height:42px}
+@media(max-width:560px){.season-hub-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.season-hub-tab{min-width:0;padding:10px 7px;font-size:13px}.message-archive-tabs{display:grid;grid-template-columns:1fr}.message-archive-tabs .outline{width:100%}}
