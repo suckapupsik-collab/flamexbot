@@ -1434,7 +1434,7 @@ async function renderAdminUser(host) {
 function animateFortuneWheel(prizeType) {
  const wheel=document.querySelector('#fortune-wheel');
  if(!wheel)return Promise.resolve();
- const centers={free_spin:36,addon:108,premium_7d:180,premium_30d:252,premium_90d:324,premium_day:180};
+ const centers={free_spin:36,addon:108,premium_7d:180,premium_30d:252,premium_90d:324,coins_10:36,coins_50:108,coins_100:180,coins_250:252,premium_day:180};
  const target=centers[prizeType]??252;
  if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
    wheel.style.transform='rotate('+((360-target)%360)+'deg)';
@@ -1459,9 +1459,10 @@ async function renderTariffs(host, initialTab='premium') {
   const rareWeightBoost=premium?1.1:1;
   const wheelOddsTotal=92+8*rareWeightBoost;
  const wheelOddsHtml=[
-  ['Прокрутка',55],['Защита 5 дней',25],['Premium 7 дней',12],
-  ['Premium 30 дней',5*rareWeightBoost],['Premium 90 дней',3*rareWeightBoost]
- ].map(([label,weight])=>'<span>'+((weight/wheelOddsTotal)*100).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+label+'</span>').join('');
+  ['Бесплатная прокрутка',55],['Защита 5 дней',25],['Premium 7 дней',12],
+  ['Premium 30 дней',5*rareWeightBoost],['Premium 90 дней',3*rareWeightBoost],
+  ['10 монет',15],['50 монет',8],['100 монет',5],['250 монет',2]
+ ].map(([label,weight])=>'<span>'+((weight/(122+8*rareWeightBoost))*100).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+label+'</span>').join('');
  const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
  const [{data:subscriptionPayments,error:subscriptionPaymentError},{data:addonPayments,error:addonPaymentError}]=await Promise.all([
    supabase.from('flamexbot_star_payments')
@@ -1550,10 +1551,11 @@ async function renderTariffs(host, initialTab='premium') {
      <span class="wheel-prize wheel-prize-premium7">⭐<small>7д</small></span>
      <span class="wheel-prize wheel-prize-premium30">⭐<small>30д</small></span>
      <span class="wheel-prize wheel-prize-premium90">⭐<small>90д</small></span>
+     <span class="wheel-prize wheel-prize-coins">🪙<small>монеты</small></span>
      <span class="fortune-wheel-center">✦</span>
     </div>
    </div>
-   <p class="muted">Прокрутка стоит 5 ⭐. Можно выиграть Premium на 7, 30 и 90 дней, защиту от команд либо ещё одну прокрутку.</p>
+   <p class="muted">Прокрутка стоит 5 ⭐. Выигрывай Premium на 7, 30 и 90 дней, защиту от команд, бесплатные прокрутки или монеты на баланс: 10, 50, 100 и 250.</p>
    <div class="wheel-odds-controls"><button class="outline small" type="button" id="toggle-wheel-odds" aria-expanded="false">Показать шансы</button><div class="wheel-odds" id="wheel-odds-panel" hidden>${wheelOddsHtml}</div></div>
    <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за 5 ⭐'}</button>
    <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${weeklySpins} для текущего тарифа${rareLuck?' · веса редких наград +' + rareLuck + '%':''}.</small>
