@@ -528,7 +528,7 @@ async function renderBusinessMessages(host) {
   bindBusinessChatChoices(host);bindBusinessChatPreferences(host);bindBusinessSearch(host);
   refreshMissingBusinessAvatars(host);
   if(state.businessChatListPollTimer){clearInterval(state.businessChatListPollTimer);state.businessChatListPollTimer=null;}
-  state.businessChatListPollTimer=setInterval(()=>{if(state.page==='messages'&&!document.hidden)refreshBusinessChatList(host);},5000);
+  state.businessChatListPollTimer=setInterval(()=>{if(state.page==='messages'&&!document.hidden)refreshBusinessChatList(host);},12000);
   state.businessListChannel = supabase.channel(`business-chat-list-${uid}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'flamexbot_business_chats', filter: `profile_id=eq.${uid}` }, () => scheduleBusinessChatListRefresh(host))
     .subscribe(status => {
@@ -865,7 +865,7 @@ async function openBusinessChat(id) {
     document.querySelectorAll('[data-business-chat]').forEach(btn => btn.classList.remove('active'));
   });
   await refreshBusinessMessages(id);
-  state.businessChatPollTimer=setInterval(()=>{if(state.activeBusinessChat===id&&!document.hidden)refreshBusinessMessages(id);},2500);
+  state.businessChatPollTimer=setInterval(()=>{if(state.activeBusinessChat===id&&!document.hidden)refreshBusinessMessages(id);},6000);
   document.querySelector('#business-message-search')?.addEventListener('input',()=>scheduleBusinessMessagesRefresh(id,160));
   state.businessChatChannel = supabase.channel(`business-chat-${id}`)
     .on('postgres_changes',{event:'*',schema:'public',table:'flamexbot_business_messages',filter:`business_chat_id=eq.${id}`},() => scheduleBusinessMessagesRefresh(id,180))
