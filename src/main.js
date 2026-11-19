@@ -16,7 +16,13 @@ const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
 let toastTimer = null;
 const toast = message => { const el = document.querySelector('.toast'); if (!el) return; clearTimeout(toastTimer); el.textContent = String(message || ''); el.classList.toggle('show', Boolean(message)); if (!message) return; toastTimer = setTimeout(() => { el.classList.remove('show'); el.textContent = ''; }, 3000); };
 const applyTheme = theme => { document.documentElement.dataset.theme = ['orange','blue','green','red','violet'].includes(theme) ? theme : 'orange'; };
-const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" />` : `<span class="avatar avatar-fallback ${size}">${esc(initials(name))}</span>`;
+const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" />` : `<span class="avatar avatar-fallback ${size}" aria-label="Аватар пользователя">👤</span>`;
+const pinKey=id=>'flamexbot.pin.v1.'+id, pinUnlockKey=id=>'flamexbot.pin.unlock.'+id;
+async function pinHash(pin,salt){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:150000,hash:'SHA-256'},key,256);return [...new Uint8Array(bits)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+async function setPin(id,pin){const salt=crypto.getRandomValues(new Uint8Array(16));localStorage.setItem(pinKey(id),JSON.stringify({salt:btoa(String.fromCharCode(...salt)),hash:await pinHash(pin,salt)}));}
+async function checkPin(id,pin){try{const v=JSON.parse(localStorage.getItem(pinKey(id))||'null');if(!v)return false;return await pinHash(pin,Uint8Array.from(atob(v.salt),c=>c.charCodeAt(0)))===v.hash;}catch{return false;}}
+async function gatePin(session){const id=session?.user?.id;if(!id||!localStorage.getItem(pinKey(id))||sessionStorage.getItem(pinUnlockKey(id))==='1')return true;return new Promise(resolve=>{app.innerHTML='<main class="auth-shell"><section class="auth-panel" style="display:grid;place-items:center;min-height:70vh"><div class="auth-card"><h2>Введите PIN-код</h2><p class="muted">Разблокируйте FLAMEXBOT</p><form id="pin-gate"><label>PIN-код<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" required /></label><button class="primary full">Войти</button></form><p id="pin-error" class="auth-error"></p><button id="pin-exit" class="outline small" type="button">Выйти</button></div></section></main>';document.querySelector('#pin-gate').addEventListener('submit',async e=>{e.preventDefault();if(await checkPin(id,new FormData(e.currentTarget).get('pin'))){sessionStorage.setItem(pinUnlockKey(id),'1');resolve(true);}else document.querySelector('#pin-error').textContent='Неверный PIN-код';});document.querySelector('#pin-exit').addEventListener('click',async()=>{await supabase.auth.signOut();resolve(false);});});}
+
 const mskDateObject = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value+'T12:00:00Z') : new Date(value);
 const moscowDateKey = (value = new Date()) => { const p=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value)); const v=Object.fromEntries(p.map(x=>[x.type,x.value])); return `${v.year}-${v.month}-${v.day}`; };
 const formatMskDate = (value,options={day:'numeric',month:'long'}) => new Intl.DateTimeFormat('ru-RU',{...options,timeZone:'Europe/Moscow'}).format(mskDateObject(value));
@@ -2034,6 +2040,7 @@ async function renderProfile(host) {
       <div class="telegram-profile"><div><b>Telegram</b><small>${p.telegram_id ? (p.telegram_username ? '@' + esc(p.telegram_username) : 'Аккаунт привязан') : 'Не привязан'}</small></div><button class="outline small" type="button" data-telegram-link>${p.telegram_id ? 'Обновить связь' : 'Привязать Telegram'}</button></div>
       <button class="primary">Сохранить изменения <b>→</b></button>
     </form>
+    <section class="business-card"><div class="eyebrow">ЗАЩИТА АККАУНТА</div><h2>PIN-код при входе</h2><p class="muted">Локальная блокировка Mini App на этом устройстве. PIN хранится в виде PBKDF2-хеша и не отправляется на сервер.</p><form id="pin-settings"><label>Новый PIN (4–8 цифр)<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" required /></label><label>Повтор PIN<input name="confirm" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" required /></label><button class="primary">Установить PIN</button></form><button class="outline small" id="pin-remove" type="button">Отключить PIN</button></section>
     <section class="business-card">
       <div class="business-card-head"><div><div class="eyebrow">ПОДКЛЮЧЕНИЕ TELEGRAM</div><h2>Telegram Business</h2><p class="muted">Подключи Telegram Business и выбери разрешения, с которыми FLAMEXBOT сможет работать в твоих диалогах.</p></div><span class="business-status ${businessConnected ? 'is-connected' : ''}">${businessConnected ? 'Активен' : 'Неактивен'}</span></div>
       <div class="business-steps">
@@ -2048,6 +2055,8 @@ async function renderProfile(host) {
       <p class="business-note">FLAMEXBOT не меняет настройки Telegram и не выдаёт себе разрешения. Ты в любой момент можешь проверить или отозвать доступ в настройках Telegram Business.</p>
     </section>`;
   document.querySelector('[data-telegram-link]').addEventListener('click', () => telegramAuthFlow({ linkCurrent: true }));
+  document.querySelector('#pin-settings').addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(e.currentTarget),pin=String(d.get('pin')),confirm=String(d.get('confirm'));if(pin!==confirm){toast('PIN-коды не совпадают');return;}await setPin(state.session.user.id,pin);sessionStorage.setItem(pinUnlockKey(state.session.user.id),'1');e.currentTarget.reset();toast('PIN-код установлен');});
+  document.querySelector('#pin-remove').addEventListener('click',async()=>{const id=state.session.user.id;if(localStorage.getItem(pinKey(id))){const p=prompt('Введите текущий PIN');if(p===null)return;if(!(await checkPin(id,p))){toast('Неверный PIN');return;}}localStorage.removeItem(pinKey(id));sessionStorage.removeItem(pinUnlockKey(id));toast('PIN отключён');});
   document.querySelector('#refresh-business').addEventListener('click', async e => {
     e.currentTarget.disabled = true;
     const { data, error } = await supabase.from('flamexbot_business_connections')
@@ -2970,6 +2979,7 @@ async function boot(session) {
   const data=profileResult.data;
   state.profile={...(data||{username:session.user.email?.split('@')[0]||'Flame user'}),timezone_offset:preferencesResult.data?.timezone_offset??3};
   state.profileBadges=(badgesResult.data||[]).map(x=>x.badge_code);
+  if(!(await gatePin(session)))return;
   if(isFounderProfile(state.profile)&&!state.webhookSetupAttempted){
     state.webhookSetupAttempted=true;
     supabase.functions.invoke('setup-flamexbot-webhook').then(({error})=>{
