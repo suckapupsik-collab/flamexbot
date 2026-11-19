@@ -947,12 +947,12 @@ async function openBusinessChat(id) {
         chatMuted=next;chat.is_muted=next;renderBusinessControls();toast(next?'Мут включён':'Мут выключен');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
       }
       if(['antimute','antimut'].includes(name)){
-        const next=!antimutEnabled;
+        const next=!Boolean(chat.antimut_enabled);
         if(args){button.disabled=false;toast('Команда не принимает аргументы: .antimute');return;}
         if(next&&!isPremium()){button.disabled=false;toast('Включение антимута доступно только в Premium.');return;}
         const {data:antiSettingData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next,command_mode:true,command_name:name}});
         button.disabled=false;if(antiError||antiSettingData?.error){toast(antiSettingData?.error||antiError?.message||'Не удалось изменить антимут');return;}
-        antimutEnabled=next;chat.antimut_enabled=next;renderBusinessControls();toast(next?'Антимут включён: сообщения будут отправляться от имени бота':'Антимут выключен');form.reset();return;
+        chat.antimut_enabled=next;toast(next?'Антимут включён: сообщения будут отправляться от имени бота':'Антимут выключен');form.reset();return;
       }
       const preferenceCommands={
         autoread:['autoread','autoread_enabled','Автопрочтение'],
@@ -974,11 +974,10 @@ async function openBusinessChat(id) {
         state.profile={...state.profile,timezone_offset:3};toast('Часовой пояс FLAMEXBOT закреплён: Москва (UTC+3)');form.reset();return;
       }
       if(name==='time'){
-        const enabled=state.profile?.show_profile_time===false;
-        const {error:timeError}=await supabase.from('profiles').update({show_profile_time:enabled}).eq('id',state.session.user.id);
-        button.disabled=false;if(timeError){toast('Не удалось обновить время профиля: '+timeError.message);return;}
-        state.profile={...state.profile,show_profile_time:enabled};updateHeaderProfile();
-        toast(enabled?'🕒 Время добавлено к имени в FLAMEXBOT':'Время скрыто из имени в FLAMEXBOT');form.reset();return;
+        const {data:timeData,error:timeError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_business_time',chat_id:id}});
+        button.disabled=false;
+        if(timeError||timeData?.error){toast(timeData?.error||timeError?.message||'Не удалось изменить имя Telegram-профиля');return;}
+        toast(timeData?.message||'Имя Telegram-профиля обновлено');form.reset();return;
       }
       if(['copyp','profile','qr','afk','id','chatid','date','calc','upper','lower','reverse','count','wordcount','choose','roll','bold','dumb','link'].includes(name)){
         if(name==='qr'&&!args){button.disabled=false;toast('Формат: .qr ссылка или текст');return;}
@@ -2657,24 +2656,84 @@ async function renderUserSupport(host) {
 }
 
 async function renderBotBanners(host) {
-  const {data:rows,error}=await supabase.from('flamexbot_bot_banners').select('banner_key,image_url,caption,enabled').order('banner_key');
-  const map=new Map((rows||[]).map(x=>[x.banner_key,x]));
-  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FOUNDER SETTINGS</div><h1>Баннеры бота 🖼️</h1><p class="muted">Настрой изображения и подписи для приветствия /start и меню инструкции.</p></div>${['start','instruction'].map(key=>{const item=map.get(key)||{image_url:'',caption:'',enabled:true};return `<form class="business-card banner-form" data-banner-key="${key}"><div class="eyebrow">${key==='start'?'ПРИВЕТСТВИЕ /START':'ИНСТРУКЦИЯ'}</div><label>Ссылка на изображение (необязательно)<input name="image_url" type="url" value="${esc(item.image_url||'')}" placeholder="https://…"></label><label>Или загрузить файл (PNG, JPG, WEBP, GIF · до 5 МБ)<input name="banner_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><label>Текст подписи<textarea name="caption" maxlength="900" rows="3">${esc(item.caption||'')}</textarea></label><label class="admin-owner-setting"><span><b>Баннер включён</b><small>Если выключить, бот отправит обычное текстовое сообщение.</small></span><input type="checkbox" name="enabled" ${item.enabled?'checked':''}></label><button class="primary" type="submit">Сохранить баннер</button></form>`;}).join('')}${error?'<p class="business-warning">'+esc(error.message)+'</p>':''}`;
-  host.querySelectorAll('[data-banner-key]').forEach(form=>form.addEventListener('submit',async event=>{
-    event.preventDefault();const fd=new FormData(form);const key=form.dataset.bannerKey;let image=String(fd.get('image_url')||'').trim();const file=form.querySelector('[name="banner_file"]')?.files?.[0];
-    if(image&&!/^https:\/\//i.test(image)){toast('Нужна HTTPS-ссылка на изображение.');return;}
-    if(file){
-      const allowed=['image/png','image/jpeg','image/webp','image/gif'];
-      if(!allowed.includes(file.type)||file.size>5*1024*1024){toast('Подходит PNG, JPG, WEBP или GIF размером до 5 МБ.');return;}
-      const ext=({ 'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/gif':'gif' })[file.type];
-      const path=key+'/'+Date.now()+'.'+ext;
-      const {error:uploadError}=await supabase.storage.from('flamexbot-banners').upload(path,file,{upsert:true,contentType:file.type});
-      if(uploadError){toast('Не удалось загрузить баннер: '+uploadError.message);return;}
-      image=supabase.storage.from('flamexbot-banners').getPublicUrl(path).data.publicUrl;
-    }
-    const {error:saveError}=await supabase.from('flamexbot_bot_banners').upsert({banner_key:key,image_url:image||null,caption:String(fd.get('caption')||''),enabled:fd.get('enabled')==='on',updated_by:state.session.user.id,updated_at:new Date().toISOString()},{onConflict:'banner_key'});
-    if(saveError)toast(saveError.message);else toast('Баннер сохранён.');
-  }));
+  const {data:rows,error}=await supabase.from('flamexbot_bot_banners')
+    .select('banner_key,image_url,caption,enabled').order('banner_key');
+  if(error){
+    host.innerHTML='<div class="page-heading"><div class="eyebrow">FOUNDER SETTINGS</div><h1>Баннеры бота</h1></div><div class="business-warning">'+esc(error.message)+'</div>';
+    return;
+  }
+  const map=new Map((rows||[]).map(item=>[item.banner_key,item]));
+  const cards=['start','instruction'].map(key=>{
+    const item=map.get(key)||{image_url:'',caption:'',enabled:true};
+    const title=key==='start'?'Приветствие /start':'Инструкция';
+    return `<form class="business-card banner-form" data-banner-key="${key}">
+      <div class="banner-form-heading"><div><div class="eyebrow">${key==='start'?'WELCOME BANNER':'HELP BANNER'}</div><h2>${title}</h2></div><span class="admin-secure">FLAMEXBOT</span></div>
+      <div class="banner-preview">
+        <div class="banner-preview-media" data-banner-preview-media>${item.image_url?`<img src="${esc(item.image_url)}" alt="Предпросмотр баннера">`:'Предпросмотр изображения'}</div>
+        <p class="banner-preview-caption" data-banner-preview-caption>${esc(item.caption||'Текст подписи появится здесь')}</p>
+      </div>
+      <label>Ссылка на изображение <input name="image_url" type="url" value="${esc(item.image_url||'')}" placeholder="https://…"></label>
+      <label>Или загрузить изображение <input name="banner_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><small>PNG, JPG, WEBP или GIF · до 5 МБ</small></label>
+      <label>Текст подписи <textarea name="caption" maxlength="900" rows="4" placeholder="Напиши текст, который увидят пользователи…">${esc(item.caption||'')}</textarea><small><span data-caption-count>${(item.caption||'').length}</span> / 900 символов</small></label>
+      <label class="admin-owner-setting"><span><b>Баннер включён</b><small>Если отключить, бот отправит обычное текстовое сообщение.</small></span><input type="checkbox" name="enabled" ${item.enabled?'checked':''}></label>
+      <button class="primary" type="submit">Сохранить баннер</button>
+      <p class="season-editor-status" data-banner-status aria-live="polite"></p>
+    </form>`;
+  }).join('');
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FOUNDER SETTINGS · BOT APPEARANCE</div><h1>Баннеры бота</h1><p class="muted">Отдельно настрой приветствие /start и инструкцию. Сразу виден предпросмотр, а загруженное изображение сохраняется в хранилище FLAMEXBOT.</p></div><div class="banner-editor-grid">${cards}</div>`;
+  host.querySelectorAll('[data-banner-key]').forEach(form=>{
+    const urlInput=form.querySelector('[name="image_url"]');
+    const fileInput=form.querySelector('[name="banner_file"]');
+    const captionInput=form.querySelector('[name="caption"]');
+    const previewMedia=form.querySelector('[data-banner-preview-media]');
+    const previewCaption=form.querySelector('[data-banner-preview-caption]');
+    const captionCount=form.querySelector('[data-caption-count]');
+    let localPreviewUrl=null;
+    const updatePreview=()=>{
+      previewCaption.textContent=captionInput.value||'Текст подписи появится здесь';
+      captionCount.textContent=String(captionInput.value.length);
+      if(localPreviewUrl){URL.revokeObjectURL(localPreviewUrl);localPreviewUrl=null;}
+      const file=fileInput.files?.[0];
+      const src=file?(localPreviewUrl=URL.createObjectURL(file)):urlInput.value.trim();
+      previewMedia.innerHTML=src?`<img src="${esc(src)}" alt="Предпросмотр баннера">`:'Предпросмотр изображения';
+    };
+    urlInput.addEventListener('input',updatePreview);
+    fileInput.addEventListener('change',updatePreview);
+    captionInput.addEventListener('input',updatePreview);
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();
+      const button=form.querySelector('button[type="submit"]');
+      const status=form.querySelector('[data-banner-status]');
+      const fd=new FormData(form);
+      const key=form.dataset.bannerKey;
+      let image=String(fd.get('image_url')||'').trim();
+      const file=fileInput.files?.[0];
+      if(image&&!/^https:\/\//i.test(image)){status.textContent='Нужна HTTPS-ссылка на изображение.';return;}
+      button.disabled=true;button.textContent='Сохраняем…';status.textContent='';
+      try{
+        if(file){
+          const allowed=['image/png','image/jpeg','image/webp','image/gif'];
+          if(!allowed.includes(file.type)||file.size>5*1024*1024)throw new Error('Подходит PNG, JPG, WEBP или GIF размером до 5 МБ.');
+          const ext=({'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/gif':'gif'})[file.type];
+          const path=key+'/'+crypto.randomUUID()+'.'+ext;
+          const {error:uploadError}=await supabase.storage.from('flamexbot-banners').upload(path,file,{upsert:true,contentType:file.type});
+          if(uploadError)throw uploadError;
+          image=supabase.storage.from('flamexbot-banners').getPublicUrl(path).data.publicUrl;
+        }
+        const {error:saveError}=await supabase.from('flamexbot_bot_banners').upsert({
+          banner_key:key,image_url:image||null,caption:String(fd.get('caption')||''),
+          enabled:fd.get('enabled')==='on',updated_by:state.session.user.id,updated_at:new Date().toISOString()
+        },{onConflict:'banner_key'});
+        if(saveError)throw saveError;
+        toast('Баннер сохранён');
+        status.textContent='Сохранено. Предпросмотр обновлён.';
+        if(image)urlInput.value=image;
+        updatePreview();
+      }catch(error){status.textContent=error?.message||'Не удалось сохранить баннер';}
+      finally{button.disabled=false;button.textContent='Сохранить баннер';}
+    });
+    form.addEventListener('remove',()=>{if(localPreviewUrl)URL.revokeObjectURL(localPreviewUrl);},{once:true});
+  });
 }
 
 async function renderStats(host) {
