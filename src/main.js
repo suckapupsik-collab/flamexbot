@@ -1310,11 +1310,31 @@ async function renderAdmin(host) {
 }
 
 async function renderPaymentJournal(host){
- const [{data,error},{data:auditData,error:auditError}]=await Promise.all([
-  supabase.rpc('admin_get_flamexbot_payment_journal',{p_limit:500}),
-  supabase.rpc('admin_list_flamexbot_audit',{p_limit:200})
- ]);
- if(error){host.innerHTML='<section class="business-card"><h2>💳 Платежи</h2><p class="business-warning">'+esc(error.message)+'</p><button class="outline" data-go="admin">Назад</button></section>';return;}
+ const load=async()=>{
+  const results=await Promise.all([
+   supabase.rpc('admin_get_flamexbot_payment_journal',{p_limit:500}),
+   supabase.rpc('admin_list_flamexbot_audit',{p_limit:200})
+  ]);
+  return results;
+ };
+ let loaded;
+ try{loaded=await load();}
+ catch(firstError){
+  if(!/failed to fetch|network|load failed/i.test(String(firstError?.message||firstError)))throw firstError;
+  await new Promise(resolve=>setTimeout(resolve,700));
+  try{loaded=await load();}
+  catch(retryError){
+   host.innerHTML='<section class="business-card"><h2>💳 Платежи</h2><p class="business-warning">Не удалось связаться с сервером платежей. Проверь подключение и повтори загрузку.</p><button class="primary" id="payment-journal-retry">Повторить загрузку</button><button class="outline" data-go="admin">Назад</button></section>';
+   host.querySelector('#payment-journal-retry')?.addEventListener('click',()=>renderPaymentJournal(host));
+   return;
+  }
+ }
+ const [{data,error},{data:auditData,error:auditError}]=loaded;
+ if(error){
+  host.innerHTML='<section class="business-card"><h2>💳 Платежи</h2><p class="business-warning">'+esc(error.message)+'</p><button class="primary" id="payment-journal-retry">Повторить загрузку</button><button class="outline" data-go="admin">Назад</button></section>';
+  host.querySelector('#payment-journal-retry')?.addEventListener('click',()=>renderPaymentJournal(host));
+  return;
+ }
  const stats=data?.stats||{},payments=data?.payments||[];
  const kindLabel={premium:'Premium',command_protection:'Защита команд',wheel:'Колесо фортуны'},statusLabel={paid:'Оплачено',pending:'Ожидает оплаты',refunded:'Возвращено'};
  const premiumCandidates=payments.filter(p=>p.kind==='premium'&&p.charge_id&&p.status==='paid').slice(0,10);
