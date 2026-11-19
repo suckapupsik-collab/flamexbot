@@ -2058,3 +2058,61 @@ body{
 .wheel-prize-coins {
   transform: rotate(288deg) translateY(-78px) rotate(-288deg);
 }
+
+
+/* Mobile usability: taller inbox list and stable leaderboard columns */
+@media(max-width:760px){
+  .business-inbox:not(.chat-open)>.chat-list{
+    max-height:min(74vh,900px)!important;
+    min-height:min(440px,58vh)!important;
+  }
+  .business-inbox:not(.chat-open) .chat-choice{
+    min-height:82px;
+    padding:15px 16px;
+  }
+  .business-inbox:not(.chat-open) .chat-choice .avatar{
+    width:46px;height:46px;flex:none;
+  }
+}
+.leaderboard-v2 .community-leaderboard-row{
+  display:grid!important;
+  grid-template-columns:34px 42px minmax(0,1fr) max-content!important;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+  width:100%;
+  box-sizing:border-box;
+}
+.leaderboard-v2 .community-leaderboard-row>.leaderboard-avatar{
+  display:grid;
+  width:42px;height:42px;min-width:42px;
+  border-radius:50%;overflow:hidden;place-items:center;
+}
+.leaderboard-v2 .community-leaderboard-row>.leaderboard-avatar .avatar{
+  width:100%;height:100%;object-fit:cover;
+}
+.leaderboard-v2 .community-leaderboard-row>.leaderboard-person{
+  display:grid!important;min-width:0!important;width:auto;gap:4px;
+}
+.leaderboard-v2 .community-leaderboard-row .leaderboard-person b{
+  display:block;min-width:0;max-width:100%;
+  white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis;
+  overflow-wrap:normal!important;word-break:normal!important;hyphens:none!important;
+  line-height:1.35;
+}
+.leaderboard-v2 .community-leaderboard-row .leaderboard-person small{
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.leaderboard-v2 .community-leaderboard-row>.leaderboard-xp{
+  white-space:nowrap;min-width:max-content;text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+@media(max-width:420px){
+  .leaderboard-v2 .community-leaderboard-row{
+    grid-template-columns:28px 34px minmax(0,1fr) max-content!important;
+    gap:7px;padding:12px 9px;
+  }
+  .leaderboard-v2 .community-leaderboard-row>.leaderboard-avatar{width:34px;height:34px;min-width:34px}
+  .leaderboard-v2 .community-leaderboard-row>.leaderboard-xp{font-size:10px}
+  .leaderboard-v2 .community-leaderboard-row .leaderboard-person b{font-size:12px}
+}
