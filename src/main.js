@@ -16,7 +16,7 @@ const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
 let toastTimer = null;
 const toast = message => { const el = document.querySelector('.toast'); if (!el) return; clearTimeout(toastTimer); el.textContent = String(message || ''); el.classList.toggle('show', Boolean(message)); if (!message) return; toastTimer = setTimeout(() => { el.classList.remove('show'); el.textContent = ''; }, 3000); };
 const applyTheme = theme => { document.documentElement.dataset.theme = ['orange','blue','green','red','violet'].includes(theme) ? theme : 'orange'; };
-const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" />` : `<span class="avatar avatar-fallback ${size}" aria-label="Аватар пользователя">👤</span>`;
+const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar avatar-fallback ${size}',textContent:'👤',ariaLabel:'Аватар пользователя'}))" />` : `<span class="avatar avatar-fallback ${size}" aria-label="Аватар пользователя">👤</span>`;
 const pinKey=id=>'flamexbot.pin.v1.'+id, pinUnlockKey=id=>'flamexbot.pin.unlock.'+id;
 async function pinHash(pin,salt){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:150000,hash:'SHA-256'},key,256);return [...new Uint8Array(bits)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function setPin(id,pin){const salt=crypto.getRandomValues(new Uint8Array(16));localStorage.setItem(pinKey(id),JSON.stringify({salt:btoa(String.fromCharCode(...salt)),hash:await pinHash(pin,salt)}));}
@@ -1735,18 +1735,22 @@ async function renderTariffs(host, initialTab='premium') {
    wheelButton.disabled=true;wheelButton.textContent=freeSpin?'Используем прокрутку…':'Создаём счёт…';
    try{
      const {data,error}=await supabase.functions.invoke('create-wheel-invoice',{body:freeSpin?{action:'free_spin'}:{}});
-     if(freeSpin&&data?.prize?.prize_label){
-       await animateFortuneWheel(data.prize.prize_type);
-       const {data:profile}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
-       state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0,command_protection_expires_at:profile?.command_protection_expires_at};
-       if(String(data.prize.prize_type||'').startsWith('premium_')){
-         const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
-         state.subscription=subscription;
+     if(error||data?.error)throw new Error(data?.error||error?.message||'Не удалось выполнить прокрутку');
+     if(freeSpin&&data?.free_spin===true){
+       const prize=data.prize||{};
+       if(prize.prize_type)await animateFortuneWheel(prize.prize_type);
+       const {data:profile,error:profileError}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
+       if(profileError)console.warn('Wheel profile refresh:',profileError.message);
+       state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins??Math.max(0,Number(state.profile?.wheel_free_spins||0)-1),command_protection_expires_at:profile?.command_protection_expires_at??state.profile?.command_protection_expires_at};
+       if(String(prize.prize_type||'').startsWith('premium_')){
+         const {data:subscription,error:subscriptionError}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+         if(subscriptionError)console.warn('Wheel subscription refresh:',subscriptionError.message);
+         else state.subscription=subscription;
        }
-       toast('🎉 Выпало: '+data.prize.prize_label);
+       toast(prize.prize_label?'🎉 Выпало: '+prize.prize_label:'🎉 Бесплатная прокрутка выполнена. Награда начислена.');
        updateHeaderProfile();await renderTariffs(host,'premium');return;
      }
-     if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать счёт');
+     if(!data?.invoice_link)throw new Error('Telegram не вернул ссылку на оплату прокрутки');
      const webApp=window.Telegram?.WebApp;
      const opened=await waitForInvoiceClose(webApp,data.invoice_link,async status=>{
        if(status==='paid'){
