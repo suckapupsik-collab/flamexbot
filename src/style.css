@@ -2116,3 +2116,14 @@ body{
   .leaderboard-v2 .community-leaderboard-row>.leaderboard-xp{font-size:10px}
   .leaderboard-v2 .community-leaderboard-row .leaderboard-person b{font-size:12px}
 }
+
+.wheel-admin-prizes{display:grid;gap:10px;margin:16px 0}
+.wheel-admin-prize{display:grid;grid-template-columns:minmax(0,1fr) 86px 62px 22px;gap:10px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.025)}
+.wheel-admin-prize>span{display:grid;gap:4px;min-width:0}
+.wheel-admin-prize>span b{font-size:13px;overflow-wrap:anywhere}
+.wheel-admin-prize>span small{font-size:10px;opacity:.55}
+.wheel-admin-prize input[type=number]{width:100%;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;background:rgba(0,0,0,.18);color:inherit}
+.wheel-admin-prize input[type=checkbox]{width:18px;height:18px;accent-color:#f07845}
+.wheel-admin-percent{font-size:11px;text-align:right;font-variant-numeric:tabular-nums;color:#f07845}
+.wheel-admin-actions{display:flex;flex-wrap:wrap;gap:10px}
+@media(max-width:420px){.wheel-admin-prize{grid-template-columns:minmax(0,1fr) 68px 48px 18px;gap:6px;padding:9px}.wheel-admin-prize>span b{font-size:11px}.wheel-admin-percent{font-size:10px}}
