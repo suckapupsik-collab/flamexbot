@@ -122,7 +122,7 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
 const PAGE_LABELS = {
   home:'Обзор', support:'Техподдержка', inbox:'Личные сообщения бота', messages:'Переписки', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
   missions:'Ежедневные задания', wallet:'Баланс', season_hub:'Сезон', season:'Сезонный пропуск', banners:'Баннеры бота', profile:'Профиль', achievements:'Достижения',
-  stats:'Статистика', commands:'Все команды', leaderboard:'Рейтинг сезона', events:'Сезонные события', promos:'Промокоды сезона', promo_admin:'Управление промокодами', season_admin:'Редактор сезона', season_events_admin:'Управление событиями', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
+  stats:'Статистика', commands:'Все команды', leaderboard:'Рейтинг сезона', events:'Сезонные события', promos:'Промокоды сезона', promo_admin:'Управление промокодами', season_admin:'Редактор сезона', season_events_admin:'Управление событиями', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель', payments_admin:'Платежи'
 };
 const BADGE_META = {
   verified:{label:'Подтверждён',icon:'✓',className:'verified'},
@@ -330,6 +330,7 @@ async function loadPage() {
     else if(state.page==='events') await renderSeasonEvents(host);
     else if(state.page==='promos') await renderSeasonPromos(host);
     else if(state.page==='wheel_admin'&&isFounderProfile()) await renderWheelAdmin(host);
+    else if(state.page==='payments_admin'&&isFounderProfile()) await renderPaymentJournal(host);
     else if(state.page==='promo_admin'&&isFounderProfile()) await renderSeasonPromoAdmin(host);
     else if(state.page==='season_events_admin'&&isFounderProfile()) await renderSeasonEventsAdmin(host);
     else if(state.page==='season_admin'&&isFounderProfile()) await renderSeasonAdmin(host);
@@ -1265,7 +1266,7 @@ async function renderAdmin(host) {
       <button class="admin-module" data-admin-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
       <button class="admin-module" data-go="wallet"><span class="admin-module-icon premium">🪙</span><b>Управление балансом</b><small>Начисление и списание монет, история операций</small><i>Открыть →</i></button>
       <button class="admin-module" data-go="banners"><span class="admin-module-icon verify">🖼️</span><b>Баннеры бота</b><small>Изображения для /start и инструкции</small><i>Настроить →</i></button>
-      <button class="admin-module" data-go="wheel_admin"><span class="admin-module-icon premium">🎡</span><b>Колесо фортуны</b><small>Статистика прокруток, монеты, награды и история выигрышей</small><i>Управлять →</i></button>${isFounderProfile()?'<button class="admin-module" data-go="promo_admin"><span class="admin-module-icon premium">🎟️</span><b>Промокоды сезона</b><small>Создание кодов, XP и лимиты активаций</small><i>Управлять →</i></button><button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button><button class="admin-module" data-go="season_events_admin"><span class="admin-module-icon verify">🎯</span><b>Сезонные события</b><small>Создание испытаний, сроки и награды XP</small><i>Управлять →</i></button>':''}
+      <button class="admin-module" data-go="wheel_admin"><span class="admin-module-icon premium">🎡</span><b>Колесо фортуны</b><small>Статистика прокруток, монеты, награды и история выигрышей</small><i>Управлять →</i></button><button class="admin-module" data-go="payments_admin"><span class="admin-module-icon premium">💳</span><b>Журнал платежей</b><small>Premium, защита команд, колесо, Stars и возвраты в одном месте</small><i>Открыть →</i></button>${isFounderProfile()?'<button class="admin-module" data-go="promo_admin"><span class="admin-module-icon premium">🎟️</span><b>Промокоды сезона</b><small>Создание кодов, XP и лимиты активаций</small><i>Управлять →</i></button><button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button><button class="admin-module" data-go="season_events_admin"><span class="admin-module-icon verify">🎯</span><b>Сезонные события</b><small>Создание испытаний, сроки и награды XP</small><i>Управлять →</i></button>':''}
     </div>
     <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки, снятия Premium, синей галочки и значков ролей. Значки администратора и разработчика не выдают доступ к панели.</small></div></div><span class="business-status is-connected">SECURE</span></section>
     <section class="admin-owner-settings">
@@ -1306,6 +1307,15 @@ async function renderAdmin(host) {
   }));
 }
 
+async function renderPaymentJournal(host){
+ const {data,error}=await supabase.rpc('admin_get_flamexbot_payment_journal',{p_limit:500});
+ if(error){host.innerHTML='<section class="business-card"><h2>💳 Платежи</h2><p class="business-warning">'+esc(error.message)+'</p><button class="outline" data-go="admin">Назад</button></section>';return;}
+ const stats=data?.stats||{},payments=data?.payments||[];
+ const kindLabel={premium:'Premium',command_protection:'Защита команд',wheel:'Колесо фортуны'},statusLabel={paid:'Оплачено',pending:'Ожидает оплаты',refunded:'Возвращено'};
+ const rows=payments.map(p=>'<article class="admin-audit-row"><span class="admin-audit-icon">'+(p.kind==='premium'?'✦':p.kind==='wheel'?'🎡':'🛡')+'</span><div class="admin-audit-copy"><b>'+esc(p.username||'Пользователь')+' · '+esc(kindLabel[p.kind]||p.kind)+' · '+esc(p.item||'')+'</b><small>'+esc(statusLabel[p.status]||p.status)+' · '+Number(p.amount||0)+' ⭐ · TG '+esc(p.telegram_user_id||'')+(p.period_days?' · '+Number(p.period_days)+' дн.':'')+(p.refund_reason?' · '+esc(p.refund_reason):'')+'</small></div><time>'+esc(formatMskDateTime(p.updated_at||p.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</time></article>').join('');
+ host.innerHTML='<div class="page-heading"><div class="eyebrow">FOUNDER FINANCE</div><h1>💳 Журнал платежей</h1><p class="muted">Единая история оплат Premium, защиты команд и колеса фортуны. Доступ только Основателю.</p></div><div class="admin-stats-grid"><article class="admin-stat"><small>ВСЕГО ОПЕРАЦИЙ</small><b>'+Number(stats.total||0)+'</b></article><article class="admin-stat"><small>ОПЛАЧЕНО</small><b>'+Number(stats.paid||0)+'</b></article><article class="admin-stat"><small>ОЖИДАЮТ</small><b>'+Number(stats.pending||0)+'</b></article><article class="admin-stat"><small>ВОЗВРАЩЕНО</small><b>'+Number(stats.refunded||0)+'</b></article><article class="admin-stat"><small>ПОЛУЧЕНО ⭐</small><b>'+Number(stats.stars_paid||0)+'</b></article><article class="admin-stat"><small>ВОЗВРАЩЕНО ⭐</small><b>'+Number(stats.stars_refunded||0)+'</b></article></div><section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">PAYMENT HISTORY</div><h3>Последние операции</h3></div><button class="outline small" id="payment-journal-refresh">Обновить</button></div><div class="admin-audit-list">'+(rows||'<div class="empty-state">Платежей пока нет.</div>')+'</div></section><button class="outline" data-go="admin">← Назад в админ-меню</button>';
+ host.querySelector('#payment-journal-refresh')?.addEventListener('click',()=>renderPaymentJournal(host));
+}
 async function renderWheelAdmin(host){
   const [{data,error},{data:prizes,error:prizeError},{data:wheelSettings,error:settingsError}]=await Promise.all([supabase.rpc('admin_get_flamexbot_wheel_overview',{p_limit:100}),supabase.rpc('admin_get_flamexbot_wheel_prizes'),supabase.rpc('admin_get_flamexbot_wheel_settings')]);
   if(error||prizeError||settingsError){host.innerHTML='<section class="business-card"><h2>🎡 Колесо фортуны</h2><p class="business-warning">'+esc(error?.message||prizeError?.message||settingsError?.message||'Ошибка загрузки')+'</p><button class="outline" data-go="admin">Назад</button></section>';return;}
