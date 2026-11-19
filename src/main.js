@@ -1478,14 +1478,11 @@ function animateFortuneWheel(prizeType) {
 async function renderTariffs(host, initialTab='premium') {
  const premium=isPremium();
  const weeklySpins=premium?2:0;
-  const rareLuck=premium?10:0;
-  const rareWeightBoost=premium?1.1:1;
-  const wheelOddsTotal=92+8*rareWeightBoost;
- const wheelOddsHtml=[
-  ['Бесплатная прокрутка',55],['Защита 5 дней',25],['Premium 7 дней',12],
-  ['Premium 30 дней',5*rareWeightBoost],['Premium 90 дней',3*rareWeightBoost],
-  ['10 монет',15],['50 монет',8],['100 монет',5],['250 монет',2]
- ].map(([label,weight])=>'<span>'+((weight/(122+8*rareWeightBoost))*100).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+label+'</span>').join('');
+ const rareLuck=premium?10:0;
+ const {data:wheelOddsConfig,error:wheelOddsError}=await supabase.rpc('get_flamexbot_wheel_odds');
+ const wheelOddsRows=wheelOddsConfig||[];
+ const wheelOddsTotal=wheelOddsRows.filter(p=>p.is_active).reduce((sum,p)=>sum+Number(p.weight||0),0);
+ const wheelOddsHtml=wheelOddsError?'<span>Не удалось загрузить актуальные шансы.</span>':wheelOddsRows.map(p=>'<span>'+((p.is_active&&wheelOddsTotal>0?Number(p.weight)/wheelOddsTotal*100:0)).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+esc(p.prize_label)+'</span>').join('');
  const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
  const [{data:subscriptionPayments,error:subscriptionPaymentError},{data:addonPayments,error:addonPaymentError}]=await Promise.all([
    supabase.from('flamexbot_star_payments')
