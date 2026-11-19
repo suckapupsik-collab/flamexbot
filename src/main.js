@@ -940,7 +940,7 @@ async function openBusinessChat(id) {
     if(command){
       const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
       if(['help','inf'].includes(name)){toast('.mute · .antimute · .autoread · .autotyping · .autovoice · .mutestick · .antimat · .afk причина · .time · .copyp · .qr текст. Повтори команду, чтобы выключить режим.');button.disabled=false;return;}
-      const freeCommand=['qr'].includes(name);
+      const freeCommand=['qr','antimute','antimut'].includes(name);
       if(!isPremium()&&!freeCommand){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
       if(name==='mute'){
         const next=!chatMuted;
@@ -2192,7 +2192,7 @@ async function renderCommands(host) {
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Переключить мут',description:'Первый запуск включает удаление новых входящих сообщений, повторный .mute выключает. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
-    {syntax:'.antimute',title:'Включить антимут',description:'Отправляет новые сообщения от имени бота FLAMEXBOT. Получатель должен открыть бота и нажать Start. Нужен Premium.',access:'premium',group:'Управление чатом'},
+    {syntax:'.antimute',title:'Переключить антимут',description:'Повторно отправляет ваши сообщения через подключённый Telegram Business-аккаунт и удаляет исходную копию. Для включения нужны Premium и право «Удалять отправленные сообщения»; выключение бесплатно.',access:'premium',group:'Управление чатом'},
     
     {syntax:'.afk причина',title:'Переключить автоответ',description:'Повторный запуск .afk выключает автоответ. При включении можно указать текст ответа.',access:'premium',group:'Автоматизация'},
     {syntax:'.autoread',title:'Автопрочтение',description:'Автоматически отмечает входящие сообщения прочитанными только в этом диалоге.',access:'premium',group:'Автоматизация'},
