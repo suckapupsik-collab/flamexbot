@@ -1016,6 +1016,11 @@ async function openBusinessChat(id) {
         button.disabled=false;if(prefError||prefData?.error){toast(prefData?.error||prefError?.message||'Не удалось изменить настройку');return;}
         chat[field]=enabled;form.reset();toast(label+(enabled?' включён':' выключен'));return;
       }
+      if(name==='timeprofile'){
+        const {error:tzError}=await supabase.from('profiles').update({timezone_offset:3}).eq('id',state.session.user.id);
+        button.disabled=false;if(tzError){toast('Не удалось закрепить московское время: '+tzError.message);return;}
+        state.profile={...state.profile,timezone_offset:3};toast('Часовой пояс FLAMEXBOT закреплён: Москва (UTC+3)');form.reset();return;
+      }
       if(name==='time'){
         const enabled=state.profile?.show_profile_time===false;
         const {error:timeError}=await supabase.from('profiles').update({show_profile_time:enabled}).eq('id',state.session.user.id);
@@ -1023,13 +1028,14 @@ async function openBusinessChat(id) {
         state.profile={...state.profile,show_profile_time:enabled};updateHeaderProfile();
         toast(enabled?'🕒 Время добавлено к имени в FLAMEXBOT':'Время скрыто из имени в FLAMEXBOT');form.reset();return;
       }
-      if(['copyp','qr','afk'].includes(name)){
+      if(['copyp','profile','qr','afk','id','chatid','date','calc','upper','lower','reverse','count','wordcount','choose','roll','bold','dumb','link'].includes(name)){
         if(name==='qr'&&!args){button.disabled=false;toast('Формат: .qr ссылка или текст');return;}
+        if(['calc','upper','lower','reverse','count','wordcount','choose','bold','dumb','link'].includes(name)&&!args){button.disabled=false;toast('Добавь аргументы после .'+name);return;}
         const {data:utilityData,error:utilityError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text,command_mode:true,command_name:name}});
         button.disabled=false;
         if(utilityError||utilityData?.error){toast(utilityData?.error||utilityError?.message||'Не удалось выполнить команду');return;}
         form.reset();
-        if(name==='copyp')toast('Запрос профиля обработан FLAMEXBOT');
+        if(name==='copyp'||name==='profile')toast('Карточка собеседника отправлена');
         else if(name==='qr')toast('Создаём QR-код…');
         else if(name==='afk')toast(utilityData?.message||'AFK включён только в этом диалоге');
 
