@@ -979,7 +979,7 @@ async function openBusinessChat(id) {
         if(timeError||timeData?.error){toast(timeData?.error||timeError?.message||'Не удалось изменить имя Telegram-профиля');return;}
         toast(timeData?.message||'Имя Telegram-профиля обновлено');form.reset();return;
       }
-      if(['copyp','profile','qr','afk','id','chatid','date','calc','upper','lower','reverse','count','wordcount','choose','roll','bold','dumb','link'].includes(name)){
+      if(['advertising','copyp','profile','qr','afk','id','chatid','date','calc','upper','lower','reverse','count','wordcount','choose','roll','bold','dumb','link'].includes(name)){
         if(name==='qr'&&!args){button.disabled=false;toast('Формат: .qr ссылка или текст');return;}
         if(['calc','upper','lower','reverse','count','wordcount','choose','bold','dumb','link'].includes(name)&&!args){button.disabled=false;toast('Добавь аргументы после .'+name);return;}
         const {data:utilityData,error:utilityError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text,command_mode:true,command_name:name}});
@@ -987,6 +987,7 @@ async function openBusinessChat(id) {
         if(utilityError||utilityData?.error){toast(utilityData?.error||utilityError?.message||'Не удалось выполнить команду');return;}
         form.reset();
         if(name==='copyp'||name==='profile')toast('Карточка собеседника отправлена');
+        else if(name==='advertising')toast('Персональная ссылка отправлена');
         else if(name==='qr')toast('Создаём QR-код…');
         else if(name==='afk')toast(utilityData?.message||'AFK включён только в этом диалоге');
 
