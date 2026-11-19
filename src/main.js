@@ -155,15 +155,16 @@ function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
 }
 function updateHeaderProfile() {
   const p=state.profile||{};
+  const displayName=(p.display_name||p.username||'Пользователь')+(p.show_profile_time===false?'':' · '+formatMskTime()+' МСК');
   const url=p.avatar_url||p.telegram_photo_url;
   const top=document.querySelector('#top-avatar');
   const menu=document.querySelector('#menu-avatar');
-  if(top)top.innerHTML=avatar(url,p.display_name||p.username);
-  if(menu)menu.innerHTML=avatar(url,p.display_name||p.username,'avatar-lg');
+  if(top)top.innerHTML=avatar(url,displayName);
+  if(menu)menu.innerHTML=avatar(url,displayName,'avatar-lg');
   const name=document.querySelector('#menu-display-name');
-  if(name)name.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false);
+  if(name)name.innerHTML=esc(displayName)+verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false);
   const triggerName=document.querySelector('.profile-trigger-name');
-  if(triggerName)triggerName.innerHTML=esc(p.display_name||p.username||'Пользователь')+verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false);
+  if(triggerName)triggerName.innerHTML=esc(displayName)+verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false);
   const badges=document.querySelector('#menu-profile-badges');
   if(badges)badges.innerHTML=badgeMarkup(state.profileBadges);
   const triggerBadges=document.querySelector('#top-profile-badges');
@@ -989,8 +990,8 @@ async function openBusinessChat(id) {
         button.disabled=false;if(settingError||settingData?.error){toast(settingData?.error||settingError?.message||'Не удалось изменить настройку чата');return;}
         chatMuted=next;chat.is_muted=next;renderBusinessControls();toast(next?'Мут включён':'Мут выключен');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
       }
-      if(['antimute','unantimute','antimut','unantimut'].includes(name)){
-        const next=name==='antimute'||name==='antimut';
+      if(['antimute','antimut'].includes(name)){
+        const next=!antimutEnabled;
         if(args){button.disabled=false;toast('Команда не принимает аргументы: .antimute или .unantimute');return;}
         if(next&&!isPremium()){button.disabled=false;toast('Включение антимута доступно только в Premium.');return;}
         const {data:antiSettingData,error:antiError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_antimute',chat_id:id,enabled:next,command_mode:true,command_name:name}});
@@ -998,24 +999,27 @@ async function openBusinessChat(id) {
         antimutEnabled=next;chat.antimut_enabled=next;renderBusinessControls();toast(next?'Антимут включён: сообщения будут отправляться от имени бота':'Антимут выключен');form.reset();return;
       }
       const preferenceCommands={
-        autoread:['autoread',true,'Автопрочтение'],unautoread:['autoread',false,'Автопрочтение'],
-        autotyping:['autotyping',true,'Статус набора'],unautotyping:['autotyping',false,'Статус набора'],
-        autovoice:['autovoice',true,'Статус записи голосового'],unautovoice:['autovoice',false,'Статус записи голосового'],
-        mutestick:['mutestick',true,'Фильтр стикеров'],unmutestick:['mutestick',false,'Фильтр стикеров'],
-        antimat:['antimat',true,'Антимат'],unantimat:['antimat',false,'Антимат']
+        autoread:['autoread','autoread_enabled','Автопрочтение'],
+        autotyping:['autotyping','autotyping_enabled','Статус набора'],
+        autovoice:['autovoice','autovoice_enabled','Статус записи голосового'],
+        mutestick:['mutestick','mutestick_enabled','Фильтр стикеров'],
+        antimat:['antimat','antimat_enabled','Антимат']
       };
       if(preferenceCommands[name]){
-        const [preference,enabled,label]=preferenceCommands[name];
-        if(args){button.disabled=false;toast('Команда не принимает on/off: .'+name);return;}
+        const [preference,field,label]=preferenceCommands[name];
+        const enabled=!Boolean(chat[field]);
         const {data:prefData,error:prefError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_preference',chat_id:id,preference,enabled,command_mode:true,command_name:name}});
         button.disabled=false;if(prefError||prefData?.error){toast(prefData?.error||prefError?.message||'Не удалось изменить настройку');return;}
-        form.reset();toast(label+(enabled?' включён':' выключен'));return;
+        chat[field]=enabled;form.reset();toast(label+(enabled?' включён':' выключен'));return;
       }
-      if(name==='time'||name==='untime'){
-        const enabled=name==='time';const {error:timeError}=await supabase.from('profiles').update({show_profile_time:enabled}).eq('id',state.session.user.id);
-        button.disabled=false;if(timeError){toast('Не удалось обновить время профиля');return;}state.profile={...state.profile,show_profile_time:enabled};toast(enabled?'Время в профиле включено':'Время в профиле выключено');form.reset();return;
+      if(name==='time'){
+        const enabled=state.profile?.show_profile_time===false;
+        const {error:timeError}=await supabase.from('profiles').update({show_profile_time:enabled}).eq('id',state.session.user.id);
+        button.disabled=false;if(timeError){toast('Не удалось обновить время профиля: '+timeError.message);return;}
+        state.profile={...state.profile,show_profile_time:enabled};updateHeaderProfile();
+        toast(enabled?'🕒 Время добавлено к имени в FLAMEXBOT':'Время скрыто из имени в FLAMEXBOT');form.reset();return;
       }
-      if(['copyp','qr','afk','unafk'].includes(name)){
+      if(['copyp','qr','afk'].includes(name)){
         if(name==='qr'&&!args){button.disabled=false;toast('Формат: .qr ссылка или текст');return;}
         const {data:utilityData,error:utilityError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text,command_mode:true,command_name:name}});
         button.disabled=false;
@@ -1024,7 +1028,7 @@ async function openBusinessChat(id) {
         if(name==='copyp')toast('Запрос профиля обработан FLAMEXBOT');
         else if(name==='qr')toast('Создаём QR-код…');
         else if(name==='afk')toast(utilityData?.message||'AFK включён только в этом диалоге');
-        else if(name==='unafk')toast(utilityData?.message||'AFK выключен в этом диалоге');
+
         await refreshBusinessMessages(id);return;
       }
       button.disabled=false;toast('Неизвестная команда. Напиши .help');return;
@@ -2137,7 +2141,7 @@ async function renderCommands(host) {
     {syntax:'.antimute',title:'Включить антимут',description:'Отправляет новые сообщения от имени бота FLAMEXBOT. Получатель должен открыть бота и нажать Start. Нужен Premium.',access:'premium',group:'Управление чатом'},
     {syntax:'.unantimute',title:'Выключить антимут',description:'Выключает режим антимута. Доступно бесплатно.',access:'free',group:'Управление чатом'},
     
-    {syntax:'.afk причина',title:'Включить автоответ',description:'Включает автоответ только в этом диалоге и задаёт текст ответа.',access:'premium',group:'Автоматизация'},
+    {syntax:'.afk причина',title:'Переключить автоответ',description:'Повторный запуск .afk выключает автоответ. При включении можно указать текст ответа.',access:'premium',group:'Автоматизация'},
     {syntax:'.unafk',title:'Выключить автоответ',description:'Отключает автоответ только в этом диалоге. Доступно бесплатно.',access:'free',group:'Автоматизация'},
     {syntax:'.autoread',title:'Автопрочтение',description:'Автоматически отмечает входящие сообщения прочитанными только в этом диалоге.',access:'premium',group:'Автоматизация'},
     {syntax:'.unautoread',title:'Выключить автопрочтение',description:'Отключает автоматическое прочтение сообщений.',access:'free',group:'Автоматизация'},
@@ -2150,7 +2154,7 @@ async function renderCommands(host) {
     {syntax:'.antimat',title:'Антимат',description:'Фильтрует часть ненормативной лексики только в этом диалоге.',access:'premium',group:'Фильтры'},
     {syntax:'.unantimat',title:'Отключить антимат',description:'Отключает фильтр ненормативной лексики.',access:'free',group:'Фильтры'},
     {syntax:'.timeprofile',title:'Московское время',description:'Закрепляет часовой пояс FLAMEXBOT: Москва, UTC+3.',access:'premium',group:'Профиль'},
-    {syntax:'.time',title:'Показывать время',description:'Включает отображение времени в профиле.',access:'premium',group:'Профиль'},
+    {syntax:'.time',title:'Время в имени',description:'Добавляет или убирает московское время рядом с именем внутри FLAMEXBOT.',access:'premium',group:'Профиль'},
     {syntax:'.untime',title:'Скрыть время',description:'Выключает отображение времени в профиле. Доступно бесплатно.',access:'free',group:'Профиль'},
     {syntax:'.bold текст',title:'Жирный текст',description:'Отправляет указанный текст жирным начертанием.',access:'premium',group:'Оформление'},
     {syntax:'.dumb текст',title:'Игровое оформление',description:'Преобразует текст в шуточный стиль.',access:'premium',group:'Оформление'},
