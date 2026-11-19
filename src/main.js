@@ -2674,7 +2674,7 @@ async function renderUserSupport(host) {
   host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · HELP DESK</div><h1>Техподдержка 🛟</h1><p class="muted">Напиши команде. Ответ появится здесь, в Mini App.</p></div><section class="support-thread active" id="user-support-thread"><div class="support-thread-placeholder">Загружаем обращение…</div></section>`;
   const thread=host.querySelector('#user-support-thread');
   const refresh=async()=>{
-    if(!thread.isConnected||state.page!=='support_user')return;
+    if(!thread.isConnected||state.page!=='support')return;
     const {data,error}=await supabase.functions.invoke('flamexbot-user-support',{body:{action:'messages'}});
     if(error||data?.error){thread.innerHTML='<div class="empty-state">'+esc(data?.error||error?.message||'Не удалось загрузить обращение')+'</div>';return;}
     const messages=data.messages||[];
@@ -2694,7 +2694,7 @@ async function renderUserSupport(host) {
   };
   await refresh();
   if(state.userSupportPollTimer)clearInterval(state.userSupportPollTimer);
-  state.userSupportPollTimer=setInterval(()=>{if(state.page==='support_user'&&!document.hidden)refresh();},5000);
+  state.userSupportPollTimer=setInterval(()=>{if(state.page==='support'&&!document.hidden)refresh();},5000);
 }
 
 async function renderBotBanners(host) {
