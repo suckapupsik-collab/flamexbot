@@ -120,8 +120,8 @@ async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=nu
   }
 }
 const PAGE_LABELS = {
-  home:'Обзор', support:'Техподдержка', support_user:'Написать в техподдержку', inbox:'Личные сообщения бота', messages:'Переписки', deleted:'Удалённые сообщения', edited:'Изменённые сообщения', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
-  missions:'Ежедневные задания', wallet:'Баланс', season:'Сезонный пропуск', banners:'Баннеры бота', profile:'Профиль', achievements:'Достижения',
+  home:'Обзор', support:'Техподдержка', inbox:'Личные сообщения бота', messages:'Переписки', friends:'Друзья', tariffs:'Тарифы', streaks:'Огоньки',
+  missions:'Ежедневные задания', wallet:'Баланс', season_hub:'Сезон', season:'Сезонный пропуск', banners:'Баннеры бота', profile:'Профиль', achievements:'Достижения',
   stats:'Статистика', commands:'Все команды', leaderboard:'Рейтинг сезона', events:'Сезонные события', promos:'Промокоды сезона', promo_admin:'Управление промокодами', season_admin:'Редактор сезона', season_events_admin:'Управление событиями', users:'Управление пользователями', admin_user:'Карточка пользователя', admin:'Админ-панель'
 };
 const BADGE_META = {
@@ -176,7 +176,7 @@ function closeProfileMenu() {
   if(trigger)trigger.setAttribute('aria-expanded','false');
 }
 function navigateTo(page) {
-  if(!PAGE_LABELS[page] || (['users','admin','banners','support'].includes(page)&&!state.isAdmin) || (['season_admin','season_events_admin','promo_admin'].includes(page)&&!isFounderProfile()))return;
+  if(!PAGE_LABELS[page] || (['users','admin','banners'].includes(page)&&!state.isAdmin) || (['season_admin','season_events_admin','promo_admin'].includes(page)&&!isFounderProfile()))return;
   if(state.page==='messages'&&page!=='messages'){
     if(state.businessChatChannel){supabase.removeChannel(state.businessChatChannel);state.businessChatChannel=null;}
     if(state.businessListChannel){supabase.removeChannel(state.businessListChannel);state.businessListChannel=null;}
@@ -202,23 +202,18 @@ function renderApp() {
   const items=[
     ['home','⌂','Обзор','Главная'],
     ['messages','✉','Переписки','Telegram Business'],
-    ['deleted','🗑️','Удалённые сообщения','Архив удалённых сообщений собеседников'],
-    ['edited','✏️','Изменённые сообщения','История правок сообщений собеседников'],
     ['friends','👥','Друзья','Заявки и совместные огоньки'],
     ['streaks','🔥','Огоньки','Общие серии'],
     ['missions','⚡','Ежедневные задания','Новые задания каждый день'],
-    ['season','🎟️','Сезонный пропуск','Награды Free и Pro'],
-    ['leaderboard','🏆','Рейтинг сезона','Топ участников по XP'],
-    ['events','🎯','Сезонные события','Временные испытания и награды'],
-    ['promos','🎟️','Промокоды сезона','Активируй код и получай XP'],
+    ['season_hub','🎟️','Сезон','Пропуск, рейтинг, события и промокоды'],
     ['wallet','🪙','Баланс','Монеты и пополнение'],
     ['achievements','🏆','Достижения','Коллекция наград'],
-    ['support_user','🛟','Написать в техподдержку','Задать вопрос команде'],
+    ['support','🛟','Техподдержка','Обращения и сообщения команде'],
     ['stats','▥','Статистика','Твоя активность'],
     ['commands','⌘','Все команды','Полный список команд'],
     ['tariffs','✧','Тарифы','Подписка и дополнения'],
     ['profile','◉','Профиль','Настройки аккаунта'],
-    ...(state.isAdmin?[['support','✉','Техподдержка','Обращения пользователей'],['banners','🖼️','Баннеры бота','Оформление /start и инструкции'],['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
+    ...(state.isAdmin?[['users','👥','Управление пользователями','Поиск, карточки и действия'],['admin','⚙','Админ-панель','Управление проектом']]:[])
   ];
   app.innerHTML=`
     <div class="app-layout">
@@ -305,22 +300,13 @@ async function loadPage() {
       host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false)} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
-        <div class="section-heading archive-section-heading"><div><div class="eyebrow">TELEGRAM BUSINESS</div><h3>История сообщений</h3></div><span class="archive-section-note">Архив переписок</span></div>
-        <div class="home-archive-grid">
-          <button class="home-archive-card deleted" data-go="deleted" type="button">
-            <span class="home-archive-icon">▤</span><span class="home-archive-copy"><b>Удалённые сообщения</b><small>Сообщения, удалённые в Telegram</small></span><strong class="home-archive-count">${deletedCount}</strong><i>→</i>
-          </button>
-          <button class="home-archive-card edited" data-go="edited" type="button">
-            <span class="home-archive-icon">✎</span><span class="home-archive-copy"><b>Изменённые сообщения</b><small>Предыдущие и текущие версии сообщений</small></span><strong class="home-archive-count">${editedCount}</strong><i>→</i>
-          </button>
-        </div>
         <section class="home-referral-card">
           <div class="home-referral-copy"><span class="eyebrow">ПРИГЛАШАЙ ДРУЗЕЙ</span><h3>1 день Premium за каждого участника</h3><p>Поделись ссылкой. Когда новый участник привяжет Telegram и зарегистрируется, тебе начислится 1 день Premium.</p><small>Приглашено: <b>${referralCount||0}</b></small></div>
           <div class="home-referral-actions"><code>${esc(referralCode||'Код недоступен')}</code><button class="primary small" id="copy-referral" type="button" ${!referralCode?'disabled':''}>Скопировать ссылку</button></div>
         </section>
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
         <div class="streak-list">${state.streaks.filter(s=>effectiveStreakDays(s)>0).length?state.streaks.filter(s=>effectiveStreakDays(s)>0).map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${effectiveStreakDays(s)} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Найди друга и начните обмениваться сообщениями каждый день.</div>'}</div>
-        <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="season"><span>🎟️</span><b>Сезонный пропуск</b><small>Открывай награды и прокачивай сезон</small><i>→</i></button><button class="home-feature-card" data-go="wallet"><span>🪙</span><b>Баланс</b><small>Монеты, история и пополнение через Stars</small><i>→</i></button><button class="home-feature-card" data-go="support_user"><span>🛟</span><b>Написать в техподдержку</b><small>Свяжись с командой FLAMEXBOT</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
+        <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="season"><span>🎟️</span><b>Сезонный пропуск</b><small>Открывай награды и прокачивай сезон</small><i>→</i></button><button class="home-feature-card" data-go="wallet"><span>🪙</span><b>Баланс</b><small>Монеты, история и пополнение через Stars</small><i>→</i></button><button class="home-feature-card" data-go="support"><span>🛟</span><b>Техподдержка</b><small>Свяжись с командой FLAMEXBOT</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
       host.querySelector('#copy-referral')?.addEventListener('click',async()=>{
         const link=referralLinkData?.link;
         if(!link){toast(refCodeError?.message||referralLinkData?.error||'Реферальная ссылка пока недоступна.');return;}
@@ -330,12 +316,11 @@ async function loadPage() {
       if(refCodeError||refCountError)console.warn('Referral panel load:',refCodeError?.message||refCountError?.message);
     } else if(state.page==='tariffs') await renderTariffs(host);
     else if(state.page==='messages') await renderBusinessMessages(host);
-    else if(state.page==='deleted') await renderBusinessMessageEvents(host,'deleted');
-    else if(state.page==='edited') await renderBusinessMessageEvents(host,'edited');
     else if(state.page==='friends') await renderFriends(host);
     else if(state.page==='streaks') await renderStreaks(host);
     else if(state.page==='missions') await renderDailyMissions(host);
     else if(state.page==='wallet') await renderWallet(host);
+    else if(state.page==='season_hub') await renderSeasonHub(host);
     else if(state.page==='season') await renderSeasonPass(host);
     else if(state.page==='leaderboard') await renderSeasonLeaderboard(host);
     else if(state.page==='events') await renderSeasonEvents(host);
@@ -343,13 +328,12 @@ async function loadPage() {
     else if(state.page==='promo_admin'&&isFounderProfile()) await renderSeasonPromoAdmin(host);
     else if(state.page==='season_events_admin'&&isFounderProfile()) await renderSeasonEventsAdmin(host);
     else if(state.page==='season_admin'&&isFounderProfile()) await renderSeasonAdmin(host);
-    else if(state.page==='support_user') await renderUserSupport(host);
     else if(state.page==='banners'&&state.isAdmin) await renderBotBanners(host);
     else if(state.page==='profile') await renderProfile(host);
     else if(state.page==='achievements') await renderAchievements(host);
     else if(state.page==='stats') await renderStats(host);
     else if(state.page==='commands') await renderCommands(host);
-    else if(state.page==='support') await renderSupportInbox(host);
+    else if(state.page==='support') { if(state.isAdmin) await renderSupportInbox(host); else await renderUserSupport(host); }
     else if(state.page==='inbox') await renderBotInbox(host);
     else if(state.page==='users') await renderUsers(host);
     else if(state.page==='admin_user') await renderAdminUser(host);
@@ -531,10 +515,11 @@ async function renderBusinessMessages(host) {
   const connection=chatData?.connection;
   const connected = Boolean(connection?.is_enabled);
   state.businessRights = connection?.rights || {};
-  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ПЕРЕПИСКИ TELEGRAM BUSINESS</div><h1>Переписки</h1><p class="muted">Все диалоги синхронизируются через Telegram Business. Сообщения отправляются от имени подключённого аккаунта — только в пределах выданных Telegram разрешений.</p><button class="outline small" type="button" data-go="inbox">✉ Личные сообщения бота</button></div>
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ПЕРЕПИСКИ TELEGRAM BUSINESS</div><h1>Переписки</h1><p class="muted">Все диалоги синхронизируются через Telegram Business. Сообщения отправляются от имени подключённого аккаунта — только в пределах выданных Telegram разрешений.</p><button class="outline small" type="button" data-go="inbox">✉ Личные сообщения бота</button></div><div class="message-archive-tabs"><button class="outline small" type="button" data-message-history="deleted">🗑️ Удалённые сообщения</button><button class="outline small" type="button" data-message-history="edited">✏️ Изменённые сообщения</button></div>
     <div class="business-inbox-status ${connected ? 'online' : ''}"><span></span><div><b>${connected ? 'Telegram Business подключён' : 'Telegram Business не подключён'}</b><small>${connected ? 'Список диалогов обновляется автоматически.' : 'Подключи FLAMEXBOT в Telegram → Настройки → Telegram Business → Чат-боты.'}</small></div></div>
     <div class="business-inbox-tools"><input id="business-chat-search" type="search" placeholder="Найти диалог по имени"/></div><div class="chat-layout business-inbox"><aside class="chat-list">${renderBusinessChatChoices(state.businessChats)}</aside>
     <section class="chat-window" id="business-chat-window"><div class="chat-placeholder"><span>✈</span><b>Твои переписки</b><small>Выбери диалог, чтобы открыть историю сообщений и настройки.</small></div></section></div>`;
+  host.querySelectorAll('[data-message-history]').forEach(button=>button.addEventListener('click',()=>renderBusinessMessageEvents(host,button.dataset.messageHistory)));
   bindBusinessChatChoices(host);bindBusinessChatPreferences(host);bindBusinessSearch(host);
   refreshMissingBusinessAvatars(host);
   if(state.businessChatListPollTimer){clearInterval(state.businessChatListPollTimer);state.businessChatListPollTimer=null;}
@@ -993,16 +978,16 @@ async function openBusinessChat(id) {
     const command=!file&&text.startsWith('.')?text.trim():'';
     if(command){
       const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
-      if(['help','inf'].includes(name)){toast('.mute · .unmute · .antimute · .unantimute · .autoread · .unautoread · .autotyping · .unautotyping · .autovoice · .unautovoice · .mutestick · .unmutestick · .antimat · .unantimat · .copyp · .qr текст');button.disabled=false;return;}
+      if(['help','inf'].includes(name)){toast('.mute (повтори для выключения) · .antimute · .unantimute · .autoread · .unautoread · .autotyping · .unautotyping · .autovoice · .unautovoice · .mutestick · .unmutestick · .antimat · .unantimat · .copyp · .qr текст');button.disabled=false;return;}
       const freeCommand=['unmute','unantimute','unantimut','untime','unafk','unautoread','unautotyping','unautovoice','unmutestick','unantimat','qr'].includes(name);
       if(!isPremium()&&!freeCommand){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
-      if(name==='mute'||name==='unmute'){
-        const next=name==='mute';
+      if(name==='mute'){
+        const next=!chatMuted;
         if(next && String(chat.telegram_chat_id)===FOUNDER_TELEGRAM_ID){button.disabled=false;toast('Владелец FLAMEXBOT защищён от мута.');return;}
         if(next && !state.businessRights?.can_delete_all_messages){button.disabled=false;toast('Для мута нужно разрешение Telegram Business «Удалять все сообщения».');return;}
         const {data:settingData,error:settingError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_mute',chat_id:id,enabled:next}});
         button.disabled=false;if(settingError||settingData?.error){toast(settingData?.error||settingError?.message||'Не удалось изменить настройку чата');return;}
-        chatMuted=next;chat.is_muted=next;renderBusinessControls();toast(next?'Мут включён':'Собеседник размучен');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
+        chatMuted=next;chat.is_muted=next;renderBusinessControls();toast(next?'Мут включён':'Мут выключен');form.reset();await refreshBusinessChatList(document.querySelector('#page-content'));return;
       }
       if(['antimute','unantimute','antimut','unantimut'].includes(name)){
         const next=name==='antimute'||name==='antimut';
@@ -2148,8 +2133,7 @@ async function renderCommands(host) {
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
         {syntax:'.unantimute',title:'Выключить антимут',description:'Отключает альтернативную отправку от имени бота.',access:'free',group:'Управление чатом'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
-    {syntax:'.mute',title:'Включить мут',description:'Удаляет новые входящие сообщения в выбранном диалоге. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
-    {syntax:'.unmute',title:'Выключить мут',description:'Останавливает автоматическое удаление новых сообщений. Доступно бесплатно.',access:'free',group:'Управление чатом'},
+    {syntax:'.mute',title:'Переключить мут',description:'Первый запуск включает удаление новых входящих сообщений, повторный .mute выключает. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
     {syntax:'.antimute',title:'Включить антимут',description:'Отправляет новые сообщения от имени бота FLAMEXBOT. Получатель должен открыть бота и нажать Start. Нужен Premium.',access:'premium',group:'Управление чатом'},
     {syntax:'.unantimute',title:'Выключить антимут',description:'Выключает режим антимута. Доступно бесплатно.',access:'free',group:'Управление чатом'},
     
@@ -2520,6 +2504,21 @@ async function renderSeasonPromoAdmin(host) {
     btn.disabled=true;const {error:deleteError}=await supabase.rpc('admin_delete_flamexbot_season_promo',{p_id:btn.dataset.promoDelete});
     if(deleteError){toast('Не удалось удалить: '+deleteError.message);btn.disabled=false;}else{toast('Промокод удалён');await renderSeasonPromoAdmin(host);}
   }));
+}
+
+async function renderSeasonHub(host) {
+  const tabs=[['pass','🎟️','Пропуск'],['rating','🏆','Рейтинг'],['events','🎯','События'],['promos','🎫','Промокоды']];
+  host.innerHTML='<div class="page-heading"><div class="eyebrow">FLAMEXBOT · SEASON CENTER</div><h1>🎟️ Сезонный центр</h1><p class="muted">Все сезонные возможности собраны в одном месте.</p></div><nav class="season-hub-tabs" aria-label="Разделы сезона">'+tabs.map(([key,icon,label])=>'<button type="button" class="season-hub-tab" data-season-tab="'+key+'">'+icon+' '+label+'</button>').join('')+'</nav><div id="season-hub-content" class="season-hub-content"></div>';
+  const panel=host.querySelector('#season-hub-content');
+  const render=async key=>{
+    host.querySelectorAll('[data-season-tab]').forEach(button=>button.classList.toggle('active',button.dataset.seasonTab===key));
+    if(key==='rating')await renderSeasonLeaderboard(panel);
+    else if(key==='events')await renderSeasonEvents(panel);
+    else if(key==='promos')await renderSeasonPromos(panel);
+    else await renderSeasonPass(panel);
+  };
+  host.querySelectorAll('[data-season-tab]').forEach(button=>button.addEventListener('click',()=>render(button.dataset.seasonTab)));
+  await render('pass');
 }
 
 async function renderSeasonPass(host) {
