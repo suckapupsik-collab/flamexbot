@@ -970,7 +970,7 @@ async function openBusinessChat(id) {
       }
       if(name==='timeprofile'){
         const rawOffset=String(args||'3').trim();
-        if(!/^[+-]?(?:0|[1-9]|1[0-4])$/.test(rawOffset)){button.disabled=false;toast('Формат: .timeprofile +3 или .timeprofile -5 (UTC−12…UTC+14)');return;}
+        if(!/^(?:\+?(?:0|[1-9]|1[0-4])|-(?:[1-9]|1[0-2]))$/.test(rawOffset)){button.disabled=false;toast('Формат: .timeprofile +3 или .timeprofile -5 (UTC−12…UTC+14)');return;}
         const offset=Number(rawOffset);
         const {error:tzError}=await supabase.from('flamexbot_user_preferences').upsert({profile_id:state.session.user.id,timezone_offset:offset,updated_at:new Date().toISOString()},{onConflict:'profile_id'});
         button.disabled=false;if(tzError){toast('Не удалось изменить часовой пояс: '+tzError.message);return;}
