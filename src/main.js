@@ -142,16 +142,12 @@ function isFounderProfile(profile=state.profile) {
   return String(profile?.telegram_id||'')===FOUNDER_TELEGRAM_ID || String(profile?.id||'')===FOUNDER_PROFILE_ID;
 }
 function verifiedMarkMarkup(verified=false) {
-  return verified ? '<span class="verified-mark" title="Подтверждённый аккаунт" aria-label="Подтверждённый аккаунт">✓</span>' : '';
+  return '';
 }
 function badgeMarkup(codes=[],compact=false,includeOwnPremium=true) {
-  const ownPlan=state.subscription?.plan;
-  const ownCodes=includeOwnPremium&&state.profile?.show_badges===false?[]:includeOwnPremium&&state.profile?.show_role===false?(codes||[]).filter(code=>code==='verified'):(codes||[]);
-  const unique=[...new Set([...ownCodes,...(includeOwnPremium&&ownPlan==='premium'&&isPremium()&&state.profile?.show_subscription!==false?['premium']:[])])];
-  return unique.filter(code=>code!=='verified'&&BADGE_META[code]).map(code=>{
-    const b=BADGE_META[code];
-    return `<span class="role-badge badge-${b.className} ${compact?'compact':''}" title="${esc(b.label)}"><i>${b.icon}</i>${compact?'':`<span>${esc(b.label)}</span>`}</span>`;
-  }).join('');
+  return (codes||[]).includes('founder')
+    ? '<span class="role-badge badge-founder" title="Основатель">👑</span>'
+    : '';
 }
 function updateHeaderProfile() {
   const p=state.profile||{};
@@ -1614,7 +1610,7 @@ async function renderTariffs(host, initialTab='premium') {
      <span class="fortune-wheel-center">✦</span>
     </div>
    </div>
-   <p class="muted">Прокрутка стоит '+wheelPriceStars+' ⭐. Выигрывай Premium на 7, 30 и 90 дней, защиту от команд, бесплатные прокрутки или монеты на баланс: 10, 50, 100 и 250.</p>
+   <p class="muted">Прокрутка стоит ${wheelPriceStars} ⭐. Выигрывай Premium на 7, 30 и 90 дней, защиту от команд, бесплатные прокрутки или монеты на баланс: 10, 50, 100 и 250.</p>
    <div class="wheel-odds-controls"><button class="outline small" type="button" id="toggle-wheel-odds" aria-expanded="false">Показать шансы</button><div class="wheel-odds" id="wheel-odds-panel" hidden>${wheelOddsHtml}</div></div>
    <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐'}</button>
    <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${premium?wheelWeeklySpins:0} для текущего тарифа${rareLuck?' · веса редких наград +' + rareLuck + '%':''}.</small>
