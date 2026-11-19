@@ -1017,7 +1017,7 @@ async function openBusinessChat(id) {
         chat[field]=enabled;form.reset();toast(label+(enabled?' включён':' выключен'));return;
       }
       if(name==='timeprofile'){
-        const {error:tzError}=await supabase.from('profiles').update({timezone_offset:3}).eq('id',state.session.user.id);
+        const {error:tzError}=await supabase.from('flamexbot_user_preferences').upsert({profile_id:state.session.user.id,timezone_offset:3,updated_at:new Date().toISOString()},{onConflict:'profile_id'});
         button.disabled=false;if(tzError){toast('Не удалось закрепить московское время: '+tzError.message);return;}
         state.profile={...state.profile,timezone_offset:3};toast('Часовой пояс FLAMEXBOT закреплён: Москва (UTC+3)');form.reset();return;
       }
