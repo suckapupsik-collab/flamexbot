@@ -969,9 +969,12 @@ async function openBusinessChat(id) {
         chat[field]=enabled;form.reset();toast(label+(enabled?' включён':' выключен'));return;
       }
       if(name==='timeprofile'){
-        const {error:tzError}=await supabase.from('flamexbot_user_preferences').upsert({profile_id:state.session.user.id,timezone_offset:3,updated_at:new Date().toISOString()},{onConflict:'profile_id'});
-        button.disabled=false;if(tzError){toast('Не удалось закрепить московское время: '+tzError.message);return;}
-        state.profile={...state.profile,timezone_offset:3};toast('Часовой пояс FLAMEXBOT закреплён: Москва (UTC+3)');form.reset();return;
+        const rawOffset=String(args||'3').trim();
+        if(!/^[+-]?(?:0|[1-9]|1[0-4])$/.test(rawOffset)){button.disabled=false;toast('Формат: .timeprofile +3 или .timeprofile -5 (UTC−14…UTC+14)');return;}
+        const offset=Number(rawOffset);
+        const {error:tzError}=await supabase.from('flamexbot_user_preferences').upsert({profile_id:state.session.user.id,timezone_offset:offset,updated_at:new Date().toISOString()},{onConflict:'profile_id'});
+        button.disabled=false;if(tzError){toast('Не удалось изменить часовой пояс: '+tzError.message);return;}
+        state.profile={...state.profile,timezone_offset:offset};toast('Часовой пояс FLAMEXBOT установлен: UTC'+(offset>=0?'+':'')+offset);form.reset();return;
       }
       if(name==='time'){
         const {data:timeData,error:timeError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_business_time',chat_id:id}});
@@ -2107,7 +2110,7 @@ async function renderCommands(host) {
     {syntax:'.autovoice',title:'Статус записи голосового',description:'Включает статус записи голосового только в этом диалоге.',access:'premium',group:'Автоматизация'},
     {syntax:'.mutestick',title:'Фильтр стикеров',description:'Автоматически удаляет входящие стикеры только в этом диалоге.',access:'premium',group:'Фильтры'},
     {syntax:'.antimat',title:'Антимат',description:'Фильтрует часть ненормативной лексики только в этом диалоге.',access:'premium',group:'Фильтры'},
-    {syntax:'.timeprofile',title:'Московское время',description:'Закрепляет часовой пояс FLAMEXBOT: Москва, UTC+3.',access:'premium',group:'Профиль'},
+    {syntax:'.timeprofile',title:'Московское время',description:'Устанавливает часовой пояс FLAMEXBOT, например .timeprofile +3 или .timeprofile -5.',access:'premium',group:'Профиль'},
     {syntax:'.time',title:'Время в имени Telegram',description:'Переключает отображение текущего времени в имени подключённого Telegram Business-аккаунта. Требуется право изменения имени.',access:'premium',group:'Профиль'},
     {syntax:'.bold текст',title:'Жирный текст',description:'Отправляет указанный текст жирным начертанием.',access:'premium',group:'Оформление'},
     {syntax:'.dumb текст',title:'Игровое оформление',description:'Преобразует текст в шуточный стиль.',access:'premium',group:'Оформление'},
