@@ -648,7 +648,8 @@ async function refreshBusinessMessagesNow(chatId) {
   if(state.activeBusinessChat!==chatId)return;
   if(error||messageData?.error){list.innerHTML='<div class="empty-state">'+esc(messageData?.error||error?.message||'Не удалось загрузить сообщения')+'</div>';return;}
   const newest=messageData?.messages||[];
-  const data=newest;
+  const previousIds=new Set((state.businessMessages||[]).map(message=>message.id));
+  const hasNewMessages=newest.some(message=>!previousIds.has(message.id));
   const byId=new Map();
   [...(state.businessMessages||[]),...newest].forEach(message=>byId.set(message.id,message));
   state.businessMessages=[...byId.values()].sort(compareBusinessMessages);
@@ -669,7 +670,7 @@ async function refreshBusinessMessagesNow(chatId) {
     }
   }
   await renderBusinessMessagesList(chatId,{
-    scrollToBottom:true,
+    scrollToBottom:initialLoad||(hasNewMessages&&wasNearBottom),
     scrollTop:oldScrollTop
   });
 }
@@ -786,14 +787,12 @@ async function openBusinessChat(id) {
   const name = [chat.first_name,chat.last_name].filter(Boolean).join(' ') || (chat.username ? '@'+chat.username : 'Telegram-пользователь');
   const founderChat = String(chat.telegram_chat_id) === FOUNDER_TELEGRAM_ID || String(chat.telegram_user_id || '') === FOUNDER_TELEGRAM_ID;
   let chatMuted = Boolean(chat.is_muted) && !founderChat;
-  let antimutEnabled = Boolean(chat.antimut_enabled) && !founderChat;
-  const canDeleteMessages = state.businessRights?.can_delete_all_messages === true;
   const premiumAccess = isPremium();
   const readAt=new Date().toISOString();
   const {error:readError}=await supabase.from('flamexbot_business_chat_settings').upsert({profile_id:state.session.user.id,business_chat_id:id,is_favorite:Boolean(chat.is_favorite),is_pinned:Boolean(chat.is_pinned),last_read_at:readAt},{onConflict:'profile_id,business_chat_id'});
   if(!readError){chat.last_read_at=readAt;chat.unread_count=0;document.querySelector(`[data-business-chat="${id}"] .chat-unread-badge`)?.remove();}
   box.closest('.business-inbox')?.classList.add('chat-open');
-  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div class="chat-head-person">${avatar(chat.photo_url,name,'chat-avatar')}<div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div></div><div class="message-search-tools"><input class="message-search" id="business-message-search" type="search" placeholder="Поиск в загруженных сообщениях…"/><button type="button" class="outline small" id="business-search-all">Вся история</button></div> ${premiumAccess?'<button type="button" class="chat-export-button" id="export-business-chat">↓ Экспорт</button>':''}</div><div id="business-chat-controls"></div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form" autocomplete="off"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" aria-autocomplete="none" inputmode="text" enterkeyhint="send"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
+  box.innerHTML = `<div class="chat-head"><button type="button" class="chat-back" id="business-chat-back">← Все чаты</button><div class="chat-head-person">${avatar(chat.photo_url,name,'chat-avatar')}<div><b>${esc(name)}</b><small>${founderChat ? 'Защищённый диалог владельца' : 'Управление командами доступно прямо в этой переписке'}${chat.username ? ' · @'+esc(chat.username) : ''}</small></div></div><div class="message-search-tools"><input class="message-search" id="business-message-search" type="search" placeholder="Поиск в загруженных сообщениях…"/><button type="button" class="outline small" id="business-search-all">Вся история</button></div> ${premiumAccess?'<button type="button" class="chat-export-button" id="export-business-chat">↓ Экспорт</button>':''}</div><div class="message-list" id="business-message-list"><div class="empty-state">Загружаю сообщения…</div></div><div class="reply-preview" id="business-reply-preview" hidden><span></span><button type="button" id="cancel-business-reply" aria-label="Отменить ответ">×</button></div><form class="send-form" id="business-send-form" autocomplete="off"><label class="attach-file-button" for="business-media-input" title="Прикрепить файл">＋</label><input id="business-media-input" class="business-media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /><input name="content" placeholder="Сообщение или подпись к файлу…" maxlength="4096" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" aria-autocomplete="none" inputmode="text" enterkeyhint="send"/><input type="hidden" name="reply_to_message_id"/><button class="primary" type="submit">➤</button></form><div class="selected-media" id="selected-business-media" hidden></div><div class="upload-hint">Фото, видео, аудио и документы до 20 МБ · отправка через Telegram Business.</div>`;
   const searchAllButton=box.querySelector('#business-search-all');
   searchAllButton?.addEventListener('click',async()=>{
     const input=box.querySelector('#business-message-search');
@@ -858,53 +857,6 @@ async function openBusinessChat(id) {
       exportButton.disabled=false;exportButton.textContent='↓ Экспорт';
     }
   });
-  const controlsHost = box.querySelector('#business-chat-controls');
-  const renderBusinessControls = () => {
-    if (!controlsHost) return;
-    const active = antimutEnabled && !founderChat;
-    const canEnable = state.businessRights?.can_delete_sent_messages === true;
-    const buttonLabel = active ? 'Выключить антимут' : 'Включить антимут';
-    controlsHost.innerHTML = founderChat ? '' : `
-      <div class="business-control-grid">
-        <section class="business-control-card antimut-control-card">
-          <div class="business-control-title">
-            <b>💎 Антимут</b>
-            <span class="business-control-state ${active ? 'active' : ''}">${active ? 'АКТИВЕН' : 'ВЫКЛЮЧЕН'}</span>
-          </div>
-          <p>${active
-            ? 'Режим активен: FLAMEXBOT повторно отправляет ваши исходящие сообщения через подключённый Business-аккаунт в этом же чате и удаляет исходный экземпляр.'
-            : 'После отправки сообщения FLAMEXBOT переотправит его через подключённый Business-аккаунт в этом же диалоге и удалит исходный экземпляр.'}</p>
-          ${!active && !premiumAccess ? '<small class="business-control-note">Для включения нужна активная Premium-подписка.</small>' : ''}
-          ${!active && !canEnable ? '<small class="business-control-note">Нужно разрешение Telegram Business «Удалять отправленные сообщения».</small>' : ''}
-          <button type="button" class="${active ? 'outline' : 'primary'} small" data-toggle-antimut>${buttonLabel}</button>
-        </section>
-      </div>`;
-    const toggle = controlsHost.querySelector('[data-toggle-antimut]');
-    if (!toggle) return;
-    toggle.disabled = !active && (!premiumAccess || !canEnable);
-    toggle.addEventListener('click', async () => {
-      const next = !antimutEnabled;
-      if (next && !premiumAccess) { toast('Для включения антимута нужна активная Premium-подписка.'); return; }
-      if (next && !canEnable) { toast('Выдай Business-боту право «Удалять отправленные сообщения» в настройках Telegram.'); return; }
-      toggle.disabled = true;
-      toggle.textContent = next ? 'Включаем…' : 'Выключаем…';
-      try {
-        const { data, error } = await supabase.functions.invoke('business-chat-send', {
-          body: { action: 'set_antimute', chat_id: id, enabled: next }
-        });
-        if (error || data?.error) throw new Error(data?.error || error?.message || 'Не удалось изменить антимут.');
-        antimutEnabled = next;
-        chat.antimut_enabled = next;
-        renderBusinessControls();
-        toast(next ? '💎 Антимут включён.' : 'Антимут выключен.');
-        await refreshBusinessChatList(document.querySelector('#page-content'));
-      } catch (error) {
-        toast(error?.message || 'Не удалось изменить антимут.');
-        renderBusinessControls();
-      }
-    });
-  };
-  renderBusinessControls();
   box.querySelector('#business-chat-back')?.addEventListener('click', () => {
     state.activeBusinessChat = null;
     if(state.businessChatPollTimer){clearInterval(state.businessChatPollTimer);state.businessChatPollTimer=null;}
@@ -2123,7 +2075,7 @@ async function renderAchievements(host) {
         <span class="achievement-state-mark">${e?'✓':'🔒'}</span>
       </article>`;
     }).join('')||'<div class="empty-state">Каталог достижений пока пуст.</div>'}</div>
-    <section class="leaderboard-panel leaderboard-v2"><div class="section-heading"><div><div class="eyebrow">РЕЙТИНГ СООБЩЕСТВА</div><h3>Таблица лидеров</h3></div><span class="leaderboard-live">● LIVE</span></div><div class="leaderboard-list">${(leaderboard.data||[]).map((u,i)=>`<div class="leaderboard-row"><strong>#${i+1}</strong><span><b>${esc(u.display_name||u.username)}</b><small>Уровень ${u.level}</small></span><em>${u.xp} XP</em></div>`).join('')||'<div class="empty-state">Рейтинг появится, когда участники начнут получать XP.</div>'}</div></section>
+    <section class="leaderboard-panel leaderboard-v2"><div class="section-heading"><div><div class="eyebrow">РЕЙТИНГ СООБЩЕСТВА</div><h3>Таблица лидеров</h3></div><span class="leaderboard-live">● LIVE</span></div><div class="leaderboard-list">${(leaderboard.data||[]).map((u,i)=>`<div class="leaderboard-row community-leaderboard-row"><strong class="leaderboard-rank-value">#${i+1}</strong><span class="leaderboard-person"><b>${esc(u.display_name||u.username||'Участник')}</b><small>Уровень ${Number(u.level)||1}</small></span><em class="leaderboard-xp">${Number(u.xp||0).toLocaleString('ru-RU')} XP</em></div>`).join('')||'<div class="empty-state">Рейтинг появится, когда участники начнут получать XP.</div>'}</div></section>
     ${all.error||earned.error||taskClaims.error||leaderboard.error?'<p class="business-warning">Не удалось полностью загрузить коллекцию или рейтинг.</p>':''}`;
   host.querySelectorAll('[data-achievement-filter]').forEach(btn=>btn.addEventListener('click',()=>{
     host.querySelectorAll('[data-achievement-filter]').forEach(x=>x.classList.toggle('active',x===btn));
@@ -2156,7 +2108,7 @@ async function renderCommands(host) {
     {syntax:'.mutestick',title:'Фильтр стикеров',description:'Автоматически удаляет входящие стикеры только в этом диалоге.',access:'premium',group:'Фильтры'},
     {syntax:'.antimat',title:'Антимат',description:'Фильтрует часть ненормативной лексики только в этом диалоге.',access:'premium',group:'Фильтры'},
     {syntax:'.timeprofile',title:'Московское время',description:'Закрепляет часовой пояс FLAMEXBOT: Москва, UTC+3.',access:'premium',group:'Профиль'},
-    {syntax:'.time',title:'Время в имени',description:'Добавляет или убирает московское время рядом с именем внутри FLAMEXBOT.',access:'premium',group:'Профиль'},
+    {syntax:'.time',title:'Время в имени Telegram',description:'Переключает отображение текущего времени в имени подключённого Telegram Business-аккаунта. Требуется право изменения имени.',access:'premium',group:'Профиль'},
     {syntax:'.bold текст',title:'Жирный текст',description:'Отправляет указанный текст жирным начертанием.',access:'premium',group:'Оформление'},
     {syntax:'.dumb текст',title:'Игровое оформление',description:'Преобразует текст в шуточный стиль.',access:'premium',group:'Оформление'},
     {syntax:'.link текст',title:'Ссылка на диалог',description:'Создаёт ссылку на текущий Telegram-диалог.',access:'premium',group:'Оформление'},
@@ -2173,6 +2125,7 @@ async function renderCommands(host) {
     {syntax:'.wordcount текст',title:'Подсчёт слов',description:'Считает количество слов в тексте.',access:'free',group:'Работа с текстом'},
     {syntax:'.choose A | B',title:'Случайный выбор',description:'Выбирает один из вариантов, разделённых символом |.',access:'free',group:'Утилиты'},
     {syntax:'.roll 100',title:'Случайное число',description:'Выдаёт случайное число от 1 до заданного максимума.',access:'free',group:'Утилиты'},
+    {syntax:'.advertising',title:'Реферальная ссылка',description:'Создаёт персональную ссылку FLAMEXBOT. Приглашённый пользователь получает бонус Premium на 3 дня по условиям программы.',access:'free',group:'Приглашения'},
     {syntax:'.profile',title:'Публичная карточка',description:'Анимированно показывает открытые сведения текущего Telegram-диалога. Не обращается к утечкам и закрытым базам.',access:'premium',group:'Профиль'},
     {syntax:'.streak 7',title:'Установить огонёк',description:'Мгновенно создаёт или устанавливает серию на указанное число дней (1–3650). Только владелец и администраторы.',access:'admin',group:'Администрация'}
   ];
