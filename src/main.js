@@ -2250,6 +2250,8 @@ async function renderCommands(host) {
     {syntax:'.round',title:'Круглое фото',description:'Ответь на фото: создаёт PNG с круглой обрезкой и прозрачным фоном.',access:'free',group:'Медиа'},
     {syntax:'.wanted',title:'Разыскивается',description:'Ответь на фото: отправляет шуточный постер «Разыскивается» с именем или username отправителя фото.',access:'free',group:'Медиа'},
     {syntax:'.stories',title:'История 3×3',description:'Ответь на фото: нарезает его на 9 частей и публикует 9 историй от Business-аккаунта. Нужны права управления историями.',access:'free',group:'Медиа'},
+    {syntax:'.audio',title:'Отправить как аудио',description:'Ответь на аудио или совместимый файл: отправляет его как музыкальный трек.',access:'free',group:'Аудио'},
+    {syntax:'.voice',title:'Отправить как голосовое',description:'Ответь на аудио или совместимый файл: отправляет его как голосовое сообщение, если формат поддерживается Telegram.',access:'free',group:'Аудио'},
     {syntax:'.font текст',title:'Красивый шрифт',description:'Преобразует латинские буквы в математический Unicode-стиль.',access:'free',group:'Оформление'},
     {syntax:'.crop',title:'Обрезать фото',description:'Ответь на фотографию: обрежет её по центру в квадрат.',access:'free',group:'Медиа'},
     {syntax:'.resize ШИРИНА ВЫСОТА',title:'Изменить размер фото',description:'Ответь на фотографию и укажи стороны от 64 до 2048 px, например .resize 1080 1080.',access:'free',group:'Медиа'},
