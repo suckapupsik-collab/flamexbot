@@ -990,7 +990,7 @@ async function openBusinessChat(id) {
     if(command){
       const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
       if(['help','inf'].includes(name)){toast('.mute · .antimute · .autoread · .autotyping · .autovoice · .mutestick · .antimat · .afk причина · .time · .copyp · .qr текст. Повтори команду, чтобы выключить режим.');button.disabled=false;return;}
-      const freeCommand=['qr','antimute','antimut'].includes(name);
+      const freeCommand=['qr','mute'].includes(name);
       if(!isPremium()&&!freeCommand){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
       if(name==='mute'){
         const next=!chatMuted;
@@ -2275,7 +2275,7 @@ async function renderCommands(host) {
     {syntax:'.advertising',title:'Реферальная ссылка',description:'Создаёт персональную ссылку FLAMEXBOT. Приглашённый пользователь получает бонус Premium на 3 дня по условиям программы.',access:'free',group:'Приглашения'},
     {syntax:'.profile',title:'Публичная карточка',description:'Показывает имя, username, Telegram ID, доступное описание профиля и дату рождения, если Telegram её раскрывает. Если телефон недоступен, отображается «Нету доступа».',access:'free',group:'Профиль'},
     {syntax:'.streak 7',title:'Установить огонёк',description:'Мгновенно создаёт или устанавливает серию на указанное число дней (1–3650). Только владелец и администраторы.',access:'admin',group:'Администрация'},
-    {syntax:".uncopyp",title:"Восстановить профиль",description:"Восстанавливает исходные имя, описание и аватарку после .copyp.",access:"free",group:"Профиль"},
+    {syntax:".uncopyp",title:"Восстановить профиль",description:"Восстанавливает исходные имя, описание и аватарку после .copyp. Требуется Premium.",access:"premium",group:"Профиль"},
     {syntax:".history",title:"Опубликовать историю",description:"Ответь командой на фото или видео: фото автоматически кадрируется под вертикальный формат 1080×1920. Для видео пока нужен вертикальный формат 720×1280 до 60 секунд. Нужны права управления историями.",access:"free",group:"Медиа и переписки"},
     {syntax:".clone",title:"Копия сообщения",description:"Ответь командой на сообщение собеседника: бот скопирует поддерживаемый текст или медиа с пометкой.",access:"free",group:"Медиа и переписки"},
     {syntax:".panic",title:"Очистить Business-переписку",description:"Использует Telegram Business deleteBusinessMessages для удаления доступных сообщений у обоих. Telegram сохраняет ограничение по времени удаления — до 48 часов.",access:"free",group:"Медиа и переписки"},
