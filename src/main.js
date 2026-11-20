@@ -1441,16 +1441,13 @@ async function renderUsers(host) {
     p_search:filters.search||null,p_verified:filters.verified,p_premium:filters.premium,p_banned:filters.banned,p_limit:50,p_offset:filters.offset||0
   });
   const users=data||[];
-  const userIds=users.map(user=>user.id);
-  const telegramIds=users.map(user=>String(user.telegram_id||'')).filter(Boolean);
-  const [connectionLookup,connectionTelegramLookup]=await Promise.all([
-    userIds.length?supabase.from('flamexbot_business_connections').select('profile_id,telegram_user_id,is_enabled').in('profile_id',userIds):Promise.resolve({data:[]}),
-    telegramIds.length?supabase.from('flamexbot_business_connections').select('profile_id,telegram_user_id,is_enabled').in('telegram_user_id',telegramIds):Promise.resolve({data:[]})
-  ]);
-  const connectionRows=[...(connectionLookup.data||[]),...(connectionTelegramLookup.data||[])];
-  const connectionMap=new Map(connectionRows.map(connection=>[connection.profile_id,Boolean(connection.is_enabled)]));
-  const connectionTelegramMap=new Map(connectionRows.map(connection=>[String(connection.telegram_user_id),Boolean(connection.is_enabled)]));
-  users.forEach(user=>{user.business_connected=connectionMap.get(user.id)===true||connectionTelegramMap.get(String(user.telegram_id||''))===true;});
+  const userIds=users.map(user=>user.id).filter(Boolean);
+  const {data:connectionRows,error:connectionError}=userIds.length
+    ?await supabase.rpc('admin_get_flamexbot_business_status',{p_user_ids:userIds})
+    :{data:[],error:null};
+  if(connectionError)console.warn('Admin Business status:',connectionError.message);
+  const connectionMap=new Map((connectionRows||[]).map(connection=>[connection.profile_id,Boolean(connection.is_enabled)]));
+  users.forEach(user=>{user.business_connected=connectionMap.get(user.id)===true;});
   const actorOwner=state.session.user.id===FOUNDER_PROFILE_ID;
   const total=users[0]?.total_count||0;
   const roleOptions=[
