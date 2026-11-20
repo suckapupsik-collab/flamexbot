@@ -1445,9 +1445,14 @@ async function renderUsers(host) {
   });
   const users=data||[];
   const userIds=users.map(user=>user.id);
-  const connectionLookup=userIds.length?await supabase.from('flamexbot_business_connections').select('profile_id,telegram_user_id,is_enabled').in('profile_id',userIds):{data:[]};
-  const connectionMap=new Map((connectionLookup.data||[]).map(connection=>[connection.profile_id,Boolean(connection.is_enabled)]));
-  const connectionTelegramMap=new Map((connectionLookup.data||[]).map(connection=>[String(connection.telegram_user_id),Boolean(connection.is_enabled)]));
+  const telegramIds=users.map(user=>String(user.telegram_id||'')).filter(Boolean);
+  const [connectionLookup,connectionTelegramLookup]=await Promise.all([
+    userIds.length?supabase.from('flamexbot_business_connections').select('profile_id,telegram_user_id,is_enabled').in('profile_id',userIds):Promise.resolve({data:[]}),
+    telegramIds.length?supabase.from('flamexbot_business_connections').select('profile_id,telegram_user_id,is_enabled').in('telegram_user_id',telegramIds):Promise.resolve({data:[]})
+  ]);
+  const connectionRows=[...(connectionLookup.data||[]),...(connectionTelegramLookup.data||[])];
+  const connectionMap=new Map(connectionRows.map(connection=>[connection.profile_id,Boolean(connection.is_enabled)]));
+  const connectionTelegramMap=new Map(connectionRows.map(connection=>[String(connection.telegram_user_id),Boolean(connection.is_enabled)]));
   users.forEach(user=>{user.business_connected=connectionMap.get(user.id)===true||connectionTelegramMap.get(String(user.telegram_id||''))===true;});
   const actorOwner=state.session.user.id===FOUNDER_PROFILE_ID;
   const total=users[0]?.total_count||0;
@@ -2241,7 +2246,7 @@ async function renderCommands(host) {
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Переключить мут',description:'Первый запуск включает удаление новых входящих сообщений, повторный .mute выключает. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
-    {syntax:'.antimute',title:'Переключить антимут',description:'Повторно отправляет ваши сообщения через подключённый Telegram Business-аккаунт и удаляет исходную копию. Для включения нужны Premium и право «Удалять отправленные сообщения»; выключение бесплатно.',access:'premium',group:'Управление чатом'},
+    {syntax:'.antimute',title:'Переключить антимут',description:'Повторно отправляет ваше сообщение от имени Business-аккаунта и удаляет оригинал. Для включения нужны Premium и право «Удалять все сообщения»; выключение бесплатно.',access:'premium',group:'Управление чатом'},
     
     {syntax:'.afk причина',title:'Переключить автоответ',description:'Повторный запуск .afk выключает автоответ. При включении можно указать текст ответа.',access:'premium',group:'Автоматизация'},
     {syntax:'.autoread',title:'Автопрочтение',description:'Автоматически отмечает входящие сообщения прочитанными только в этом диалоге.',access:'premium',group:'Автоматизация'},
@@ -2268,12 +2273,13 @@ async function renderCommands(host) {
     {syntax:'.choose A | B',title:'Случайный выбор',description:'Выбирает один из вариантов, разделённых символом |.',access:'free',group:'Утилиты'},
     {syntax:'.roll 100',title:'Случайное число',description:'Выдаёт случайное число от 1 до заданного максимума.',access:'free',group:'Утилиты'},
     {syntax:'.advertising',title:'Реферальная ссылка',description:'Создаёт персональную ссылку FLAMEXBOT. Приглашённый пользователь получает бонус Premium на 3 дня по условиям программы.',access:'free',group:'Приглашения'},
-    {syntax:'.profile',title:'Публичная карточка',description:'Анимированно показывает открытые сведения текущего Telegram-диалога. Не обращается к утечкам и закрытым базам.',access:'premium',group:'Профиль'},
+    {syntax:'.profile',title:'Публичная карточка',description:'Показывает имя, username и Telegram ID собеседника.',access:'premium',group:'Профиль'},
+    {syntax:'.free',title:'Открытая информация',description:'Показывает доступные сведения профиля: имя, username, ID, bio и дату рождения, если Telegram её показывает. Номер телефона не раскрывается через Bot API.',access:'free',group:'Профиль'},
     {syntax:'.streak 7',title:'Установить огонёк',description:'Мгновенно создаёт или устанавливает серию на указанное число дней (1–3650). Только владелец и администраторы.',access:'admin',group:'Администрация'},
     {syntax:".uncopyp",title:"Восстановить профиль",description:"Восстанавливает исходные имя, описание и аватарку после .copyp. Username не меняется.",access:"free",group:"Профиль"},
-    {syntax:".history",title:"Опубликовать историю",description:"Ответь этой командой на фото или видео, чтобы опубликовать его в историю Telegram. Нужны соответствующие права Business.",access:"free",group:"Медиа и переписки"},
+    {syntax:".history",title:"Опубликовать историю",description:"Ответь командой на фото или видео: фото автоматически кадрируется под вертикальный формат 1080×1920. Для видео пока нужен вертикальный формат 720×1280 до 60 секунд. Нужны права управления историями.",access:"free",group:"Медиа и переписки"},
     {syntax:".clone",title:"Копия сообщения",description:"Ответь командой на сообщение собеседника: бот скопирует поддерживаемый текст или медиа с пометкой.",access:"free",group:"Медиа и переписки"},
-    {syntax:".panic",title:"Очистить переписку",description:"Запрашивает подтверждение удаления доступной истории у обоих за последние 48 часов. Нужны права удаления всех сообщений.",access:"free",group:"Медиа и переписки"},
+    {syntax:".panic",title:"Очистить переписку",description:"С подтверждением удаляет доступные сообщения у обоих за последние 48 часов. Старые сообщения Telegram не позволяет удалить через Bot API.",access:"free",group:"Медиа и переписки"},
     {syntax:".warn N",title:"Автомут",description:"Включает автоматический мут после 2–100 сообщений подряд; повтори .warn с тем же числом или без числа, чтобы выключить.",access:"free",group:"Управление чатом"},
     {syntax:".antimut",title:"Антимут (алиас)",description:"Альтернативное имя команды .antimute.",access:"premium",group:"Управление чатом"},
     {syntax:".dice",title:"Бросить кубик",description:"Анимированный бросок кубика с результатом.",access:"free",group:"Развлечения"},
