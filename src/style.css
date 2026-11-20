@@ -2186,3 +2186,24 @@ body{
 @media(prefers-reduced-motion:reduce){
   .pin-gate-card,.pin-gate-orbit i,.pin-gate-orbit b{animation:none!important}
 }
+
+
+/* FLAMEXBOT refreshed compact dashboard */
+.home-status-line{display:flex;align-items:center;gap:9px;width:max-content;max-width:100%;margin:-12px 0 22px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--panel) 88%,transparent);font-size:11px;color:var(--muted)}
+.home-status-line .status-dot{width:7px;height:7px;border-radius:50%;background:#ffad62;box-shadow:0 0 0 4px color-mix(in srgb,#ffad62 15%,transparent)}
+.home-status-line.is-connected .status-dot{background:#43d69a;box-shadow:0 0 0 4px rgba(67,214,154,.13)}
+.home-status-line button,.home-status-line a{border:0;background:none;color:var(--orange);font:700 11px inherit;text-decoration:none;padding:0 2px;cursor:pointer}
+.profile-security-card{max-width:760px;margin:20px 0 36px;padding:20px 22px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(145deg,color-mix(in srgb,var(--panel) 94%,var(--orange)),var(--panel));box-shadow:0 12px 34px rgba(0,0,0,.13)}
+.profile-security-head{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.profile-security-head h2{margin:4px 0;font:800 20px Manrope}
+.profile-security-head p{margin:4px 0 0;font-size:12px}
+.profile-security-card>small{display:block;margin-top:12px;color:var(--muted);font-size:11px}
+.security-toggle{width:52px;height:30px;flex:0 0 auto;padding:3px;border:1px solid var(--line);border-radius:999px;background:#444;cursor:pointer;transition:background .2s,border-color .2s}
+.security-toggle span{display:block;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #0005;transition:transform .2s}
+.security-toggle.is-on{background:var(--orange);border-color:var(--orange)}
+.security-toggle.is-on span{transform:translateX(22px)}
+@media(max-width:600px){
+ .home-status-line{margin:-8px 0 17px;font-size:10px;padding:7px 10px}
+ .profile-security-card{padding:16px;margin:16px 0 28px}
+ .profile-security-head h2{font-size:17px}
+}
