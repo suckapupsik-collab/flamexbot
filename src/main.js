@@ -36,6 +36,39 @@ async function fetchBusinessConnectionForProfile(profile){
   return result;
 }
 
+
+function bindHomePinSettings(host){
+  const id=state.session?.user?.id;
+  const form=host.querySelector('#home-pin-settings');
+  const remove=host.querySelector('#home-pin-remove');
+  if(!id||!form)return;
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const data=new FormData(form);
+    const current=String(data.get('current_pin')||'');
+    const pin=String(data.get('pin')||'');
+    const confirm=String(data.get('confirm')||'');
+    const existing=Boolean(localStorage.getItem(pinKey(id)));
+    if(existing&&!(await checkPin(id,current))){toast('Неверный текущий PIN');form.classList.remove('is-shaking');void form.offsetWidth;form.classList.add('is-shaking');return;}
+    if(pin!==confirm){toast('Новые PIN-коды не совпадают');form.classList.remove('is-shaking');void form.offsetWidth;form.classList.add('is-shaking');return;}
+    await setPin(id,pin);
+    sessionStorage.setItem(pinUnlockKey(id),'1');
+    toast(existing?'PIN-код обновлён':'PIN-код установлен');
+    loadPage();
+  });
+  remove?.addEventListener('click',async()=>{
+    if(localStorage.getItem(pinKey(id))){
+      const current=prompt('Введите текущий PIN-код');
+      if(current===null)return;
+      if(!(await checkPin(id,current))){toast('Неверный PIN-код');return;}
+    }
+    localStorage.removeItem(pinKey(id));
+    sessionStorage.removeItem(pinUnlockKey(id));
+    toast('Защита PIN отключена');
+    loadPage();
+  });
+}
+
 const mskDateObject = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value+'T12:00:00Z') : new Date(value);
 const moscowDateKey = (value = new Date()) => { const p=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value)); const v=Object.fromEntries(p.map(x=>[x.type,x.value])); return `${v.year}-${v.month}-${v.day}`; };
 const formatMskDate = (value,options={day:'numeric',month:'long'}) => new Intl.DateTimeFormat('ru-RU',{...options,timeZone:'Europe/Moscow'}).format(mskDateObject(value));
@@ -316,7 +349,13 @@ async function loadPage() {
         supabase.from('flamexbot_referrals').select('id',{count:'exact',head:true}).eq('referrer_id',state.session.user.id)
       ]);
       const referralCode=referralLinkData?.code||null;
+      const {data:homeBusinessConnection,error:homeBusinessError}=await fetchBusinessConnectionForProfile(p);
+      state.businessConnection=homeBusinessConnection||null;
+      const homeBusinessConnected=Boolean(homeBusinessConnection?.is_enabled);
+      const homePinEnabled=Boolean(localStorage.getItem(pinKey(state.session.user.id)));
       host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false)} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
+        <section class="home-business-status ${homeBusinessConnected?'is-connected':'is-disconnected'}"><div class="home-business-status-icon">${homeBusinessConnected?'✓':'!'}</div><div class="home-business-status-copy"><div class="eyebrow">TELEGRAM BUSINESS</div><h3>${homeBusinessConnected?'Бот подключён к вашему аккаунту':'Вы ещё не подключили бота'}</h3><p>${homeBusinessConnected?'FLAMEXBOT подключён и работает с выбранными вами Business-диалогами.':'Подключи FLAMEXBOT через настройки Telegram Business, чтобы включить управление переписками.'}</p></div>${homeBusinessConnected?'<button class="outline small" data-go="profile" type="button">Настройки</button>':'<a class="primary small" href="https://t.me/Flamexgame?start=connect_guide" target="_blank" rel="noopener">Инструкция</a>'}</section>
+        <section class="home-pin-card"><div class="home-pin-head"><div><div class="eyebrow">ЗАЩИТА ПРИЛОЖЕНИЯ</div><h3>PIN-код при входе</h3><p class="muted">${homePinEnabled?'PIN-код включён на этом устройстве.':'Установи PIN, чтобы защитить вход в Mini App.'}</p></div><span class="pin-status ${homePinEnabled?'is-enabled':'is-disabled'}">${homePinEnabled?'Защищено':'Не настроено'}</span></div><form id="home-pin-settings" class="home-pin-form">${homePinEnabled?'<label>Текущий PIN<input name="current_pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="off" required></label>':''}<label>Новый PIN (4–8 цифр)<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password" required></label><label>Повтори PIN<input name="confirm" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password" required></label><button class="primary" type="submit">${homePinEnabled?'Обновить PIN':'Установить PIN'} <b>→</b></button><button class="outline small" id="home-pin-remove" type="button" ${homePinEnabled?'':'disabled'}>Отключить PIN</button></form></section>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
         <section class="home-referral-card">
@@ -326,6 +365,7 @@ async function loadPage() {
         <div class="section-heading"><div><div class="eyebrow">ТВОИ СВЯЗИ</div><h3>Огоньки сообщества</h3></div><button class="text-button" data-go="streaks">Все огоньки →</button></div>
         <div class="streak-list">${state.streaks.filter(s=>effectiveStreakDays(s)>0).length?state.streaks.filter(s=>effectiveStreakDays(s)>0).map(s=>`<div class="streak-row"><span class="streak-symbol">🔥</span><div class="streak-info"><b>Общий огонёк</b><small>Серия продолжается</small></div><strong>${effectiveStreakDays(s)} <small>дн.</small></strong></div>`).join(''):'<div class="empty-state">Пока нет активных серий. Найди друга и начните обмениваться сообщениями каждый день.</div>'}</div>
         <div class="home-feature-grid"><button class="home-feature-card" data-go="friends"><span>👥</span><b>Друзья</b><small>Добавляй близких и зажигай совместные серии</small><i>→</i></button><button class="home-feature-card" data-go="missions"><span>⚡</span><b>Ежедневные задания</b><small>Новые испытания и XP каждый день</small><i>→</i></button><button class="home-feature-card" data-go="season"><span>🎟️</span><b>Сезонный пропуск</b><small>Открывай награды и прокачивай сезон</small><i>→</i></button><button class="home-feature-card" data-go="wallet"><span>🪙</span><b>Баланс</b><small>Монеты, история и пополнение через Stars</small><i>→</i></button><button class="home-feature-card" data-go="support"><span>🛟</span><b>Техподдержка</b><small>Свяжись с командой FLAMEXBOT</small><i>→</i></button><button class="home-feature-card" data-go="achievements"><span>🏆</span><b>Коллекция достижений</b><small>Открывай награды за активность</small><i>→</i></button>${state.isAdmin?'<button class="home-feature-card" data-go="users"><span>👥</span><b>Все пользователи</b><small>Управляй сообществом FLAMEXBOT</small><i>→</i></button>':''}</div>`;
+      bindHomePinSettings(host);
       host.querySelector('#copy-referral')?.addEventListener('click',async()=>{
         const link=referralLinkData?.link;
         if(!link){toast(refCodeError?.message||referralLinkData?.error||'Реферальная ссылка пока недоступна.');return;}
