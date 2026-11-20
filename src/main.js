@@ -1024,7 +1024,1116 @@ async function openBusinessChat(id) {
       }
       if(name==='timeprofile'){
         const rawOffset=String(args||'3').trim();
-        if(!/^\d{4,8}$/.test(first))){toast('PIN должен содержать 4–8 цифр');return;}const second=prompt('Повтори PIN-код');if(second===null)return;if(first!==second){toast('PIN-коды не совпадают');return;}await setPin(id,first);sessionStorage.setItem(pinUnlockKey(id),'1');pinToggle.classList.add('is-on');pinToggle.setAttribute('aria-pressed','true');status.textContent='PIN-защита включена';toast('PIN-защита включена');});
+        if(!/^(?:\+?(?:0|[1-9]|1[0-4])|-(?:[1-9]|1[0-2]))$/.test(rawOffset)){button.disabled=false;toast('Формат: .timeprofile +3 или .timeprofile -5 (UTC−12…UTC+14)');return;}
+        const offset=Number(rawOffset);
+        const {error:tzError}=await supabase.from('flamexbot_user_preferences').upsert({profile_id:state.session.user.id,timezone_offset:offset,updated_at:new Date().toISOString()},{onConflict:'profile_id'});
+        button.disabled=false;if(tzError){toast('Не удалось изменить часовой пояс: '+tzError.message);return;}
+        state.profile={...state.profile,timezone_offset:offset};toast('Часовой пояс FLAMEXBOT установлен: UTC'+(offset>=0?'+':'')+offset);form.reset();return;
+      }
+      if(name==='time'){
+        const {data:timeData,error:timeError}=await supabase.functions.invoke('business-chat-send',{body:{action:'set_business_time',chat_id:id}});
+        button.disabled=false;
+        if(timeError||timeData?.error){toast(timeData?.error||timeError?.message||'Не удалось изменить имя Telegram-профиля');return;}
+        toast(timeData?.message||'Имя Telegram-профиля обновлено');form.reset();return;
+      }
+      if(['advertising','copyp','profile','qr','afk','id','chatid','date','calc','upper','lower','reverse','count','wordcount','choose','roll','bold','dumb','link'].includes(name)){
+        if(name==='qr'&&!args){button.disabled=false;toast('Формат: .qr ссылка или текст');return;}
+        if(['calc','upper','lower','reverse','count','wordcount','choose','bold','dumb','link'].includes(name)&&!args){button.disabled=false;toast('Добавь аргументы после .'+name);return;}
+        const {data:utilityData,error:utilityError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text,command_mode:true,command_name:name}});
+        button.disabled=false;
+        if(utilityError||utilityData?.error){toast(utilityData?.error||utilityError?.message||'Не удалось выполнить команду');return;}
+        form.reset();
+        if(name==='copyp'||name==='profile')toast('Карточка собеседника отправлена');
+        else if(name==='advertising')toast('Персональная ссылка отправлена');
+        else if(name==='qr')toast('Создаём QR-код…');
+        else if(name==='afk')toast(utilityData?.message||'AFK включён только в этом диалоге');
+
+        await refreshBusinessMessages(id);return;
+      }
+      button.disabled=false;toast('Неизвестная команда. Напиши .help');return;
+    }
+    const replyId=form.querySelector('[name=reply_to_message_id]').value||null;
+    const { data, error } = await supabase.functions.invoke('business-chat-send', { body: { chat_id:id,text,storage_path:storagePath,media_type:mediaType,reply_to_message_id:replyId,antimut_mode:Boolean(chat.antimut_enabled) } });
+    button.disabled = false;
+    if (error || data?.error) {
+      if(storagePath) await supabase.storage.from('flamex-business-media').remove([storagePath]);
+      toast(data?.error || error.message || 'Не удалось отправить сообщение'); return;
+    }
+    form.reset();
+    clearSelectedMedia();
+    document.querySelector('#business-reply-preview').hidden=true;
+    await refreshBusinessMessages(id);
+    await supabase.rpc('sync_flamexbot_achievements');
+  });
+}
+
+async function renderSupportInbox(host) {
+  const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
+  if(accessError||allowed!==true||!state.isAdmin){
+    host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Входящие доступны только владельцу и администраторам.</p></div>';
+    return;
+  }
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · SUPPORT</div><h1>Техподдержка</h1><p class="muted">Обращения пользователей, входящие сообщения и ответы от имени FLAMEXBOT.</p></div>
+    <div class="support-inbox"><aside class="support-chat-list"><div class="support-list-head"><b>Диалоги</b><button class="outline small" id="support-refresh" type="button">↻</button></div><div class="support-chat-items"><div class="empty-state">Загрузка диалогов…</div></div></aside>
+    <section class="support-thread"><div class="support-thread-placeholder"><span>✉</span><b>Выбери диалог</b><small>Здесь появится история сообщений с пользователем.</small></div></section></div>`;
+  const list=host.querySelector('.support-chat-items');
+  const thread=host.querySelector('.support-thread');
+  let activeId=null;
+  const supportMediaInfo=raw=>{try{const value=JSON.parse(raw||"");return value&&value._fx_media===1?value:null;}catch{return null;}};
+  const renderSupportMessages=messages=>(messages||[]).map(msg=>{
+    const media=supportMediaInfo(msg.content);
+    const caption=media?.caption||(!media?msg.content:"");
+    const attachment=media?'<button type="button" class="support-attachment" data-support-media="'+esc(msg.telegram_message_id)+'">📎 '+esc(media.file_name||msg.message_type||"Вложение")+' · Открыть</button>':"";
+    return '<article class="support-message '+(msg.direction==='outgoing'?'outgoing':'incoming')+'">'+(caption?'<p>'+esc(caption)+'</p>':"")+attachment+'<time>'+formatMskDateTime(msg.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'</time></article>';
+  }).join('')||'<div class="empty-state">Сообщений пока нет.</div>';
+  const bindSupportMedia=root=>{
+    root.querySelectorAll('[data-support-media]').forEach(button=>button.addEventListener('click',async()=>{
+      if(button.dataset.loading==="1"||button.dataset.loaded==="1")return;
+      button.dataset.loading="1";button.disabled=true;button.textContent="Загружаем файл…";
+      try{
+        const {data:{session}}=await supabase.auth.getSession();
+        if(!session?.access_token)throw new Error("Сессия администратора истекла");
+        const response=await fetch(SUPABASE_URL+'/functions/v1/flamexbot-support-inbox',{
+          method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_KEY,Authorization:'Bearer '+session.access_token},
+          body:JSON.stringify({action:'media',chat_id:activeId,message_id:Number(button.dataset.supportMedia)})
+        });
+        if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'Не удалось загрузить файл');}
+        const blob=await response.blob(),url=URL.createObjectURL(blob),article=button.closest('.support-message');
+        const type=blob.type||"";
+        if(type.startsWith('image/')){
+          const image=document.createElement('img');image.src=url;image.alt='Вложение пользователя';image.className='support-media-preview';image.loading='lazy';article.insertBefore(image,button);
+        }else if(type.startsWith('video/')){
+          const video=document.createElement('video');video.src=url;video.controls=true;video.playsInline=true;video.className='support-media-preview';article.insertBefore(video,button);
+        }else{
+          const link=document.createElement('a');link.href=url;link.download='';link.textContent='Скачать файл';link.className='support-media-download';article.insertBefore(link,button);
+        }
+        button.textContent='Файл загружен';button.dataset.loaded="1";
+      }catch(error){toast(error.message||'Ошибка загрузки');button.textContent='Повторить загрузку';}
+      finally{button.disabled=false;button.dataset.loading="0";}
+    }));
+  };
+  const loadList=async()=>{
+    const {data,error}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'list'}});
+    if(error||data?.error){list.innerHTML='<div class="empty-state">Не удалось загрузить входящие: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
+    const chats=data?.chats||[];
+    list.innerHTML=chats.length?chats.map(chat=>{
+      const name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id;
+      return `<button type="button" class="support-chat-choice ${activeId===chat.id?'selected':''}" data-support-chat="${esc(chat.id)}">
+        <span class="support-avatar">${esc((name||'U').slice(0,1).toUpperCase())}</span><span class="support-chat-copy"><b>${esc(name)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}${esc(chat.last_message_preview||'Новое сообщение')} · ${chat.status==='closed'?'Закрыто':'Открыто'}</small></span>
+        <span class="support-chat-meta">${chat.unread_count?'<i>'+Number(chat.unread_count)+'</i>':''}<time>${chat.last_message_at?formatMskTime(chat.last_message_at):''}</time></span></button>`;
+    }).join(''):'<div class="empty-state">Пока нет входящих сообщений. Когда пользователь напишет боту, диалог появится здесь автоматически.</div>';
+    list.querySelectorAll('[data-support-chat]').forEach(btn=>btn.addEventListener('click',()=>openChat(btn.dataset.supportChat)));
+  };
+  const openChat=async id=>{
+    activeId=id;
+    list.querySelectorAll('[data-support-chat]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.supportChat===id));
+    const {data,error}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'messages',chat_id:id}});
+    if(error||data?.error){thread.innerHTML='<div class="empty-state">Не удалось открыть диалог: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
+    const chat=data.chat||{};
+    const name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id;
+    thread.innerHTML=`<div class="support-thread-head"><button class="support-back outline small" id="support-back" type="button">← Диалоги</button><div><b>${esc(name)}</b><small>${chat.username?'@'+esc(chat.username)+' · ':''}ID ${esc(chat.telegram_user_id||'')} · ${chat.status==='closed'?'Закрыто':'Открыто'}</small></div><button class="outline small" id="support-close-ticket" type="button">${chat.status==='closed'?'Закрыто':'Закрыть обращение'}</button></div>
+      <div class="support-message-list">${renderSupportMessages(data.messages||[])}</div>
+      <form class="support-reply-form" id="support-reply-form"><label class="support-attach-label" title="Прикрепить файл">＋<input type="file" name="attachment" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.zip,.txt" hidden></label><textarea name="content" rows="2" maxlength="4096" placeholder="Сообщение или подпись к файлу…"></textarea><span class="support-selected-file" aria-live="polite"></span><button class="primary" type="submit">Отправить ↗</button></form>`;
+    thread.classList.add('active');
+    thread.querySelector('#support-back')?.addEventListener('click',()=>thread.classList.remove('active'));
+    thread.querySelector('#support-close-ticket')?.addEventListener('click',async event=>{
+      if(chat.status==='closed')return;
+      const button=event.currentTarget;button.disabled=true;button.textContent='Закрываем…';
+      const result=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'close',chat_id:id}});
+      if(result.error||result.data?.error){button.disabled=false;button.textContent='Закрыть обращение';toast(result.data?.error||result.error?.message||'Не удалось закрыть обращение');return;}
+      toast('Обращение закрыто');await openChat(id);await loadList();
+    });
+    const messageList=thread.querySelector('.support-message-list');
+    if(messageList)messageList.scrollTop=messageList.scrollHeight;
+    bindSupportMedia(thread);
+    const replyForm=thread.querySelector('#support-reply-form');
+    const attachmentInput=replyForm?.elements.attachment;
+    const selectedFile=replyForm?.querySelector('.support-selected-file');
+    attachmentInput?.addEventListener('change',()=>{const file=attachmentInput.files?.[0];if(selectedFile)selectedFile.textContent=file?file.name+' · '+(file.size/1024/1024).toFixed(1)+' МБ':'';});
+    replyForm?.addEventListener('submit',async event=>{
+      event.preventDefault();
+      const form=event.currentTarget,input=form.elements.content,file=form.elements.attachment?.files?.[0];
+      const content=String(input.value||'').trim(),button=form.querySelector('button[type=submit]');
+      if(!content&&!file)return;
+      if(file&&file.size>20*1024*1024){toast('Максимальный размер файла — 20 МБ');return;}
+      button.disabled=true;button.textContent='Отправляем…';
+      let result;
+      if(file){
+        try{
+          const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||''));reader.onerror=()=>reject(new Error('Не удалось прочитать файл'));reader.readAsDataURL(file);});
+          const base64=String(dataUrl).split(',')[1]||'';
+          result=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'send_media',chat_id:id,file_name:file.name,mime_type:file.type||'application/octet-stream',file_base64:base64,caption:content}});
+        }catch(error){result={data:{error:error.message}};}
+      }else result=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'send',chat_id:id,content}});
+      button.disabled=false;button.textContent='Отправить ↗';
+      if(result.error||result.data?.error){toast(result.data?.error||result.error?.message||'Не удалось отправить');return;}
+      input.value='';if(attachmentInput)attachmentInput.value='';if(selectedFile)selectedFile.textContent='';
+      await openChat(id);await loadList();
+    });
+    await loadList();
+  };
+  host.querySelector('#support-refresh')?.addEventListener('click',loadList);
+  await loadList();
+  let polling=false;
+  const refreshTimer=setInterval(async()=>{
+    if(!host.isConnected||state.page!=='support'){clearInterval(refreshTimer);return;}
+    if(polling)return;
+    polling=true;
+    try{
+      await loadList();
+      if(activeId){
+        const {data}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'messages',chat_id:activeId}});
+        const messageList=thread.querySelector('.support-message-list');
+        if(data?.messages&&messageList){
+          const wasNearBottom=messageList.scrollHeight-messageList.scrollTop-messageList.clientHeight<90;
+          messageList.innerHTML=renderSupportMessages(data.messages||[]);
+          bindSupportMedia(messageList);
+          if(wasNearBottom)messageList.scrollTop=messageList.scrollHeight;
+        }
+      }
+    }catch(error){console.warn('Support inbox refresh skipped:',error?.message||error);}
+    finally{polling=false;}
+  },6000);
+}
+
+
+async function renderBotInbox(host) {
+  const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
+  if(accessError||allowed!==true||!state.isAdmin){
+    host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Личные сообщения бота доступны только владельцу и администраторам.</p></div>';
+    return;
+  }
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT · BOT INBOX</div><h1>Личные сообщения бота</h1><p class="muted">Все обычные личные сообщения, которые пользователи отправляют FLAMEXBOT. Обращения в техподдержку находятся в отдельном разделе.</p></div>
+    <div class="support-inbox bot-private-inbox"><aside class="support-chat-list"><div class="support-list-head"><b>Диалоги</b><button class="outline small" id="bot-inbox-refresh" type="button">↻</button></div><div class="support-chat-items"><div class="empty-state">Загрузка диалогов…</div></div></aside>
+    <section class="support-thread"><div class="support-thread-placeholder"><span>✉</span><b>Выбери личный чат</b><small>Здесь появятся сообщения пользователя и ответы бота.</small></div></section></div>`;
+  const list=host.querySelector('.support-chat-items'),thread=host.querySelector('.support-thread');
+  const pendingUserId=state.pendingBotInboxUserId;state.pendingBotInboxUserId=null;
+  let activeId=null,polling=false;
+  const parseMedia=raw=>{try{const value=JSON.parse(raw||'');return value&&value._fx_media===1?value:null;}catch{return null;}};
+  const renderMessages=messages=>(messages||[]).map(msg=>{
+    const media=parseMedia(msg.content),caption=media?.caption||(!media?msg.content:'');
+    const attachment=media?'<div class="support-attachment">📎 '+esc(media.file_name||msg.message_type||'Вложение')+'</div>':'';
+    return '<article class="support-message '+(msg.direction==='outgoing'?'outgoing':'incoming')+'">'+(caption?'<p>'+esc(caption)+'</p>':'')+attachment+'<time>'+formatMskDateTime(msg.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'</time></article>';
+  }).join('')||'<div class="empty-state">Сообщений пока нет.</div>';
+  const loadList=async()=>{
+    const {data,error}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_list'}});
+    if(error||data?.error){list.innerHTML='<div class="empty-state">Не удалось загрузить личные сообщения: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
+    const chats=data?.chats||[];
+    list.innerHTML=chats.length?chats.map(chat=>{
+      const name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id||'Пользователь';
+      return '<button type="button" class="support-chat-choice '+(activeId===chat.id?'selected':'')+'" data-bot-inbox-chat="'+esc(chat.id)+'"><span class="support-avatar">'+esc((name||'U').slice(0,1).toUpperCase())+'</span><span class="support-chat-copy"><b>'+esc(name)+'</b><small>'+(chat.username?'@'+esc(chat.username)+' · ':'')+esc(chat.last_message_preview||'Новое сообщение')+'</small></span><span class="support-chat-meta">'+(chat.unread_count?'<i>'+Number(chat.unread_count)+'</i>':'')+'<time>'+(chat.last_message_at?formatMskTime(chat.last_message_at):'')+'</time></span></button>';
+    }).join(''):'<div class="empty-state">Личных сообщений пока нет. Новые диалоги появятся автоматически, когда пользователь напишет боту.</div>';
+    list.querySelectorAll('[data-bot-inbox-chat]').forEach(btn=>btn.addEventListener('click',()=>openChat(btn.dataset.botInboxChat)));
+  };
+  const openChat=async id=>{
+    activeId=id;
+    const {data,error}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_messages',chat_id:id}});
+    if(error||data?.error){thread.innerHTML='<div class="empty-state">Не удалось открыть чат: '+esc(data?.error||error?.message||'ошибка')+'</div>';return;}
+    const chat=data.chat||{},name=[chat.first_name,chat.last_name].filter(Boolean).join(' ')||chat.username||chat.telegram_user_id||'Пользователь';
+    thread.innerHTML='<div class="support-thread-head"><button class="support-back outline small" id="bot-inbox-back" type="button">← Диалоги</button><div><b>'+esc(name)+'</b><small>'+(chat.username?'@'+esc(chat.username)+' · ':'')+'ID '+esc(chat.telegram_user_id||'')+'</small></div></div><div class="support-message-list">'+renderMessages(data.messages||[])+'</div><form class="support-reply-form" id="bot-inbox-reply"><textarea name="content" rows="2" maxlength="4096" placeholder="Ответить пользователю от имени FLAMEXBOT…"></textarea><button class="primary" type="submit">Отправить ↗</button></form>';
+    thread.classList.add('active');
+    thread.querySelector('#bot-inbox-back')?.addEventListener('click',()=>thread.classList.remove('active'));
+    const messageList=thread.querySelector('.support-message-list');if(messageList)messageList.scrollTop=messageList.scrollHeight;
+    thread.querySelector('#bot-inbox-reply')?.addEventListener('submit',async event=>{
+      event.preventDefault();const form=event.currentTarget,input=form.elements.content,content=String(input.value||'').trim(),button=form.querySelector('button[type=submit]');
+      if(!content)return;button.disabled=true;button.textContent='Отправляем…';
+      const result=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_send',chat_id:id,content}});
+      button.disabled=false;button.textContent='Отправить ↗';
+      if(result.error||result.data?.error){toast(result.data?.error||result.error?.message||'Не удалось отправить');return;}
+      input.value='';await openChat(id);await loadList();
+    });
+    await loadList();
+  };
+  host.querySelector('#bot-inbox-refresh')?.addEventListener('click',loadList);
+  await loadList();
+  if(pendingUserId){
+    const started=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_start',target_user_id:pendingUserId}});
+    if(started.error||started.data?.error){toast(started.data?.error||started.error?.message||'Не удалось открыть диалог');}
+    else {await loadList();if(started.data?.chat?.id)await openChat(started.data.chat.id);}
+  }
+  const timer=setInterval(async()=>{
+    if(!host.isConnected||state.page!=='inbox'){clearInterval(timer);return;}
+    if(polling||document.hidden)return;
+    polling=true;
+    try{
+      await loadList();
+      if(activeId){
+        const {data}=await supabase.functions.invoke('flamexbot-support-inbox',{body:{action:'inbox_messages',chat_id:activeId}});
+        const messageList=thread.querySelector('.support-message-list');
+        if(data?.messages&&messageList){
+          const near=messageList.scrollHeight-messageList.scrollTop-messageList.clientHeight<90;
+          messageList.innerHTML=renderMessages(data.messages);
+          if(near)messageList.scrollTop=messageList.scrollHeight;
+        }
+      }
+    }catch(error){console.warn('Bot inbox refresh skipped:',error?.message||error);}
+    finally{polling=false;}
+  },5000);
+}
+
+async function renderAdmin(host) {
+  const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
+  if(accessError||allowed!==true||!state.isAdmin){
+    host.innerHTML='<div class="page-heading"><div class="eyebrow">ACCESS DENIED</div><h1>Нет доступа</h1><p class="muted">Административные инструменты доступны только уполномоченному владельцу.</p></div>';
+    return;
+  }
+  const [all,verified,premium,banned,audit]=await Promise.all([
+    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'all',p_banned:'all'}),
+    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'verified',p_premium:'all',p_banned:'all'}),
+    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'premium',p_banned:'all'}),
+    supabase.rpc('admin_list_flamexbot_users',{p_limit:1,p_offset:0,p_verified:'all',p_premium:'all',p_banned:'banned'}),
+    supabase.rpc('admin_list_flamexbot_audit',{p_limit:10})
+  ]);
+  const count=result=>result.data?.[0]?.total_count||0;
+  const actionLabels={
+    ban:'Заблокирован аккаунт',unban:'Снята блокировка',verify:'Выдана синяя галочка',
+    unverify:'Снята синяя галочка',premium_grant:'Выдан или продлён Premium',
+    premium_revoke:'Снят Premium',
+    badge_grant:'Выдан значок роли',badge_revoke:'Снят значок роли'
+  };
+  const auditRows=(audit.data||[]).map(item=>{
+    const extra=item.reason||item.badge_code||(item.duration_days!=null?'Срок: '+(item.duration_days===0?'бессрочно':item.duration_days+' дн.'):'');
+    const icon=item.action==='ban'?'⛔':item.action==='verify'?'🔵':item.action.includes('premium')?'✦':item.action.includes('badge')?'🏷️':'🛡';
+    return `<article class="admin-audit-row">
+      <span class="admin-audit-icon">${icon}</span>
+      <div class="admin-audit-copy"><b>${esc(actionLabels[item.action]||item.action)}</b><small>${esc(item.target_name||'Пользователь')} · ${esc(item.actor_name||'Администратор')}${extra?' · '+esc(extra):''}</small></div>
+      <time>${formatMskDateTime(item.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</time>
+    </article>`;
+  }).join('');
+  host.innerHTML=`<div class="page-heading admin-heading"><div class="eyebrow">FOUNDER CONTROL CENTER</div><h1>Админ-панель <span>⚙</span></h1><p class="muted">Управление участниками, верификацией, подписками и безопасностью проекта.</p></div>
+    <section class="admin-welcome-card"><div class="admin-welcome-orb">✦</div><div><span class="admin-live-pill"><i></i> FOUNDER ACCESS</span><h2>Добро пожаловать, владелец</h2><p>Все административные действия проверяются сервером. Значки ролей не дают права доступа к панели — права остаются только у владельца.</p></div><span class="admin-crown">👑</span></section>
+    <div class="admin-stat-grid">
+      <article class="admin-stat"><span>👥</span><small>ВСЕ УЧАСТНИКИ</small><b>${count(all)}</b><em>Зарегистрировано</em></article>
+      <article class="admin-stat"><span>🔵</span><small>ВЕРИФИЦИРОВАНЫ</small><b>${count(verified)}</b><em>С синей галочкой</em></article>
+      <article class="admin-stat"><span>✦</span><small>PREMIUM</small><b>${count(premium)}</b><em>Активные подписки</em></article>
+      <article class="admin-stat"><span>⛔</span><small>ЗАБЛОКИРОВАНЫ</small><b>${count(banned)}</b><em>Модерация</em></article>
+    </div>
+    <div class="admin-section-title"><div><div class="eyebrow">CONTROL MODULES</div><h3>Инструменты управления</h3></div><span class="admin-secure">🔐 Защищённый доступ</span></div>
+    <div class="admin-module-grid">
+      <button class="admin-module" data-go="inbox"><span class="admin-module-icon users">✉</span><b>Личные сообщения бота</b><small>Все личные сообщения, которые пользователи отправляют FLAMEXBOT</small><i>Открыть →</i></button>
+       <button class="admin-module" data-go="support"><span class="admin-module-icon users">🛟</span><b>Техподдержка</b><small>Отдельные обращения пользователей и ответы поддержки</small><i>Открыть →</i></button>
+      <button class="admin-module" data-go="users"><span class="admin-module-icon users">👥</span><b>Все пользователи</b><small>Поиск, сортировка, фильтры и карточки участников</small><i>Открыть →</i></button>
+      <button class="admin-module" data-admin-filter="verified"><span class="admin-module-icon verify">🔵</span><b>Верификация</b><small>Синие галочки и официальные значки ролей</small><i>Управлять →</i></button>
+      <button class="admin-module" data-admin-filter="premium"><span class="admin-module-icon premium">✦</span><b>Premium</b><small>Выдача, продление и снятие подписки</small><i>Управлять →</i></button>
+      <button class="admin-module" data-admin-filter="banned"><span class="admin-module-icon moderation">🛡</span><b>Модерация</b><small>Блокировка аккаунтов и снятие ограничений</small><i>Управлять →</i></button>
+      <button class="admin-module" data-go="wallet"><span class="admin-module-icon premium">🪙</span><b>Управление балансом</b><small>Начисление и списание монет, история операций</small><i>Открыть →</i></button>
+      <button class="admin-module" data-go="banners"><span class="admin-module-icon verify">🖼️</span><b>Баннеры бота</b><small>Изображения для /start и инструкции</small><i>Настроить →</i></button>
+      <button class="admin-module" data-go="wheel_admin"><span class="admin-module-icon premium">🎡</span><b>Колесо фортуны</b><small>Статистика прокруток, монеты, награды и история выигрышей</small><i>Управлять →</i></button><button class="admin-module" data-go="payments_admin"><span class="admin-module-icon premium">💳</span><b>Журнал платежей</b><small>Premium, защита команд, колесо, Stars и возвраты в одном месте</small><i>Открыть →</i></button>${isFounderProfile()?'<button class="admin-module" data-go="promo_admin"><span class="admin-module-icon premium">🎟️</span><b>Промокоды сезона</b><small>Создание кодов, XP и лимиты активаций</small><i>Управлять →</i></button><button class="admin-module" data-go="season_admin"><span class="admin-module-icon premium">🎟️</span><b>Редактор сезонов</b><small>Название, даты, стоимость Pro Pass и 60 наград</small><i>Настроить →</i></button><button class="admin-module" data-go="season_events_admin"><span class="admin-module-icon verify">🎯</span><b>Сезонные события</b><small>Создание испытаний, сроки и награды XP</small><i>Управлять →</i></button>':''}
+    </div>
+    <section class="admin-security-card"><div><span>🧬</span><div><b>Защита владельца активна</b><small>Аккаунт владельца защищён от блокировки, снятия Premium, синей галочки и значков ролей. Значки администратора и разработчика не выдают доступ к панели.</small></div></div><span class="business-status is-connected">SECURE</span></section>
+    <section class="admin-owner-settings">
+      <div class="section-heading"><div><div class="eyebrow">FOUNDER SETTINGS</div><h3>Моя приватность и защита</h3></div><span class="admin-secure">Только владелец</span></div>
+      <p class="muted">Настройки применяются к публичному отображению твоего профиля и защите от команд других Business-аккаунтов.</p>
+      <div class="admin-owner-settings-grid">
+        <label class="admin-owner-setting"><span><b>Скрыть подписку</b><small>Premium не показывается в публичных элементах профиля</small></span><input type="checkbox" data-founder-setting="hide_subscription" ${state.profile?.show_subscription===false?'checked':''}></label>
+        <label class="admin-owner-setting"><span><b>Скрыть роль</b><small>Скрыть значок роли рядом с профилем</small></span><input type="checkbox" data-founder-setting="hide_role" ${state.profile?.show_role===false?'checked':''}></label>
+        <label class="admin-owner-setting"><span><b>Скрыть все бейджи</b><small>Скрыть значки профиля, включая Premium и роль</small></span><input type="checkbox" data-founder-setting="hide_badges" ${state.profile?.show_badges===false?'checked':''}></label>
+        <label class="admin-owner-setting"><span><b>Скрыть активность</b><small>Не показывать публичную статистику активности</small></span><input type="checkbox" data-founder-setting="hide_activity" ${state.profile?.show_activity===false?'checked':''}></label>
+        <label class="admin-owner-setting"><span><b>Отключить защиту от команд</b><small>Разрешить другим пользователям применять к тебе команды FLAMEXBOT</small></span><input type="checkbox" data-founder-setting="disable_command_protection" ${state.profile?.command_protection_disabled===true?'checked':''}></label>
+      </div>
+      <small class="admin-owner-settings-note">Отключение защиты не отключает защиту аккаунта от блокировки и не меняет права администратора.</small>
+    </section>
+    <section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">SECURITY HISTORY</div><h3>Журнал действий</h3></div><span class="admin-secure">Последние 10 событий</span></div>
+      <div class="admin-audit-list">${auditRows||'<div class="empty-state">Административных действий пока нет. Здесь появится история блокировок, галочек и Premium.</div>'}</div>
+      ${audit.error?'<p class="business-warning">Не удалось загрузить журнал действий: '+esc(audit.error.message)+'</p>':''}
+    </section>
+    ${all.error||verified.error||premium.error||banned.error?'<p class="business-warning">Не удалось загрузить часть административной статистики.</p>':''}`;
+  if(isFounderProfile(state.profile)){
+    host.querySelectorAll('[data-founder-setting]').forEach(input=>input.addEventListener('change',async()=>{
+      const key=input.dataset.founderSetting,checked=input.checked;
+      const column=key==='hide_subscription'?'show_subscription':key==='hide_role'?'show_role':key==='hide_badges'?'show_badges':key==='hide_activity'?'show_activity':'command_protection_disabled';
+      const value=key==='disable_command_protection'?checked:!checked;
+      input.disabled=true;
+      const {error}=await supabase.from('profiles').update({[column]:value}).eq('id',state.session.user.id);
+      input.disabled=false;
+      if(error){input.checked=!checked;toast('Не удалось сохранить настройку: '+error.message);return;}
+      state.profile={...state.profile,[column]:value};
+      updateHeaderProfile();
+      toast('Настройка приватности сохранена');
+    }));
+  }
+  host.querySelectorAll('[data-admin-filter]').forEach(btn=>btn.addEventListener('click',()=>{
+    const filter=btn.dataset.adminFilter;
+    state.userFilters={...state.userFilters,verified:filter==='verified'?'verified':'all',premium:filter==='premium'?'premium':'all',banned:filter==='banned'?'banned':'all',offset:0};
+    navigateTo('users');
+  }));
+}
+
+async function renderPaymentJournal(host){
+ const load=async()=>{
+  const results=await Promise.all([
+   supabase.rpc('admin_get_flamexbot_payment_journal',{p_limit:500}),
+   supabase.rpc('admin_list_flamexbot_audit',{p_limit:200})
+  ]);
+  return results;
+ };
+ let loaded;
+ try{loaded=await load();}
+ catch(firstError){
+  if(!/failed to fetch|network|load failed/i.test(String(firstError?.message||firstError)))throw firstError;
+  await new Promise(resolve=>setTimeout(resolve,700));
+  try{loaded=await load();}
+  catch(retryError){
+   host.innerHTML='<section class="business-card"><h2>💳 Платежи</h2><p class="business-warning">Не удалось связаться с сервером платежей. Проверь подключение и повтори загрузку.</p><button class="primary" id="payment-journal-retry">Повторить загрузку</button><button class="outline" data-go="admin">Назад</button></section>';
+   host.querySelector('#payment-journal-retry')?.addEventListener('click',()=>renderPaymentJournal(host));
+   return;
+  }
+ }
+ const [{data,error},{data:auditData,error:auditError}]=loaded;
+ if(error){
+  host.innerHTML='<section class="business-card"><h2>💳 Платежи</h2><p class="business-warning">'+esc(error.message)+'</p><button class="primary" id="payment-journal-retry">Повторить загрузку</button><button class="outline" data-go="admin">Назад</button></section>';
+  host.querySelector('#payment-journal-retry')?.addEventListener('click',()=>renderPaymentJournal(host));
+  return;
+ }
+ const stats=data?.stats||{},payments=data?.payments||[];
+ const kindLabel={premium:'Premium',command_protection:'Защита команд',wheel:'Колесо фортуны'},statusLabel={paid:'Оплачено',pending:'Ожидает оплаты',refunded:'Возвращено'};
+ const premiumCandidates=payments.filter(p=>p.kind==='premium'&&p.charge_id&&p.status==='paid').slice(0,10);
+ const premiumChecks=await Promise.all(premiumCandidates.map(async p=>{try{const {data,error}=await supabase.rpc('admin_preview_flamexbot_premium_refund',{p_telegram_payment_charge_id:p.charge_id});return [p.charge_id,error?{eligible:false,reason:'Не удалось проверить возврат'}:data];}catch{return [p.charge_id,{eligible:false,reason:'Проверка временно недоступна'}];}}));
+ const premiumEligibility=new Map(premiumChecks);
+ const rows=payments.map(p=>{const check=p.kind==='premium'&&p.charge_id?premiumEligibility.get(p.charge_id):null;const eligibility=check?(check.eligible?' · Возврат: период ещё не начался':' · Возврат недоступен: '+(check.reason||'проверка не пройдена')):'';return '<article class="admin-audit-row"><span class="admin-audit-icon">'+(p.kind==='premium'?'✦':p.kind==='wheel'?'🎡':'🛡')+'</span><div class="admin-audit-copy"><b>'+esc(p.username||'Пользователь')+' · '+esc(kindLabel[p.kind]||p.kind)+' · '+esc(p.item||'')+'</b><small>'+esc(statusLabel[p.status]||p.status)+' · '+Number(p.amount||0)+' ⭐ · TG '+esc(p.telegram_user_id||'')+(p.period_days?' · '+Number(p.period_days)+' дн.':'')+(p.refund_reason?' · '+esc(p.refund_reason):'')+esc(eligibility)+'</small></div><time>'+esc(formatMskDateTime(p.updated_at||p.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</time></article>'+(check?.eligible?'<button class="outline small" data-premium-refund="'+esc(p.charge_id)+'">Вернуть '+Number(p.amount||0)+' ⭐ и отменить дни</button>':'');}).join('');
+ const actionLabels={premium_grant:'Premium выдан / продлён',premium_revoke:'Premium снят'};
+ const changes=(auditData||[]).filter(x=>['premium_grant','premium_revoke'].includes(x.action)).map(x=>'<article class="admin-audit-row"><span class="admin-audit-icon">✦</span><div class="admin-audit-copy"><b>'+esc(actionLabels[x.action])+' · '+esc(x.target_name||'Пользователь')+'</b><small>Администратор: '+esc(x.actor_name||'Основатель')+(x.duration_days!=null?' · '+(x.duration_days===0?'Бессрочно':Number(x.duration_days)+' дн.'):'')+(x.reason?' · '+esc(x.reason):'')+'</small></div><time>'+esc(formatMskDateTime(x.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</time></article>').join('');
+ host.innerHTML='<div class="page-heading"><div class="eyebrow">FOUNDER FINANCE</div><h1>💳 Журнал платежей</h1><p class="muted">Оплаты Premium, защиты команд и колеса, а также ручные изменения подписок.</p><div class="business-warning" style="margin:12px 0;padding:12px;border-radius:12px">Возврат Premium доступен только для новых покупок, если оплаченный период ещё не начался и срок подписки не менялся после покупки. Старые платежи и уже начавшиеся периоды возврату через панель не подлежат.</div></div><div class="admin-stats-grid"><article class="admin-stat"><small>ВСЕГО ОПЕРАЦИЙ</small><b>'+Number(stats.total||0)+'</b></article><article class="admin-stat"><small>ОПЛАЧЕНО</small><b>'+Number(stats.paid||0)+'</b></article><article class="admin-stat"><small>ОЖИДАЮТ</small><b>'+Number(stats.pending||0)+'</b></article><article class="admin-stat"><small>ВОЗВРАЩЕНО</small><b>'+Number(stats.refunded||0)+'</b></article><article class="admin-stat"><small>ПОЛУЧЕНО ⭐</small><b>'+Number(stats.stars_paid||0)+'</b></article><article class="admin-stat"><small>ВОЗВРАЩЕНО ⭐</small><b>'+Number(stats.stars_refunded||0)+'</b></article></div><section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">PAYMENT HISTORY</div><h3>Платежи</h3></div><button class="outline small" id="payment-journal-refresh">Обновить</button></div><p class="muted">Проверка возврата выполняется для последних 10 подходящих покупок, чтобы не создавать сотни одновременных запросов.</p><div class="admin-audit-list">'+(rows||'<div class="empty-state">Платежей пока нет.</div>')+'</div></section><section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">SUBSCRIPTION CONTROL</div><h3>Выдача и снятие Premium</h3></div></div><p class="muted">История ручных изменений подписок из карточек пользователей. Управление доступно через «Все пользователи → Управление аккаунтом».</p><div class="admin-audit-list">'+(changes||'<div class="empty-state">'+(auditError?'Не удалось загрузить историю: '+esc(auditError.message):'Ручных изменений Premium пока нет.')+'</div>')+'</div><button class="outline small" data-go="users">Открыть управление пользователями →</button></section><button class="outline" data-go="admin">← Назад в админ-меню</button>';
+ host.querySelector('#payment-journal-refresh')?.addEventListener('click',()=>renderPaymentJournal(host));
+ host.querySelectorAll('[data-premium-refund]').forEach(button=>button.addEventListener('click',async()=>{
+  const chargeId=button.dataset.premiumRefund;
+  if(!chargeId||!confirm('Вернуть Stars за эту покупку и отменить начисленные ею дни Premium? Это действие нельзя отменить.'))return;
+  button.disabled=true;button.textContent='Выполняю возврат…';
+  const {data,error}=await supabase.functions.invoke('admin-premium-refund',{body:{charge_id:chargeId,reason:'Возврат из журнала платежей Основателем'}});
+  if(error||data?.error){toast('Ошибка возврата: '+(data?.error||error?.message||'неизвестная ошибка'));button.disabled=false;button.textContent='Повторить возврат';return;}
+  toast('Возврат выполнен, дни Premium отменены');
+  renderPaymentJournal(host);
+ }));
+}
+
+async function renderWheelAdmin(host){
+  const [{data,error},{data:prizes,error:prizeError},{data:wheelSettings,error:settingsError}]=await Promise.all([supabase.rpc('admin_get_flamexbot_wheel_overview',{p_limit:100}),supabase.rpc('admin_get_flamexbot_wheel_prizes'),supabase.rpc('admin_get_flamexbot_wheel_settings')]);
+  if(error||prizeError||settingsError){host.innerHTML='<section class="business-card"><h2>🎡 Колесо фортуны</h2><p class="business-warning">'+esc(error?.message||prizeError?.message||settingsError?.message||'Ошибка загрузки')+'</p><button class="outline" data-go="admin">Назад</button></section>';return;}
+  const stats=data?.stats||{},orders=data?.orders||[],prizeRows=prizes||[];
+  const totalWeight=prizeRows.filter(p=>p.is_active).reduce((sum,p)=>sum+Number(p.weight||0),0);
+  const prizeEditor=prizeRows.map(p=>'<label class="wheel-admin-prize"><span><b>'+esc(p.prize_label)+'</b><small>'+esc(p.prize_code)+'</small></span><input type="number" min="0" max="10000" step="0.1" value="'+Number(p.weight)+'" data-wheel-weight="'+esc(p.prize_code)+'" aria-label="Вес награды"><small class="wheel-admin-percent" data-wheel-percent="'+esc(p.prize_code)+'">'+(totalWeight&&p.is_active?(Number(p.weight)/totalWeight*100).toFixed(2):'0.00')+'%</small><input type="checkbox" data-wheel-active="'+esc(p.prize_code)+'" '+(p.is_active?'checked':'')+' aria-label="Активна"></label>' ).join('');
+  const rows=orders.map(o=>'<article class="admin-audit-row"><span class="admin-audit-icon">🎁</span><div class="admin-audit-copy"><b>'+esc(o.username||'Пользователь')+' · '+esc(o.prize_label||'Награда не определена')+'</b><small>'+esc(o.status==='paid'?'Оплачено':o.status==='refunded'?'Возвращено':o.status==='pending'?'Ожидает оплаты':'Статус: '+o.status)+' · '+Number(o.price_stars||0)+' ⭐ · '+esc(o.telegram_user_id||'')+(o.refund_status?' · Возврат: '+esc(o.refund_status):'')+(o.refund_reason?' · '+esc(o.refund_reason):'')+'</small></div><time>'+esc(o.paid_at?formatMskDateTime(o.paid_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):formatMskDateTime(o.created_at,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</time>'+'</article>').join('');
+  host.innerHTML='<div class="page-heading"><div class="eyebrow">FOUNDER CONTROL</div><h1>🎡 Колесо фортуны</h1><p class="muted">Статистика и последние операции. Награды начисляются сервером после подтверждения платежа.</p></div><div class="admin-stats-grid"><article class="admin-stat"><span>🎯</span><small>ВЫИГРЫШЕЙ</small><b>'+Number(stats.total_spins||0)+'</b></article><article class="admin-stat"><span>⭐</span><small>ОПЛАЧЕННЫХ</small><b>'+Number(stats.paid_spins||0)+'</b></article><article class="admin-stat"><span>🪙</span><small>МОНЕТ ВЫДАНО</small><b>'+Number(stats.coins_awarded||0).toLocaleString('ru-RU')+'</b></article><article class="admin-stat"><span>🎁</span><small>БЕСПЛАТНЫХ</small><b>'+Number(stats.free_spins||0)+'</b></article><article class="admin-stat"><span>💰</span><small>ДОХОД В STARS</small><b>'+Number(stats.stars_revenue||0)+' ⭐</b></article><article class="admin-stat"><span>⌛</span><small>ОЖИДАЮТ ОПЛАТЫ</small><b>'+Number(stats.pending_orders||0)+'</b></article></div><section class="admin-audit-panel"><h3>🎟 Управление бесплатными прокрутками</h3><p class="muted">Начисли или спиши прокрутки по Telegram ID. Пользователь получит уведомление.</p><div class="wheel-admin-actions"><input id="wheel-user-tg" inputmode="numeric" placeholder="Telegram ID пользователя"><input id="wheel-spin-delta" type="number" min="-100" max="100" value="1" placeholder="+1 или -1"><input id="wheel-spin-reason" placeholder="Причина (необязательно)"><button class="primary" id="wheel-spin-adjust">Применить</button></div><small id="wheel-spin-status" class="muted"></small></section><section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">WHEEL ECONOMY</div><h3>Цена и недельный лимит</h3></div><span class="admin-secure">Только Основатель</span></div><div class="wheel-admin-actions"><label>Цена прокрутки, ⭐<input id="wheel-price-setting" type="number" min="1" max="10000" value="'+Number(wheelSettings?.spin_price_stars||5)+'" /></label><label>Бесплатные прокрутки Premium в неделю<input id="wheel-weekly-setting" type="number" min="0" max="100" value="'+Number(wheelSettings?.premium_weekly_spins||0)+'" /></label><button class="primary" id="wheel-settings-save">Сохранить экономику</button></div><small id="wheel-settings-status" class="muted"></small></section><section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">PRIZE SETTINGS</div><h3>Настройка наград</h3></div><span class="admin-secure">Только Основатель</span></div><p class="muted">Вес определяет вероятность относительно суммы весов включённых наград. 0 отключает награду. Для Premium сохраняется бонус к весу 10%.</p><div class="wheel-admin-prizes">"+prizeEditor+"</div><div class="wheel-admin-actions"><button class="primary" id="wheel-prizes-save">Сохранить настройки</button><button class="outline small" id="wheel-prizes-reset">Вернуть стандартные веса</button></div><small class="muted" id="wheel-prizes-status"></small></section><section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">PRIZE DISTRIBUTION</div><h3>Выданные награды</h3></div></div><div class="admin-stats-grid"><article class="admin-stat"><small>PREMIUM 7 ДНЕЙ</small><b>'+Number(stats.premium_7d||0)+'</b></article><article class="admin-stat"><small>PREMIUM 30 ДНЕЙ</small><b>'+Number(stats.premium_30d||0)+'</b></article><article class="admin-stat"><small>PREMIUM 90 ДНЕЙ</small><b>'+Number(stats.premium_90d||0)+'</b></article></div></section><section class="admin-audit-panel"><div class="section-heading"><div><div class="eyebrow">RECENT ACTIVITY</div><h3>Последние 100 операций</h3></div><button class="outline small" id="wheel-admin-refresh">Обновить</button></div><div class="admin-audit-list">'+(rows||'<div class="empty-state">Операций пока нет.</div>')+'</div></section><button class="outline" data-go="admin">← Назад в админ-меню</button>';
+  const updatePercents=()=>{const active=[...host.querySelectorAll('[data-wheel-active]')].filter(x=>x.checked);const total=active.reduce((sum,x)=>sum+Number(host.querySelector('[data-wheel-weight="'+x.dataset.wheelActive+'"]')?.value||0),0);host.querySelectorAll('[data-wheel-percent]').forEach(el=>{const code=el.dataset.wheelPercent,weight=Number(host.querySelector('[data-wheel-weight="'+code+'"]')?.value||0),enabled=host.querySelector('[data-wheel-active="'+code+'"]')?.checked;el.textContent=(enabled&&total>0?(weight/total*100).toFixed(2):'0.00')+'%';});};
+  host.querySelectorAll('[data-wheel-weight],[data-wheel-active]').forEach(el=>el.addEventListener('input',updatePercents));
+  host.querySelector('#wheel-prizes-save')?.addEventListener('click',async()=>{const button=host.querySelector('#wheel-prizes-save'),status=host.querySelector('#wheel-prizes-status');const payload=prizeRows.map(p=>({prize_code:p.prize_code,weight:Number(host.querySelector('[data-wheel-weight="'+p.prize_code+'"]')?.value),is_active:!!host.querySelector('[data-wheel-active="'+p.prize_code+'"]')?.checked}));if(payload.some(p=>!Number.isFinite(p.weight)||p.weight<0||p.weight>10000)){toast('Вес должен быть от 0 до 10000');return;}if(!payload.some(p=>p.is_active&&p.weight>0)){toast('Оставь хотя бы одну активную награду с весом больше нуля');return;}button.disabled=true;button.textContent='Сохраняю…';const {data:saveData,error:saveError}=await supabase.rpc('admin_save_flamexbot_wheel_prizes',{p_prizes:payload});button.disabled=false;button.textContent='Сохранить настройки';if(saveError||saveData?.ok!==true){status.textContent='Не удалось сохранить: '+(saveError?.message||'ошибка');toast('Настройки колеса не сохранены');return;}status.textContent='Сохранено. Обновлён вес '+Number(saveData.updated||0)+' наград.';toast('Настройки колеса сохранены');await renderWheelAdmin(host);});
+  host.querySelector('#wheel-prizes-reset')?.addEventListener('click',()=>{const defaults={wheel_spin_1:55,command_protection_5d:25,premium_7d:12,premium_30d:5,premium_90d:3,coins_10:15,coins_50:8,coins_100:5,coins_250:2};Object.entries(defaults).forEach(([code,weight])=>{const input=host.querySelector('[data-wheel-weight="'+code+'"]');if(input)input.value=weight;const active=host.querySelector('[data-wheel-active="'+code+'"]');if(active)active.checked=true;});updatePercents();toast('Стандартные веса восстановлены. Нажми «Сохранить настройки».');});
+  host.querySelector('#wheel-settings-save')?.addEventListener('click',async()=>{const price=Number(host.querySelector('#wheel-price-setting').value),weekly=Number(host.querySelector('#wheel-weekly-setting').value),status=host.querySelector('#wheel-settings-status'),button=host.querySelector('#wheel-settings-save');if(!Number.isInteger(price)||price<1||price>10000||!Number.isInteger(weekly)||weekly<0||weekly>100){toast('Проверь цену и недельный лимит');return;}button.disabled=true;const {data:result,error:saveError}=await supabase.rpc('admin_save_flamexbot_wheel_settings',{p_spin_price_stars:price,p_premium_weekly_spins:weekly});button.disabled=false;if(saveError||!result?.ok){status.textContent='Ошибка: '+(saveError?.message||'не сохранено');toast('Настройки не сохранены');return;}status.textContent='Сохранено: '+price+' ⭐ за прокрутку, '+weekly+' бесплатных в неделю.';toast('Экономика колеса обновлена');});
+  host.querySelector('#wheel-spin-adjust')?.addEventListener('click',async()=>{
+    const tg=host.querySelector('#wheel-user-tg').value.trim(),delta=Number(host.querySelector('#wheel-spin-delta').value),reason=host.querySelector('#wheel-spin-reason').value.trim(),status=host.querySelector('#wheel-spin-status'),button=host.querySelector('#wheel-spin-adjust');
+    if(!/^\\d{5,20}$/.test(tg)){toast('Введи корректный Telegram ID');return;}
+    if(!Number.isInteger(delta)||delta===0||Math.abs(delta)>100){toast('Количество: от 1 до 100 или от -1 до -100');return;}
+    button.disabled=true;const {data:result,error:adjustError}=await supabase.rpc('admin_adjust_flamexbot_wheel_spins',{p_telegram_user_id:tg,p_delta:delta,p_reason:reason||'Выдано Основателем'});button.disabled=false;
+    if(adjustError||!result?.ok){status.textContent='Ошибка: '+(adjustError?.message||'не удалось изменить');toast('Прокрутки не изменены');return;}
+    status.textContent='Готово. Новый баланс: '+result.balance+' бесплатных прокруток.';toast('Баланс прокруток обновлён');
+  });
+  host.querySelector('#wheel-admin-refresh')?.addEventListener('click',()=>renderWheelAdmin(host));
+}
+
+async function renderUsers(host) {
+  const {data:allowed,error:accessError}=await supabase.rpc('is_flamexbot_admin');
+  if(accessError||allowed!==true||!state.isAdmin){
+    host.innerHTML='<div class="page-heading"><h1>Нет доступа</h1><p class="muted">Раздел доступен только владельцу и администраторам FLAMEXBOT.</p></div>';
+    return;
+  }
+  const filters=state.userFilters;
+  const {data,error}=await supabase.rpc('admin_list_flamexbot_users',{
+    p_search:filters.search||null,p_verified:filters.verified,p_premium:filters.premium,p_banned:filters.banned,p_limit:50,p_offset:filters.offset||0
+  });
+  const users=data||[];
+  const userIds=users.map(user=>user.id);
+  const telegramIds=users.map(user=>String(user.telegram_id||'')).filter(Boolean);
+  const [connectionLookup,connectionTelegramLookup]=await Promise.all([
+    userIds.length?supabase.from('flamexbot_business_connections').select('profile_id,telegram_user_id,is_enabled').in('profile_id',userIds):Promise.resolve({data:[]}),
+    telegramIds.length?supabase.from('flamexbot_business_connections').select('profile_id,telegram_user_id,is_enabled').in('telegram_user_id',telegramIds):Promise.resolve({data:[]})
+  ]);
+  const connectionRows=[...(connectionLookup.data||[]),...(connectionTelegramLookup.data||[])];
+  const connectionMap=new Map(connectionRows.map(connection=>[connection.profile_id,Boolean(connection.is_enabled)]));
+  const connectionTelegramMap=new Map(connectionRows.map(connection=>[String(connection.telegram_user_id),Boolean(connection.is_enabled)]));
+  users.forEach(user=>{user.business_connected=connectionMap.get(user.id)===true||connectionTelegramMap.get(String(user.telegram_id||''))===true;});
+  const actorOwner=state.session.user.id===FOUNDER_PROFILE_ID;
+  const total=users[0]?.total_count||0;
+  const roleOptions=[
+    ...(actorOwner?[['developer','Разработчик'],['administrator','Администратор']]:[]),
+    ['moderator','Модератор'],['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],
+    ['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']
+  ];
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">COMMUNITY DIRECTORY</div><h1>Управление пользователями <span>👥</span></h1><p class="muted">Открой карточку участника для отдельного управления. На каждом аккаунте может быть только один значок роли; новый заменяет предыдущий.</p></div>
+    <section class="users-toolbar-card">
+      <form id="users-filter-form" class="users-filter-form">
+        <label class="users-search-field"><span>⌕</span><input name="search" value="${esc(filters.search)}" placeholder="Имя, никнейм или Telegram ID"/></label>
+        <select name="verified"><option value="all" ${filters.verified==='all'?'selected':''}>Все галочки</option><option value="verified" ${filters.verified==='verified'?'selected':''}>🔵 С галочкой</option><option value="unverified" ${filters.verified==='unverified'?'selected':''}>Без галочки</option></select>
+        <select name="premium"><option value="all" ${filters.premium==='all'?'selected':''}>Все тарифы</option><option value="premium" ${filters.premium==='premium'?'selected':''}>✦ Premium</option><option value="free" ${filters.premium==='free'?'selected':''}>Free</option></select>
+        <select name="banned"><option value="all" ${filters.banned==='all'?'selected':''}>Все статусы</option><option value="active" ${filters.banned==='active'?'selected':''}>Активные</option><option value="banned" ${filters.banned==='banned'?'selected':''}>Заблокированные</option></select>
+        <button class="primary small" type="submit">Применить фильтры</button>
+      </form>
+      <div class="users-toolbar-foot"><span>Найдено участников: <b>${total}</b></span><span>Сортировка: <b>сначала новые ↓</b></span></div>
+    </section>
+    <div class="admin-user-list">${users.map(u=>{
+      const owner=u.telegram_id===FOUNDER_TELEGRAM_ID||u.id===FOUNDER_PROFILE_ID;
+      const targetAdmin=owner||(u.badge_codes||[]).some(code=>['founder','developer','administrator'].includes(code));
+      const locked=owner||(targetAdmin&&state.session.user.id!==FOUNDER_PROFILE_ID);
+      const badges=[...(u.badge_codes||[])];
+      if(u.is_premium&&!badges.includes('premium'))badges.push('premium');
+      const currentRole=badges.find(code=>code!=='premium'&&code!=='verified')||'';
+      const display=u.display_name||u.username||'Пользователь';
+      return `<article class="admin-user-card" data-user-card="${u.id}">
+        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':u.business_connected?'<span class="user-flag active">● Business подключён</span>':'<span class="user-flag free">○ Business не подключён</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
+        <div class="admin-user-actions">
+          <button class="admin-action" data-admin-open="${u.id}">Открыть управление →</button><button class="admin-action" data-admin-message="${u.id}" ${u.telegram_id?"":"disabled title=\"Telegram не привязан\""}>✉ Написать</button>
+          <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
+          <button class="admin-action ${u.is_banned?'safe':''}" data-user-action="${u.is_banned?'unban':'ban'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
+          <button class="admin-action premium" data-user-action="premium_grant" data-user-id="${u.id}" ${locked?'disabled':''}>✦ ${u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
+          <button class="admin-action" data-user-action="premium_revoke" data-user-id="${u.id}" ${!u.is_premium||locked?'disabled':''}>Снять Premium</button>
+        </div>
+        <div class="admin-role-controls"><label>Заменить значок<div class="role-picker" data-role-picker><button type="button" class="role-picker-trigger" data-role-picker-toggle ${locked?'disabled':''}>${esc(roleOptions.find(([code])=>code===currentRole)?.[1]||'Выбрать значок…')} <span>⌄</span></button><div class="role-picker-menu" hidden>${roleOptions.map(([code,label])=>`<button type="button" data-role-option="${code}">${esc(label)}${currentRole===code?' · текущий':''}</button>`).join('')}</div><input type="hidden" data-role-select="${u.id}" value="${esc(currentRole)}"/></div></label><button class="outline small" data-user-action="badge_grant" data-user-id="${u.id}" ${locked?'disabled':''} title="${locked?'Аккаунт администрации защищён от других администраторов':'Заменить значок роли'}">Заменить значок</button><label>Снять значок<div class="role-picker" data-role-picker><button type="button" class="role-picker-trigger" data-role-picker-toggle ${locked?'disabled':''}>Выбрать значок… <span>⌄</span></button><div class="role-picker-menu" hidden>${badges.filter(x=>x!=='verified'&&x!=='founder'&&x!=='premium').map(code=>`<button type="button" data-role-option="${code}">${esc(BADGE_META[code]?.label||code)}</button>`).join('')}</div><input type="hidden" data-role-remove="${u.id}" value=""/></div></label><button class="outline small" data-user-action="badge_revoke" data-user-id="${u.id}" ${locked?'disabled':''} title="${locked?'Аккаунт администрации защищён от других администраторов':'Снять значок'}">Снять</button>
+        </div>
+      </article>`;
+    }).join('')||'<div class="empty-state">По заданным фильтрам никого не найдено.</div>'}</div>
+    <div class="users-pagination"><button class="outline small" id="users-prev" ${(filters.offset||0)<=0?'disabled':''}>← Назад</button><span>Страница ${Math.floor((filters.offset||0)/50)+1} из ${Math.max(1,Math.ceil(total/50))}</span><button class="outline small" id="users-next" ${(filters.offset||0)+50>=total?'disabled':''}>Дальше →</button></div>
+    ${error?'<p class="business-warning">Не удалось загрузить пользователей: '+esc(error.message)+'</p>':''}`;
+  host.querySelectorAll('[data-role-picker]').forEach(picker=>{const trigger=picker.querySelector('[data-role-picker-toggle]');const menu=picker.querySelector('.role-picker-menu');const hidden=picker.querySelector('input[type=hidden]');trigger?.addEventListener('click',()=>{host.querySelectorAll('.role-picker-menu').forEach(other=>{if(other!==menu)other.hidden=true;});if(menu)menu.hidden=!menu.hidden;});picker.querySelectorAll('[data-role-option]').forEach(option=>option.addEventListener('click',()=>{if(hidden)hidden.value=option.dataset.roleOption||'';if(trigger)trigger.innerHTML=esc(option.textContent.trim())+' <span>⌄</span>';if(menu)menu.hidden=true;}));});
+  host.addEventListener('click',event=>{if(!event.target.closest('[data-role-picker]'))host.querySelectorAll('.role-picker-menu').forEach(menu=>menu.hidden=true);});
+  host.querySelectorAll('[data-admin-open]').forEach(btn=>btn.addEventListener('click',()=>{state.selectedAdminUserId=btn.dataset.adminOpen;navigateTo('admin_user');}));
+  host.querySelectorAll('[data-admin-message]').forEach(btn=>btn.addEventListener('click',()=>{state.pendingBotInboxUserId=btn.dataset.adminMessage;navigateTo('inbox');}));
+  host.querySelector('#users-prev')?.addEventListener('click',()=>{state.userFilters.offset=Math.max(0,(filters.offset||0)-50);renderUsers(host);});
+  host.querySelector('#users-next')?.addEventListener('click',()=>{state.userFilters.offset=(filters.offset||0)+50;renderUsers(host);});
+  host.querySelector('#users-filter-form')?.addEventListener('submit',event=>{
+    event.preventDefault();const fd=new FormData(event.currentTarget);
+    state.userFilters={search:String(fd.get('search')||'').trim(),verified:String(fd.get('verified')||'all'),premium:String(fd.get('premium')||'all'),banned:String(fd.get('banned')||'all'),offset:0};
+    renderUsers(host);
+  });
+  host.querySelectorAll('[data-user-action]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const action=btn.dataset.userAction,userId=btn.dataset.userId;
+    const card=btn.closest('[data-user-card]');
+    let reason=null,days=30,badgeCode=null;
+    if(action==='ban'){reason=prompt('Причина блокировки (будет сохранена в карточке пользователя):','Нарушение правил сообщества');if(reason===null)return;}
+    if(action==='premium_grant'){const label='Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? Введи 0 для бессрочной подписки.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}reason=prompt('Комментарий к выдаче '+label+' (будет виден в уведомлении):','Подарок от администрации');if(reason===null)return;reason=reason.trim()||'Выдано администрацией FLAMEXBOT';}
+    if(action==='badge_grant')badgeCode=card?.querySelector('[data-role-select]')?.value||null;
+    if(action==='badge_revoke')badgeCode=card?.querySelector('[data-role-remove]')?.value||null;
+    if(['badge_grant','badge_revoke'].includes(action)&&!badgeCode){toast('Сначала выбери значок');return;}
+    if(['unban','premium_revoke','unverify','badge_revoke'].includes(action)&&!confirm('Подтвердить это действие?'))return;
+    btn.disabled=true;
+    const {data, error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{
+      p_user_id:userId,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days
+    });
+    if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
+    toast(({ban:'Пользователь заблокирован',unban:'Блокировка снята',verify:'Синяя галочка выдана',unverify:'Галочка снята',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',badge_grant:'Значок выдан',badge_revoke:'Значок снят'})[action]||'Изменения сохранены');
+    await notifyTelegramAboutAdminAction(userId,action,badgeCode,data?.audit_id);
+    await renderUsers(host);
+  }));
+}
+
+async function renderAdminUser(host) {
+  if(!state.selectedAdminUserId){host.innerHTML='<div class="empty-state">Сначала выбери пользователя в списке.</div><button class="outline" data-go="users">К списку пользователей</button>';return;}
+  const {data,error}=await supabase.rpc('admin_get_flamexbot_user',{p_user_id:state.selectedAdminUserId});
+  const u=data?.[0];
+  if(error||!u){host.innerHTML=`<div class="page-heading"><h1>Не удалось открыть карточку</h1><p class="muted">${esc(error?.message||'Пользователь не найден')}</p></div><button class="outline" data-go="users">← К пользователям</button>`;return;}
+  const owner=u.telegram_id===FOUNDER_TELEGRAM_ID||u.id===FOUNDER_PROFILE_ID;
+  const badges=u.badge_codes||[];
+  const actorOwner=state.session.user.id===FOUNDER_PROFILE_ID;
+  const targetAdmin=owner||badges.some(code=>['founder','developer','administrator'].includes(code));
+  const locked=owner||(targetAdmin&&state.session.user.id!==FOUNDER_PROFILE_ID);
+  const roleOptions=[...(actorOwner?[['developer','Разработчик'],['administrator','Администратор']]:[]),['moderator','Модератор'],['designer','Дизайнер'],['creator','Создатель'],['supporter','Поддержка'],['beta_tester','Бета-тестер'],['community_manager','Комьюнити'],['partner','Партнёр']];
+  const premiumUntil=u.is_premium?(u.premium_expires_at?formatMskDate(u.premium_expires_at):'Бессрочно'):'Не активен';
+  host.innerHTML=`<div class="page-heading"><button class="text-button" data-go="users">← Все пользователи</button><div class="eyebrow">ADMIN USER CONTROL</div><h1>Управление аккаунтом</h1><p class="muted">Все изменения проходят серверную проверку и попадают в журнал администрации.</p></div>
+    <section class="admin-user-detail-card"><div class="admin-user-detail-top">${avatar(u.avatar_url||u.telegram_photo_url,u.display_name||u.username,'avatar-xl')}<div><h2>${esc(u.display_name||u.username||'Пользователь')}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</h2><p>@${esc(u.telegram_username||u.username||'не задан')} · ${u.telegram_id?'Telegram ID '+esc(u.telegram_id):'Telegram не привязан'}</p><div class="profile-badge-row">${badgeMarkup(badges,false,false)} ${u.is_premium?badgeMarkup(['premium'],false,false):''}</div></div></div>
+      <div class="admin-detail-status"><span class="user-flag ${u.is_banned?'banned':'active'}">${u.is_banned?'⛔ Заблокирован':'● Активен'}</span><span class="user-flag ${u.is_premium?'premium':'free'}">${badges.includes('founder')?'👑 Основатель':u.is_premium?'✦ Premium':'Free'}</span><span class="user-flag">${u.is_verified?'🔵 Подтверждён':'Без галочки'}</span></div>
+      <div class="admin-detail-metrics"><div><small>СООБЩЕНИЯ</small><b>${u.total_messages||0}</b></div><div><small>ДРУЗЬЯ</small><b>${u.friends_count||0}</b></div><div><small>ЛУЧШАЯ СЕРИЯ</small><b>${u.best_streak||0} дн.</b></div><div><small>ДОСТИЖЕНИЯ</small><b>${u.achievements_count||0}</b></div><div><small>ОПЫТ</small><b>${u.xp||0} XP</b></div><div><small>PREMIUM ДО</small><b>${premiumUntil}</b></div></div>
+      <div class="admin-detail-actions"><h3>Действия с аккаунтом</h3><div class="admin-detail-action-grid">
+        <button class="admin-action" data-admin-detail-action="${u.is_verified?'unverify':'verify'}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять подтверждение':'🔵 Подтвердить аккаунт'}</button>
+        <button class="admin-action ${u.is_banned?'safe':''}" data-admin-detail-action="${u.is_banned?'unban':'ban'}" ${locked?'disabled':''}>${u.is_banned?'♻ Разблокировать':'⛔ Заблокировать'}</button>
+        <button class="admin-action premium" data-admin-detail-action="premium_grant" ${locked?'disabled':''}>✦ ${u.is_premium?'Продлить Premium':'Выдать Premium'}</button>
+        <button class="admin-action" data-admin-detail-action="premium_revoke" ${!u.is_premium||locked?'disabled':''}>Снять Premium</button>
+      </div>
+      <div class="admin-detail-badge-form"><label>Единственный значок аккаунта<select id="admin-detail-badge" ${locked?'disabled':''}><option value="">Выбрать значок…</option>${roleOptions.map(([code,label])=>`<option value="${code}">${label}</option>`).join('')}</select></label><button class="primary small" data-admin-detail-action="badge_grant" ${locked?'disabled':''}>Заменить значок</button><button class="outline small" data-admin-detail-action="badge_revoke" ${locked?'disabled':''}>Снять значок</button></div>
+      <small class="admin-detail-note">На одном аккаунте может быть только один значок роли. Выдача нового заменяет предыдущий. Premium отображается отдельно и не занимает слот значка.</small>
+      ${locked&&!owner?'<p class="business-warning">Управлять аккаунтом другого администратора может только владелец FLAMEXBOT.</p>':''}
+      ${u.is_banned&&u.ban_reason?'<p class="business-warning">Причина блокировки: '+esc(u.ban_reason)+'</p>':''}
+    </div></section>`;
+  host.querySelectorAll('[data-admin-detail-action]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const action=btn.dataset.adminDetailAction;
+    let reason=null,days=30,badgeCode=null;
+    if(action==='ban'){reason=prompt('Причина блокировки:','Нарушение правил сообщества');if(reason===null)return;}
+    if(action==='premium_grant'){const label='Premium';const raw=prompt('На сколько дней выдать или продлить '+label+'? 0 — бессрочно.','30');if(raw===null)return;days=Number(raw);if(!Number.isInteger(days)||days<0||days>3650){toast('Укажи число от 0 до 3650');return;}reason=prompt('Комментарий к выдаче (необязательно):','')||null;}
+    if(action==='badge_grant'||action==='badge_revoke'){badgeCode=host.querySelector('#admin-detail-badge')?.value||badges.find(code=>code!=='verified'&&code!=='premium')||null;if(!badgeCode){toast('Выбери значок');return;}}
+    if(['ban','unban','unverify','premium_revoke','badge_revoke'].includes(action)&&!confirm('Подтвердить действие?'))return;
+    btn.disabled=true;
+    const {error:actionError}=await supabase.rpc('admin_manage_flamexbot_user',{p_user_id:u.id,p_action:action,p_badge_code:badgeCode,p_reason:reason,p_days:days});
+    if(actionError){toast('Не удалось выполнить действие: '+actionError.message);btn.disabled=false;return;}
+    toast(({ban:'Аккаунт заблокирован',unban:'Блокировка снята',verify:'Аккаунт подтверждён',unverify:'Подтверждение снято',premium_grant:'Premium выдан или продлён',premium_revoke:'Premium отключён',badge_grant:'Значок заменён',badge_revoke:'Значок снят'})[action]||'Готово');
+    await notifyTelegramAboutAdminAction(u.id,action,badgeCode);
+    await renderAdminUser(host);
+  }));
+}
+
+
+
+function animateFortuneWheel(prizeType) {
+ const wheel=document.querySelector('#fortune-wheel');
+ if(!wheel)return Promise.resolve();
+ const centers={free_spin:36,addon:108,premium_7d:180,premium_30d:252,premium_90d:324,coins_10:36,coins_50:108,coins_100:180,coins_250:252,premium_day:180};
+ const target=centers[prizeType]??252;
+ if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
+   wheel.style.transform='rotate('+((360-target)%360)+'deg)';
+   return Promise.resolve();
+ }
+ wheel.style.transition='none';
+ wheel.style.transform='rotate(0deg)';
+ void wheel.offsetWidth;
+ return new Promise(resolve=>{
+   requestAnimationFrame(()=>{
+     wheel.style.transition='transform 5.1s cubic-bezier(.12,.78,.12,1)';
+     wheel.style.transform='rotate('+(360*6-target)+'deg)';
+   });
+   window.setTimeout(resolve,5250);
+ });
+}
+
+async function renderTariffs(host, initialTab='premium') {
+ const premium=isPremium();
+ const weeklySpins=premium?2:0;
+ const rareLuck=premium?10:0;
+ const [{data:wheelOddsConfig,error:wheelOddsError},{data:wheelPublicSettings}]=await Promise.all([supabase.rpc('get_flamexbot_wheel_odds'),supabase.rpc('get_flamexbot_wheel_public_settings')]);
+ const wheelPriceStars=Number(wheelPublicSettings?.spin_price_stars||5);
+ const wheelWeeklySpins=Number(wheelPublicSettings?.premium_weekly_spins||0);
+ const wheelOddsRows=wheelOddsConfig||[];
+ const wheelOddsTotal=wheelOddsRows.filter(p=>p.is_active).reduce((sum,p)=>sum+Number(p.weight||0),0);
+ const wheelOddsHtml=wheelOddsError?'<span>Не удалось загрузить актуальные шансы.</span>':wheelOddsRows.map(p=>'<span>'+((p.is_active&&wheelOddsTotal>0?Number(p.weight)/wheelOddsTotal*100:0)).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+esc(p.prize_label)+'</span>').join('');
+ const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
+ const [{data:subscriptionPayments,error:subscriptionPaymentError},{data:addonPayments,error:addonPaymentError}]=await Promise.all([
+   supabase.from('flamexbot_star_payments')
+     .select('created_at,plan,total_amount,currency,period_days')
+     .eq('user_id',state.session.user.id)
+     .order('created_at',{ascending:false})
+     .limit(10),
+   supabase.from('flamexbot_addon_star_payments')
+     .select('addon_code,total_amount,currency,period_days,paid_at')
+     .eq('user_id',state.session.user.id)
+     .eq('status','paid')
+     .not('paid_at','is',null)
+     .order('paid_at',{ascending:false})
+     .limit(10)
+ ]);
+ const paymentHistory=[
+   ...(subscriptionPayments||[]).map(payment=>({...payment,kind:'subscription',history_at:payment.created_at})),
+   ...(addonPayments||[]).map(payment=>({...payment,kind:'addon',history_at:payment.paid_at}))
+ ].sort((a,b)=>new Date(b.history_at).getTime()-new Date(a.history_at).getTime()).slice(0,10);
+ const paymentHistoryError=subscriptionPaymentError||addonPaymentError;
+ const trialUsed=Boolean(trialRecord);
+ const lifetime=premium&&!state.subscription?.expires_at;
+ const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
+ const buyLabel=premium?'↻ Продлить Premium за 100 ⭐':'⭐ Оплатить 100 Stars';
+ const protectionExpires=state.profile?.command_protection_expires_at||null;
+ const protectionActive=Boolean(protectionExpires&&new Date(protectionExpires).getTime()>Date.now());
+ const protectionFounder=isFounderProfile(state.profile);
+ const protectionLabel=protectionActive?'Продлить защиту ещё на 5 дней · 15 ⭐':'Купить защиту за 15 ⭐';
+ host.innerHTML=`<div class="page-heading"><div class="eyebrow">FLAMEXBOT MEMBERSHIP</div><h1>Тарифы и возможности <span>✦</span></h1><p class="muted">Выбирай возможности FLAMEXBOT и дополнительные уровни защиты аккаунта.</p></div>
+ <div class="tariff-tabs" role="tablist" aria-label="Разделы тарифов">
+  <button type="button" class="tariff-tab" data-tariff-tab="premium" role="tab" aria-selected="true">Тарифы</button>
+  <button type="button" class="tariff-tab" data-tariff-tab="addons" role="tab" aria-selected="false">Дополнение</button>
+ </div>
+ <section class="tariff-tab-panel" data-tariff-panel="premium">
+  <div class="tariff-grid">
+   <section class="business-card tariff-card ${!premium?'tariff-current':''}">
+    <div class="eyebrow">СТАРТ</div><h2>Free</h2>
+    <p class="muted">Базовые возможности FLAMEXBOT для обычного использования.</p>
+    <ul><li>Telegram Mini App и профиль</li><li>Подключение Telegram Business</li><li>Переписки, отправка текста и файлов</li><li>Друзья, огоньки и ежедневные задания</li><li>Достижения и базовая статистика</li></ul>
+    <span class="business-status ${!premium?'is-connected':''}">${!premium?'Твой текущий тариф':'Бесплатно'}</span>
+   </section>
+   <section class="business-card tariff-card premium-card ${premium&&state.subscription?.plan==='premium'?'tariff-current':''}">
+    <div class="eyebrow">БОЛЬШЕ КОНТРОЛЯ</div><h2>⭐ FLAMEX Premium</h2>
+    <p class="muted">Дополнительные инструменты для управления Telegram Business-переписками.</p>
+    <ul>
+     <li><code>.mute</code> — переключатель удаления новых входящих сообщений (повтори для выключения)</li>
+     <li><code>.antimute</code> — альтернативная отправка от имени FLAMEXBOT (повтори для выключения)</li>
+     <li><code>.antimat</code> — фильтр ненормативной лексики (повтори для выключения)</li>
+     <li>Персональный AFK-автоответ и автоматическое прочтение</li>
+     <li>Статусы «печатает…» и «записывает голосовое»</li>
+     <li>Фильтр стикеров, время профиля по МСК и оформление текста</li>
+     <li><b>+2 бесплатные прокрутки колеса каждую неделю</b></li><li><b>+10% к весам редких наград колеса</b></li><li>Бейдж Premium и ранний доступ к новым функциям</li><li>Экспорт выбранной Business-переписки в JSON</li>
+    </ul>
+    <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
+    <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
+    ${lifetime?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
+    <small class="premium-payment-note">Оплата проходит через Telegram Stars. Срок — 30 дней; повторная покупка продлевает доступ. Автосписания и автопродления нет — продлевай вручную здесь или командой /premium.</small>
+   </section>
+   
+  </div>
+  <section class="business-card payment-history-card" aria-labelledby="payment-history-title">
+   <div class="payment-history-heading"><div><div class="eyebrow">BILLING</div><h2 id="payment-history-title">История оплат</h2></div><span class="payment-history-count">${paymentHistory?.length||0}/10</span></div>
+   ${paymentHistory?.length
+     ? '<div class="payment-history-list">'+paymentHistory.map(payment=>'<div class="payment-history-row"><div><b>'+(payment.kind==='addon'?(payment.addon_code==='command_protection'?'Защита от команд':'Дополнение FLAMEXBOT'):'FLAMEX Premium')+'</b><small>'+esc(formatMskDateTime(payment.history_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}))+' · '+esc(String(payment.period_days))+' дней</small></div><strong>'+esc(String(payment.total_amount))+' '+(payment.currency==='XTR'?'⭐':esc(String(payment.currency)))+'</strong></div>').join('')+'</div>'
+     : paymentHistoryError
+       ? '<p class="muted">Не удалось загрузить историю оплат. Попробуй обновить раздел позже.</p>'
+       : '<p class="muted payment-history-empty">Пока нет завершённых оплат подписки. После первой покупки здесь появится история последних 10 платежей.</p>'}
+   ${paymentHistoryError&&paymentHistory?.length?'<p class="premium-payment-note">Показана доступная часть истории; некоторые платежи временно не загрузились.</p>':''}
+   <small class="premium-payment-note">Показываются только подтверждённые оплаты подписки. Платежи за отдельные дополнения учитываются отдельно.</small>
+  </section>
+  <div class="business-command-hint"><span>⌘</span><div><b>Команды отправляются прямо в нужной переписке</b><small>Открой Business-диалог с человеком и отправь команду туда. FLAMEXBOT сам определит текущий чат — без @username и ID.</small></div></div>
+  <p class="business-note">Антимут отправляет новые сообщения от имени FLAMEXBOT, если собеседник заранее запустил бота. Он не снимает мут в Telegram и не обходит блокировки.</p>
+  <section class="business-card trial-card" ${premium?'hidden':''}>
+   <div class="eyebrow">ПОПРОБУЙ FLAMEXBOT</div><h2>🎁 Пробный Premium на 3 дня</h2>
+   <p class="muted">Один раз на аккаунт. Без оплаты и автоматического продления.</p>
+   ${trialUsed?'<span class="business-status">Пробный период уже использован</span>':'<button class="primary" id="claim-trial" type="button">Активировать 3 дня Premium</button>'}
+   ${trialRecordError?'<small class="business-warning">Не удалось проверить историю пробного периода.</small>':''}
+  </section>
+  <section class="business-card wheel-card">
+   <div class="eyebrow">LUCKY SPIN</div><h2>🎡 Колесо фортуны</h2>
+   <div class="fortune-wheel-stage" aria-label="Колесо фортуны">
+    <span class="fortune-wheel-pointer">▼</span>
+    <div class="fortune-wheel" id="fortune-wheel">
+     <span class="wheel-prize wheel-prize-spin">🎁</span>
+     <span class="wheel-prize wheel-prize-addon">🛡️</span>
+     <span class="wheel-prize wheel-prize-premium7">⭐<small>7д</small></span>
+     <span class="wheel-prize wheel-prize-premium30">⭐<small>30д</small></span>
+     <span class="wheel-prize wheel-prize-premium90">⭐<small>90д</small></span>
+     <span class="wheel-prize wheel-prize-coins">🪙<small>монеты</small></span>
+     <span class="fortune-wheel-center">✦</span>
+    </div>
+   </div>
+   <p class="muted">Прокрутка стоит ${wheelPriceStars} ⭐. Выигрывай Premium на 7, 30 и 90 дней, защиту от команд, бесплатные прокрутки или монеты на баланс: 10, 50, 100 и 250.</p>
+   <div class="wheel-odds-controls"><button class="outline small" type="button" id="toggle-wheel-odds" aria-expanded="false">Показать шансы</button><div class="wheel-odds" id="wheel-odds-panel" hidden>${wheelOddsHtml}</div></div>
+   <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐'}</button>
+   <small class="premium-payment-note">На твоём счёте: ${state.profile?.wheel_free_spins||0} бесплатных прокруток. Еженедельно: ${premium?wheelWeeklySpins:0} для текущего тарифа${rareLuck?' · веса редких наград +' + rareLuck + '%':''}.</small>
+  </section>
+ </section>
+ <section class="tariff-tab-panel" data-tariff-panel="addons" hidden>
+  <section class="business-card addon-card">
+   <div class="addon-card-heading"><div><div class="eyebrow">АККАУНТ И ПРИВАТНОСТЬ</div><h2>🛡 Защита от команд</h2></div><span class="addon-price-pill">15 ⭐</span></div>
+   <p class="muted">Запрещает другим пользователям применять команды FLAMEXBOT к вашему Telegram-аккаунту.</p>
+   <ul>
+    <li>Другие пользователи не смогут использовать на вас команды в Telegram Business.</li>
+    <li>Защита проверяется сервером и действует для всех команд, включая команды управления.</li>
+    <li>Основатель FLAMEXBOT может использовать команды на любых аккаунтах, даже если защита включена.</li>
+    <li>Покупка добавляет 5 дней к текущему сроку, если защита уже активна.</li>
+    <li>Обычная переписка остаётся доступной — блокируются команды и их автоматические действия.</li>
+   </ul>
+   <div class="addon-price-line"><b>15 ⭐</b><span>5 дней · разовая оплата</span></div>
+   ${protectionFounder
+     ? '<div class="addon-status addon-status-active">Защита Основателя действует постоянно. Покупка не требуется.</div>'
+     : protectionActive
+       ? '<div class="addon-status addon-status-active">Защита активна до '+formatMskDate(protectionExpires)+'</div>'
+       : '<div class="addon-status">Защита пока не активна</div>'}
+   ${protectionFounder?'':'<button class="primary addon-buy-button" id="buy-command-protection" type="button">'+protectionLabel+'</button>'}
+   <small class="premium-payment-note">Оплата — Telegram Stars. Срок начинается после подтверждения успешного платежа. Продление суммируется с оставшимся временем.</small>
+  </section>
+  <div class="addon-feature-heading"><div class="eyebrow">ТОЛЬКО ОТДЕЛЬНЫЕ ПОКУПКИ</div><h2>🧩 Дополнения</h2><p class="muted">Здесь только независимые модули, которые покупаются отдельно. Возможности Premium здесь не дублируются.</p></div>
+  <p class="business-note">Сейчас доступно отдельное дополнение «Защита от команд» на 5 дней. Новые модули появятся здесь отдельными карточками и не будут смешиваться с тарифами.</p>
+ </section>
+ <p class="business-note">Управление подпиской: текущий тариф и дата окончания показаны в карточке выше. Premium — разовая покупка без автосписаний. Продление выполняется вручную в этом разделе или командой /premium в личном чате с ботом.  Платёж подтверждается Telegram, доступ открывается только после проверки successful_payment на сервере.</p>`;
+ const tabs=[...host.querySelectorAll('[data-tariff-tab]')];
+ const panels=[...host.querySelectorAll('[data-tariff-panel]')];
+ const showTab=(name)=>{
+   const selected=name==='addons'?'addons':'premium';
+   tabs.forEach(tab=>{
+     const active=tab.dataset.tariffTab===selected;
+     tab.classList.toggle('active',active);
+     tab.setAttribute('aria-selected',String(active));
+   });
+   panels.forEach(panel=>{panel.hidden=panel.dataset.tariffPanel!==selected;});
+ };
+ tabs.forEach(tab=>tab.addEventListener('click',()=>showTab(tab.dataset.tariffTab)));
+ showTab(initialTab);
+
+ const waitForInvoiceClose=(webApp,invoiceLink,onStatus)=>{
+   if(typeof webApp?.openInvoice!=='function'){
+     if(typeof webApp?.openTelegramLink==='function')webApp.openTelegramLink(invoiceLink);
+     else window.open(invoiceLink,'_blank','noopener');
+     return Promise.resolve(false);
+   }
+   return new Promise(resolve=>{
+     webApp.openInvoice(invoiceLink,async status=>{
+       try{await onStatus(status);}
+       catch(error){console.error('Telegram invoice callback:',error);toast('Платёж получен, но статус пока не удалось обновить. Открой тарифы ещё раз.');}
+       finally{resolve(true);}
+     });
+   });
+ };
+
+ const startTierPurchase=async(button,plan)=>{
+   if(!button)return;
+   const label='Premium';
+   button.disabled=true;button.classList.add('is-loading');button.textContent='Подготавливаем оплату…';
+   try{
+     const {data,error}=await supabase.functions.invoke('create-premium-invoice',{body:{plan}});
+     if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать ссылку на оплату');
+     const webApp=window.Telegram?.WebApp;
+     const opened=await waitForInvoiceClose(webApp,data.invoice_link,async status=>{
+       if(status==='paid'){
+         toast('Оплата принята. Активируем '+label+'…');
+         let activated=false;
+         for(let attempt=0;attempt<15;attempt++){
+           const {data:subscription,error:subscriptionError}=await supabase.from('user_subscriptions')
+             .select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+           if(subscriptionError)console.warn(label+' status refresh:',subscriptionError.message);
+           if(subscription&&subscription.plan===plan&&(!subscription.expires_at||new Date(subscription.expires_at).getTime()>Date.now())){
+             state.subscription=subscription;activated=true;break;
+           }
+           await new Promise(resolve=>setTimeout(resolve,700));
+         }
+         updateHeaderProfile();
+         toast(activated?('⭐ Premium успешно активирован!'):'Платёж получен. Тариф появится после подтверждения Telegram.');
+         await renderTariffs(host,'premium');
+       }else if(status==='cancelled')toast('Оплата отменена. Списания не произошло.');
+       else if(status==='failed')toast('Telegram не смог завершить оплату. Попробуй ещё раз.');
+       else if(status==='pending')toast('Платёж обрабатывается. Тариф появится после подтверждения Telegram.');
+     });
+     if(!opened)toast('Открываем счёт Telegram Stars');
+   }catch(error){toast('Оплата не запущена: '+(error?.message||'неизвестная ошибка'));}
+   finally{
+     if(host.contains(button)){
+       button.disabled=false;button.classList.remove('is-loading');
+       button.textContent=buyLabel;
+     }
+   }
+ };
+ host.querySelector('#buy-premium')?.addEventListener('click',event=>startTierPurchase(event.currentTarget,'premium'));
+ 
+ const trialButton=host.querySelector('#claim-trial');
+ trialButton?.addEventListener('click',async()=>{
+   trialButton.disabled=true;trialButton.textContent='Активируем…';
+   try{
+     const {data:expiry,error}=await supabase.rpc('claim_flamexbot_trial');
+     if(error)throw error;
+     const {data:subscription,error:subError}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+     if(subError)throw subError;
+     state.subscription=subscription;updateHeaderProfile();
+     toast('🎁 Premium активирован на 3 дня — до '+formatMskDateTime(expiry,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}));
+     await renderTariffs(host,'premium');
+   }catch(error){toast('Не удалось активировать пробный период: '+(error.message||'ошибка'));trialButton.disabled=false;trialButton.textContent='Активировать 3 дня Premium';}
+ });
+ const oddsToggle=host.querySelector('#toggle-wheel-odds');
+ if(oddsToggle)oddsToggle.addEventListener('click',()=>{const panel=host.querySelector('#wheel-odds-panel');if(!panel)return;const opening=panel.hidden;panel.hidden=!opening;oddsToggle.textContent=opening?'Скрыть шансы':'Показать шансы';oddsToggle.setAttribute('aria-expanded',String(opening));});
+ const wheelButton=host.querySelector('#spin-wheel');
+ wheelButton?.addEventListener('click',async()=>{
+   const freeSpin=(state.profile?.wheel_free_spins||0)>0;
+   wheelButton.disabled=true;wheelButton.textContent=freeSpin?'Используем прокрутку…':'Создаём счёт…';
+   try{
+     const {data,error}=await supabase.functions.invoke('create-wheel-invoice',{body:freeSpin?{action:'free_spin'}:{}});
+     if(error||data?.error)throw new Error(data?.error||error?.message||'Не удалось выполнить прокрутку');
+     if(freeSpin&&data?.free_spin===true){
+       const prize=data.prize||{};
+       if(prize.prize_type)await animateFortuneWheel(prize.prize_type);
+       const {data:profile,error:profileError}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
+       if(profileError)console.warn('Wheel profile refresh:',profileError.message);
+       state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins??Math.max(0,Number(state.profile?.wheel_free_spins||0)-1),command_protection_expires_at:profile?.command_protection_expires_at??state.profile?.command_protection_expires_at};
+       if(String(prize.prize_type||'').startsWith('premium_')){
+         const {data:subscription,error:subscriptionError}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+         if(subscriptionError)console.warn('Wheel subscription refresh:',subscriptionError.message);
+         else state.subscription=subscription;
+       }
+       toast(prize.prize_label?'🎉 Выпало: '+prize.prize_label:'🎉 Бесплатная прокрутка выполнена. Награда начислена.');
+       updateHeaderProfile();await renderTariffs(host,'premium');return;
+     }
+     if(!data?.invoice_link)throw new Error('Telegram не вернул ссылку на оплату прокрутки');
+     const webApp=window.Telegram?.WebApp;
+     const opened=await waitForInvoiceClose(webApp,data.invoice_link,async status=>{
+       if(status==='paid'){
+         toast('Оплата принята. Определяем награду…');
+         let result=null;
+         for(let attempt=0;attempt<18;attempt++){
+           const {data:order,error:orderError}=await supabase.from('flamexbot_wheel_orders').select('status,prize_label,prize_type').eq('id',data.order_id).maybeSingle();
+           if(orderError)console.warn('Wheel status:',orderError.message);
+           if(order?.status==='paid'){result=order;break;}
+           await new Promise(resolve=>setTimeout(resolve,600));
+         }
+         if(result)await animateFortuneWheel(result.prize_type);
+         toast(result?'🎉 Выпало: '+result.prize_label:'Платёж принят. Награда появится после подтверждения Telegram.');
+         const {data:profile}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
+         state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0,command_protection_expires_at:profile?.command_protection_expires_at};
+         if(result&&(/^premium_/.test(result.prize_type||''))){
+           const {data:subscription}=await supabase.from('user_subscriptions').select('plan,expires_at,starts_at').eq('user_id',state.session.user.id).maybeSingle();
+           state.subscription=subscription;
+         }
+         await renderTariffs(host,'premium');
+       }else if(status==='cancelled')toast('Оплата отменена.');
+       else if(status==='failed')toast('Telegram не смог завершить оплату.');
+     });
+     if(!opened)toast('Счёт открыт в Telegram.');
+   }catch(error){toast('Колесо: '+(error.message||'ошибка'));}
+   finally{if(host.contains(wheelButton)){wheelButton.disabled=false;wheelButton.textContent=(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐';}}
+ });
+ const addonButton=host.querySelector('#buy-command-protection');
+ addonButton?.addEventListener('click',async()=>{
+   addonButton.disabled=true;addonButton.classList.add('is-loading');addonButton.textContent='Подготавливаем оплату…';
+   try{
+     const {data,error}=await supabase.functions.invoke('create-command-protection-invoice');
+     if(error||data?.error||!data?.invoice_link)throw new Error(data?.error||error?.message||'Не удалось создать счёт на защиту');
+     const webApp=window.Telegram?.WebApp;
+     const opened=await waitForInvoiceClose(webApp,data.invoice_link,async status=>{
+       if(status==='paid'){
+         toast('Оплата принята. Включаем защиту…');
+         let activated=false;
+         for(let attempt=0;attempt<15;attempt++){
+           const {data:profile,error:profileError}=await supabase.from('profiles')
+             .select('command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
+           if(profileError)console.warn('Command protection refresh:',profileError.message);
+           const expiry=profile?.command_protection_expires_at||null;
+           if(expiry&&new Date(expiry).getTime()>Date.now()){
+             state.profile={...(state.profile||{}),command_protection_expires_at:expiry};
+             activated=true;break;
+           }
+           await new Promise(resolve=>setTimeout(resolve,700));
+         }
+         updateHeaderProfile();
+         toast(activated?'🛡 Защита от команд активирована на 5 дней!':'Платёж получен. Защита появится после подтверждения Telegram.');
+         await renderTariffs(host,'addons');
+       }else if(status==='cancelled')toast('Оплата отменена. Списания не произошло.');
+       else if(status==='failed')toast('Telegram не смог завершить оплату. Попробуй ещё раз.');
+       else if(status==='pending')toast('Платёж обрабатывается. Защита включится после подтверждения Telegram.');
+     });
+     if(!opened)toast('Открываем счёт Telegram Stars');
+   }catch(error){toast('Не удалось купить защиту: '+(error?.message||'неизвестная ошибка'));}
+   finally{if(host.contains(addonButton)){addonButton.disabled=false;addonButton.classList.remove('is-loading');addonButton.textContent=protectionLabel;}}
+ });
+}
+
+
+function effectiveStreakDays(streak) {
+  if(!streak)return 0;
+  const days=Math.max(0,Number(streak.current_days)||0);
+  if(!days)return 0;
+  if(streak.expires_at)return new Date(streak.expires_at).getTime()>Date.now()?days:0;
+  if(!streak.last_activity_date)return 0;
+  const today=moscowDateKey();
+  const yesterday=moscowDateKey(new Date(Date.now()-86400000));
+  return streak.last_activity_date===today||streak.last_activity_date===yesterday?days:0;
+}
+
+async function renderFriends(host) {
+  const uid=state.session.user.id;
+  const [friendRows,incoming,outgoing,streakResult]=await Promise.all([
+    supabase.from('friendships').select('user_low,user_high').or(`user_low.eq.${uid},user_high.eq.${uid}`),
+    supabase.from('friend_requests').select('id,sender_id,created_at').eq('receiver_id',uid).eq('status','pending').order('created_at',{ascending:false}),
+    supabase.from('friend_requests').select('id,receiver_id,created_at').eq('sender_id',uid).eq('status','pending').order('created_at',{ascending:false}),
+    supabase.from('streaks').select('*').or(`user_low.eq.${uid},user_high.eq.${uid}`)
+  ]);
+  const friendIds=(friendRows.data||[]).map(x=>x.user_low===uid?x.user_high:x.user_low);
+  const incomingIds=(incoming.data||[]).map(x=>x.sender_id);
+  const outgoingIds=(outgoing.data||[]).map(x=>x.receiver_id);
+  const ids=[...new Set([...friendIds,...incomingIds,...outgoingIds])];
+  const [profileResult,badgeResult,searchResult]=await Promise.all([
+    ids.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url,telegram_username,telegram_id,created_at,show_subscription,show_role,show_badges,show_activity').in('id',ids):Promise.resolve({data:[],error:null}),
+    ids.length?supabase.from('profile_badges').select('user_id,badge_code').in('user_id',ids):Promise.resolve({data:[],error:null}),
+    state.friendSearchQuery.length>=2
+      ?supabase.rpc('search_flamexbot_profiles',{p_query:state.friendSearchQuery,p_limit:15})
+      :Promise.resolve({data:[],error:null})
+  ]);
+  const profileMap=new Map((profileResult.data||[]).map(p=>[p.id,p]));
+  const searchIds=(searchResult.data||[]).map(p=>p.id);
+  const searchPrivacy=searchIds.length?await supabase.from('profiles').select('id,show_subscription,show_role,show_badges,show_activity').in('id',searchIds):{data:[]};
+  const searchPrivacyMap=new Map((searchPrivacy.data||[]).map(p=>[p.id,p]));
+  const publicSearchResults=(searchResult.data||[]).map(p=>({...p,...(searchPrivacyMap.get(p.id)||{})}));
+  const badgeMap=new Map();
+  (badgeResult.data||[]).forEach(b=>{if(!badgeMap.has(b.user_id))badgeMap.set(b.user_id,[]);badgeMap.get(b.user_id).push(b.badge_code);});
+  const friendSet=new Set(friendIds);
+  const incomingByUser=new Map((incoming.data||[]).map(r=>[r.sender_id,r]));
+  const outgoingByUser=new Map((outgoing.data||[]).map(r=>[r.receiver_id,r]));
+  const streakByFriend=new Map((streakResult.data||[]).map(s=>[s.user_low===uid?s.user_high:s.user_low,s]));
+  const displayName=id=>{const p=profileMap.get(id);return p?.display_name||p?.username||'Пользователь';};
+  let favoriteIds=[];
+  try{favoriteIds=JSON.parse(localStorage.getItem('flamexbot-favorite-friends')||'[]');if(!Array.isArray(favoriteIds))favoriteIds=[];}catch{favoriteIds=[];}
+  const favoriteSet=new Set(favoriteIds);
+  const sortedFriendIds=[...friendIds].sort((a,b)=>{
+    const favoriteDiff=Number(favoriteSet.has(b))-Number(favoriteSet.has(a));
+    if(favoriteDiff)return favoriteDiff;
+    const sa=streakByFriend.get(a),sb=streakByFriend.get(b);
+    const activeDiff=effectiveStreakDays(sb)-effectiveStreakDays(sa);
+    if(activeDiff)return activeDiff;
+    const bestDiff=(Number(sb?.best_days)||0)-(Number(sa?.best_days)||0);
+    if(bestDiff)return bestDiff;
+    return displayName(a).localeCompare(displayName(b),'ru');
+  });
+  const activeFriendCount=friendIds.filter(id=>effectiveStreakDays(streakByFriend.get(id))>0).length;
+
+  const profileCard=(p,subline,actions='',badges=[])=>{
+    const shownBadges=p.show_badges===false?[]:p.show_role===false?(badges||[]).filter(code=>code==='verified'||(code==='premium'&&p.show_subscription!==false)):(badges||[]).filter(code=>p.show_subscription!==false||code!=='premium');
+    const verified=(badges||[]).includes('verified')||isFounderProfile(p);
+    return `<article class="friend-card"><div class="friend-card-main"><div class="friend-avatar">${avatar(p.avatar_url||p.telegram_photo_url,p.display_name||p.username,'avatar-lg')}</div><div class="friend-card-identity"><b>${esc(p.display_name||p.username||'Пользователь')} ${verifiedMarkMarkup(verified&&p.show_badges!==false)} ${badgeMarkup(shownBadges,false,false)}</b><small>${esc(subline)}</small></div></div><div class="friend-card-actions">${actions}</div></article>`;
+  };
+  const friendCards=sortedFriendIds.map(id=>{
+    const p=profileMap.get(id);if(!p)return '';
+    const streak=streakByFriend.get(id),days=effectiveStreakDays(streak);
+    const handle=String(p.telegram_username||'').replace(/^@/,'').replace(/[^A-Za-z0-9_]/g,'');
+    const link=handle?`<a class="friend-link" href="https://t.me/${handle}" target="_blank" rel="noopener noreferrer">Открыть Telegram ↗</a>`:'';
+    const status=days>0?`🔥 Огонёк горит · ${days} дн.`:streak?.best_days?`Огонёк погас · рекорд ${streak.best_days} дн.`:'Огонёк ещё не зажжён';
+    const favorite=favoriteSet.has(id);
+    const actions=`${link}<button class="outline small" type="button" data-friend-profile="${id}">Профиль</button><button class="outline small friend-favorite-button ${favorite?'is-favorite':''}" type="button" data-friend-favorite="${id}" aria-label="${favorite?'Убрать из избранного':'Закрепить друга'}">${favorite?'★ Закреплён':'☆ Закрепить'}</button>`;
+    return profileCard(p,`@${p.telegram_username||p.username} · ${status}`,actions,badgeMap.get(id)||[]);
+  }).join('');
+  const incomingCards=(incoming.data||[]).map(r=>{
+    const p=profileMap.get(r.sender_id);if(!p)return '';
+    return profileCard(p,`Заявка · ${formatMskDate(r.created_at)}`,
+      `<button class="primary small" data-friend-response="accepted" data-request-id="${r.id}">Принять</button><button class="outline small" data-friend-response="rejected" data-request-id="${r.id}">Отклонить</button>`,
+      badgeMap.get(r.sender_id)||[]);
+  }).join('');
+  const outgoingCards=(outgoing.data||[]).map(r=>{
+    const p=profileMap.get(r.receiver_id);if(!p)return '';
+    return profileCard(p,`Ожидает ответа · ${formatMskDate(r.created_at)}`,
+      `<button class="outline small" data-friend-cancel="${r.id}">Отменить заявку</button>`,
+      badgeMap.get(r.receiver_id)||[]);
+  }).join('');
+  const searchCards=publicSearchResults.map(p=>{
+    const isFriend=friendSet.has(p.id),inRequest=incomingByUser.get(p.id),outRequest=outgoingByUser.get(p.id);
+    let action=isFriend?'<span class="friend-state-pill">✓ Вы друзья</span>'
+      :inRequest?'<span class="friend-state-pill">Заявка уже у тебя</span>'
+      :outRequest?`<button class="outline small" data-friend-cancel="${outRequest.id}">Отменить заявку</button>`
+      :`<button class="primary small" data-friend-send="${p.id}">＋ Добавить</button>`;
+    return profileCard(p,`@${p.telegram_username||p.username} · Telegram подключён`,action,p.badge_codes||[]);
+  }).join('');
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">ТВОЙ КРУГ ОБЩЕНИЯ</div><h1>Друзья <span>👥</span></h1><p class="muted">Находи людей, отправляй заявки и поддерживай совместные огоньки. Для ежедневной серии оба участника должны обмениваться сообщениями в Telegram.</p></div>
+    <section class="friends-search-panel"><div class="section-heading"><div><div class="eyebrow">ПОИСК УЧАСТНИКОВ</div><h3>Найти друга</h3></div><span class="friend-counter">${friendIds.length} друзей</span></div>
+      <form id="friend-search-form" class="friend-search-form"><input name="query" value="${esc(state.friendSearchQuery)}" maxlength="48" placeholder="Имя, никнейм или @username" autocomplete="off"/><button class="primary" type="submit">Найти</button></form>
+      <small class="friend-search-hint">Минимум 2 символа. В поиске отображаются участники с привязанным Telegram.</small>
+      <div class="friend-list friend-search-results">${state.friendSearchQuery.length<2?'<div class="empty-state">Введи имя или никнейм, чтобы найти участника.</div>':searchResult.error?'<div class="business-warning">Не удалось выполнить поиск: '+esc(searchResult.error.message)+'</div>':searchCards||'<div class="empty-state">Ничего не найдено. Проверь написание и попробуй ещё раз.</div>'}</div>
+    </section>
+    <div class="friends-columns">
+      <section class="friends-section"><div class="section-heading"><div><div class="eyebrow">ТВОЁ СООБЩЕСТВО</div><h3>Мои друзья</h3></div><span class="friend-counter">${friendIds.length} · ${activeFriendCount} с огоньком</span></div><label class="friend-list-filter"><span>⌕</span><input id="friend-list-filter" type="search" maxlength="48" placeholder="Поиск среди друзей…" autocomplete="off"/></label><div class="friend-list" id="my-friend-list">${friendCards||'<div class="empty-state">Пока нет друзей. Найди знакомых через поиск выше.</div>'}</div></section>
+      <section class="friends-section"><div class="section-heading"><div><div class="eyebrow">ВХОДЯЩИЕ</div><h3>Заявки в друзья</h3></div><span class="friend-counter">${(incoming.data||[]).length}</span></div><div class="friend-list">${incomingCards||'<div class="empty-state">Новых заявок нет.</div>'}</div>
+        <div class="outgoing-heading"><b>Отправленные</b><span>${(outgoing.data||[]).length}</span></div><div class="friend-list">${outgoingCards||'<div class="empty-state compact-empty">Ты пока никого не приглашал.</div>'}</div>
+      </section>
+    </div>
+    ${friendRows.error||incoming.error||outgoing.error||streakResult.error||profileResult.error||badgeResult.error||searchPrivacy.error?'<p class="business-warning">Не удалось загрузить часть данных друзей. Попробуй обновить раздел.</p>':''}
+    <section class="friend-profile-panel" id="friend-profile-panel" hidden></section>`;
+  host.querySelectorAll('[data-friend-profile]').forEach(btn=>btn.addEventListener('click',()=>openFriendProfile(btn.dataset.friendProfile)));
+  host.querySelectorAll('[data-friend-favorite]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const id=btn.dataset.friendFavorite;
+    const next=favoriteSet.has(id)?favoriteIds.filter(x=>x!==id):[...favoriteIds,id];
+    try{localStorage.setItem('flamexbot-favorite-friends',JSON.stringify(next));}catch{toast('Не удалось сохранить избранное на этом устройстве.');return;}
+    toast(favoriteSet.has(id)?'Друг убран из избранного':'Друг закреплён в избранном');
+    await renderFriends(host);
+  }));
+  async function openFriendProfile(friendId){
+    const friend=profileMap.get(friendId);
+    if(!friend||!friendSet.has(friendId))return;
+    const panel=host.querySelector('#friend-profile-panel');
+    if(!panel)return;
+    const streak=streakByFriend.get(friendId);
+    const {data:activity,error:activityError}=streak?.id
+      ?await supabase.from('streak_daily_activity').select('activity_date,message_count').eq('streak_id',streak.id).eq('user_id',uid).order('activity_date',{ascending:false}).limit(14)
+      :{data:[],error:null};
+    const myMessages=(activity||[]).reduce((sum,row)=>sum+(Number(row.message_count)||0),0);
+    const days=effectiveStreakDays(streak);
+    const handle=String(friend.telegram_username||'').replace(/^@/,'').replace(/[^A-Za-z0-9_]/g,'');
+    const isFavorite=favoriteSet.has(friendId);
+    panel.hidden=false;
+    const friendBadges=badgeMap.get(friendId)||[];
+    const publicBadges=friend.show_badges===false?[]:friend.show_role===false?friendBadges.filter(code=>code==='verified'||(code==='premium'&&friend.show_subscription!==false)):friendBadges.filter(code=>friend.show_subscription!==false||code!=='premium');
+    const showActivity=friend.show_activity!==false;
+    panel.innerHTML=`<div class="friend-profile-top"><div class="friend-profile-identity">${avatar(friend.avatar_url||friend.telegram_photo_url,friend.display_name||friend.username,'avatar-xl')}<div><div class="eyebrow">ПРОФИЛЬ ДРУГА</div><h3>${esc(friend.display_name||friend.username||'Пользователь')} ${verifiedMarkMarkup((friendBadges.includes('verified')||isFounderProfile(friend))&&friend.show_badges!==false)}</h3><p>${friend.telegram_username?'@'+esc(friend.telegram_username):'Telegram не указан'} ${badgeMarkup(publicBadges,false,false)}</p></div></div><button class="outline small" type="button" id="close-friend-profile">Закрыть ×</button></div>
+      ${showActivity?`<div class="friend-profile-stats"><div><small>ОГОНЁК СЕЙЧАС</small><b>${days} дн.</b></div><div><small>ЛИЧНЫЙ РЕКОРД СЕРИИ</small><b>${Number(streak?.best_days)||0} дн.</b></div><div><small>ТВОИ СООБЩЕНИЯ В СЕРИИ</small><b>${myMessages}</b></div></div>`:''}
+      <div class="friend-profile-meta"><span>В FLAMEXBOT с <b>${friend.created_at?formatMskDate(friend.created_at):'дата неизвестна'}</b></span>${handle?`<a class="friend-link" href="https://t.me/${handle}" target="_blank" rel="noopener noreferrer">Открыть Telegram ↗</a>`:''}<button class="outline small ${isFavorite?'is-favorite':''}" type="button" id="friend-profile-favorite">${isFavorite?'★ В избранном':'☆ Закрепить друга'}</button></div>
+      ${showActivity?`<div class="friend-profile-history"><div class="eyebrow">ИСТОРИЯ ОГОНЬКА</div><p>${activityError?'Не удалось загрузить историю активности.':activity?.length?'Твои дни активности в этой совместной серии:':'История активности пока не появилась.'}</p><div class="friend-activity-days">${(activity||[]).map(row=>`<div><b>${formatMskDate(row.activity_date,{day:'numeric',month:'short'})}</b><small>${Number(row.message_count)||0} сообщ.</small></div>`).join('')}</div><small class="friend-profile-privacy">Показывается только твоя активность в общей серии. Личные достижения и статистика друга не раскрываются.</small></div>`:''}`;
+    panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+    panel.querySelector('#close-friend-profile')?.addEventListener('click',()=>{panel.hidden=true;panel.innerHTML='';});
+    panel.querySelector('#friend-profile-favorite')?.addEventListener('click',async()=>{
+      const next=favoriteSet.has(friendId)?favoriteIds.filter(x=>x!==friendId):[...favoriteIds,friendId];
+      try{localStorage.setItem('flamexbot-favorite-friends',JSON.stringify(next));}catch{toast('Не удалось сохранить избранное на этом устройстве.');return;}
+      await renderFriends(host);
+      const refreshed=host.querySelector(`[data-friend-profile="${friendId}"]`);
+      refreshed?.click();
+    });
+  }
+  host.querySelector('#friend-list-filter')?.addEventListener('input',event=>{
+    const query=String(event.currentTarget.value||'').trim().toLocaleLowerCase('ru');
+    host.querySelectorAll('#my-friend-list .friend-card').forEach(card=>{
+      const text=card.querySelector('.friend-card-identity')?.textContent?.toLocaleLowerCase('ru')||'';
+      card.hidden=Boolean(query)&&!text.includes(query);
+    });
+  });
+  host.querySelector('#friend-search-form')?.addEventListener('submit',event=>{
+    event.preventDefault();
+    const fd=new FormData(event.currentTarget);
+    state.friendSearchQuery=String(fd.get('query')||'').trim();
+    renderFriends(host);
+  });
+  host.querySelectorAll('[data-friend-send]').forEach(btn=>btn.addEventListener('click',async()=>{
+    btn.disabled=true;
+    const {error}=await supabase.rpc('send_flamexbot_friend_request',{p_receiver_id:btn.dataset.friendSend});
+    if(error){toast(error.message.includes('already exists')?'Заявка уже существует':error.message.includes('уже друзья')?'Вы уже друзья':error.message.includes('привяжи Telegram')?'Сначала привяжи Telegram в профиле':error.message);}
+    else toast('Заявка отправлена');
+    await renderFriends(host);
+  }));
+  host.querySelectorAll('[data-friend-response]').forEach(btn=>btn.addEventListener('click',async()=>{
+    btn.disabled=true;
+    const {error}=await supabase.rpc('respond_flamexbot_friend_request',{p_request_id:btn.dataset.requestId,p_response:btn.dataset.friendResponse});
+    if(error)toast('Не удалось обработать заявку: '+error.message);
+    else toast(btn.dataset.friendResponse==='accepted'?'Теперь вы друзья!':'Заявка отклонена');
+    await renderFriends(host);
+  }));
+  host.querySelectorAll('[data-friend-cancel]').forEach(btn=>btn.addEventListener('click',async()=>{
+    if(!confirm('Отменить отправленную заявку?'))return;
+    btn.disabled=true;
+    const {error}=await supabase.rpc('cancel_flamexbot_friend_request',{p_request_id:btn.dataset.friendCancel});
+    if(error)toast('Не удалось отменить заявку: '+error.message);
+    else toast('Заявка отменена');
+    await renderFriends(host);
+  }));
+}
+
+async function renderStreaks(host) {
+  const uid=state.session.user.id;
+  const {data,error}=await supabase.from('streaks').select('*').or(`user_low.eq.${uid},user_high.eq.${uid}`).order('current_days',{ascending:false});
+  state.streaks=data||[];
+  state.streaks.sort((a,b)=>effectiveStreakDays(b)-effectiveStreakDays(a)||(Number(b.best_days)||0)-(Number(a.best_days)||0));
+  const friendIds=state.streaks.map(s=>s.user_low===uid?s.user_high:s.user_low);
+  const activeStreakCount=state.streaks.filter(s=>effectiveStreakDays(s)>0).length;
+  const bestStreak=Math.max(0,...state.streaks.map(s=>Number(s.best_days)||0));
+  const [profiles,badges]=await Promise.all([
+    friendIds.length?supabase.from('profiles').select('id,username,display_name,avatar_url,telegram_photo_url,telegram_username').in('id',friendIds):Promise.resolve({data:[],error:null}),
+    friendIds.length?supabase.from('profile_badges').select('user_id,badge_code').in('user_id',friendIds):Promise.resolve({data:[],error:null})
+  ]);
+  const profileMap=new Map((profiles.data||[]).map(p=>[p.id,p]));
+  const badgeMap=new Map();
+  (badges.data||[]).forEach(b=>{if(!badgeMap.has(b.user_id))badgeMap.set(b.user_id,[]);badgeMap.get(b.user_id).push(b.badge_code);});
+  host.innerHTML=`<div class="page-heading"><div class="eyebrow">DON'T BREAK THE CHAIN</div><h1>Огоньки 🔥</h1><p class="muted">Огонёк продлевается, когда оба друга отправили хотя бы одно сообщение за день. Пропустите полный день — серия погаснет, но личный рекорд сохранится.</p></div>
+    <div class="streak-overview-grid"><div><small>ВСЕ ОГОНЬКИ</small><b>${state.streaks.length}</b></div><div><small>ГОРЯТ СЕЙЧАС</small><b>${activeStreakCount}</b></div><div><small>ЛИЧНЫЙ РЕКОРД</small><b>${bestStreak} дн.</b></div></div>
+    <div class="streak-list large">${error?esc(error.message):state.streaks.length?state.streaks.map(s=>{
+      const id=s.user_low===uid?s.user_high:s.user_low,p=profileMap.get(id),days=effectiveStreakDays(s),name=p?.display_name||p?.username||'Друг';
+      const waiting=!s.last_activity_date;
+      const status=days>0?'СЕРИЯ ГОРИТ':waiting?'ОЖИДАЕМ ПЕРВЫЙ ОБМЕН':'СЕРИЯ ПОГАСЛА';
+      return `<div class="streak-card ${days>0?'streak-active':'streak-expired'}"><div class="streak-symbol streak-person-avatar">${avatar(p?.avatar_url||p?.telegram_photo_url,name,'avatar-lg')}</div><div class="streak-card-main"><div class="eyebrow">${status}</div><h3>${esc(name)} · ${days} ${days===1?'день':'дн.'}</h3><p class="muted">Личный рекорд: ${s.best_days||0} дн. · ${s.last_activity_date?'Последний общий день: '+formatMskDate(s.last_activity_date):'Один из вас уже начал общение — нужен ответ друга'}</p></div><div class="streak-days-badge">${days>0?'🔥 '+days:'—'}</div></div>`;
+    }).join(''):'<div class="empty-state">Огоньков пока нет. Добавь друга и начните переписываться каждый день.</div>'}</div>
+    <button class="outline" data-go="friends">Найти друзей <b>→</b></button>
+    ${profiles.error||badges.error?'<p class="business-warning">Не удалось загрузить имена или значки участников.</p>':''}`;
+}
+
+async function renderProfile(host) {
+  const p = state.profile || {}; const profileAvatar = p.avatar_url || p.telegram_photo_url;
+  const {data:businessConnection,error:businessError}=await fetchBusinessConnectionForProfile(p);
+  state.businessConnection = businessConnection || null;
+  const businessConnected = Boolean(businessConnection?.is_enabled);
+  const rights = businessConnection?.rights || {};
+  const grantedRights = Object.entries(rights).filter(([, value]) => value === true).map(([key]) => key);
+  host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль ${verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false)}</h1><div class="profile-badge-row">${badgeMarkup(state.profileBadges)}</div><p class="muted">Управляй именем, оформлением, значками и подключением Telegram Business.</p></div>
+    <form class="profile-card" id="profile-form">${avatar(profileAvatar,p.display_name||p.username,'avatar-xl')}
+      <label>Отображаемое имя<input name="display_name" value="${esc(p.display_name || '')}" placeholder="Как тебя называть" maxlength="48"/></label>
+      <label>Никнейм<input name="username" value="${esc(p.username || '')}" placeholder="Твой никнейм" maxlength="32" required/></label>
+      <label>О себе<textarea name="bio" maxlength="180" placeholder="Расскажи немного о себе">${esc(p.bio || '')}</textarea></label>
+      <label>Цветовая тема<select name="theme"><option value="orange" ${(p.theme||'orange')==='orange'?'selected':''}>Огненная</option><option value="blue" ${p.theme==='blue'?'selected':''}>Синяя</option><option value="green" ${p.theme==='green'?'selected':''}>Зелёная</option><option value="red" ${p.theme==='red'?'selected':''}>Красная</option><option value="violet" ${p.theme==='violet'?'selected':''}>Фиолетовая</option></select></label>
+      <label>Ссылка на аватар<input name="avatar_url" type="url" value="${esc(p.avatar_url || '')}" placeholder="https://…"/></label>
+      <div class="profile-time-display">${p.show_profile_time === false ? 'Время в профиле выключено' : 'Сейчас: '+formatMskTime()+' · МСК'}</div>
+      <div class="profile-id">ID аккаунта <code>${esc(state.session.user.id)}</code></div>
+      <div class="telegram-profile"><div><b>Telegram</b><small>${p.telegram_id ? (p.telegram_username ? '@' + esc(p.telegram_username) : 'Аккаунт привязан') : 'Не привязан'}</small></div><button class="outline small" type="button" data-telegram-link>${p.telegram_id ? 'Обновить связь' : 'Привязать Telegram'}</button></div>
+      <button class="primary">Сохранить изменения <b>→</b></button>
+    </form>
+    <section class="business-card">
+      <div class="business-card-head"><div><div class="eyebrow">ПОДКЛЮЧЕНИЕ TELEGRAM</div><h2>Telegram Business</h2><p class="muted">Подключи Telegram Business и выбери разрешения, с которыми FLAMEXBOT сможет работать в твоих диалогах.</p></div><span class="business-status ${businessConnected ? 'is-connected' : ''}">${businessConnected ? 'Активен' : 'Неактивен'}</span></div>
+      <div class="business-steps">
+        <div><b>1.</b><span>В Telegram открой <strong>Настройки → Telegram Business → Чат-боты</strong>.</span></div>
+        <div><b>2.</b><span>Добавь FLAMEXBOT и самостоятельно выбери, к каким диалогам и данным открыть доступ.</span></div>
+      </div>
+      <div class="business-connection-info">
+        ${businessConnected ? `<b>Бот активен</b><small>Подключено: ${businessConnection.connected_at ? formatMskDateTime(businessConnection.connected_at,{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
+      </div>
+      ${businessError ? '<p class="business-warning">Не удалось получить статус подключения. Проверь Telegram Business и попробуй ещё раз.</p>' : ''}
+      <button class="outline small" type="button" id="refresh-business">↻ Проверить подключение</button>
+      <p class="business-note">Разрешения можно проверить или отозвать в настройках Telegram Business.</p>
+    </section>
+    <section class="profile-security-card"><div class="profile-security-head"><div><div class="eyebrow">БЕЗОПАСНОСТЬ</div><h2>PIN-защита</h2><p class="muted">Блокировка Mini App при повторном входе на этом устройстве.</p></div><button type="button" class="security-toggle ${localStorage.getItem(pinKey(state.session.user.id))?'is-on':''}" id="profile-pin-toggle" aria-pressed="${Boolean(localStorage.getItem(pinKey(state.session.user.id)))}"><span></span></button></div><small id="profile-pin-status">${localStorage.getItem(pinKey(state.session.user.id))?'PIN-защита включена':'PIN-защита выключена'}</small></section>`;
+  const pinToggle=document.querySelector('#profile-pin-toggle');
+  pinToggle?.addEventListener('click',async()=>{const id=state.session.user.id,enabled=Boolean(localStorage.getItem(pinKey(id))),status=document.querySelector('#profile-pin-status');if(enabled){const current=prompt('Введите текущий PIN-код');if(current===null)return;if(!(await checkPin(id,current))){toast('Неверный PIN-код');return;}localStorage.removeItem(pinKey(id));sessionStorage.removeItem(pinUnlockKey(id));pinToggle.classList.remove('is-on');pinToggle.setAttribute('aria-pressed','false');status.textContent='PIN-защита выключена';toast('PIN-защита отключена');return;}const first=prompt('Придумай PIN-код из 4–8 цифр');if(first===null)return;if(!/^\d{4,8}$/.test(first))){toast('PIN должен содержать 4–8 цифр');return;}const second=prompt('Повтори PIN-код');if(second===null)return;if(first!==second){toast('PIN-коды не совпадают');return;}await setPin(id,first);sessionStorage.setItem(pinUnlockKey(id),'1');pinToggle.classList.add('is-on');pinToggle.setAttribute('aria-pressed','true');status.textContent='PIN-защита включена';toast('PIN-защита включена');});
   document.querySelector('[data-telegram-link]').addEventListener('click', () => telegramAuthFlow({ linkCurrent: true }));
   document.querySelector('#refresh-business').addEventListener('click', async e => {
     e.currentTarget.disabled = true;
