@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.119.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -80,7 +80,7 @@ Deno.serve(async (req: Request) => {
       telegram_id: telegramId,
       telegram_username: telegramUsername,
       telegram_photo_url: photoUrl,
-      username: telegramUsername,
+      ...(telegramUsername ? { username: telegramUsername } : {}),
       display_name: displayName || "Пользователь Telegram",
       avatar_url: photoUrl,
       updated_at: new Date().toISOString(),
@@ -140,7 +140,10 @@ Deno.serve(async (req: Request) => {
       });
       if (error) throw error;
       userId = data.user.id;
-      const { error: profileError } = await admin.from("profiles").update(profileUpdate).eq("id", userId);
+      const { error: profileError } = await admin.from("profiles").update({
+        ...profileUpdate,
+        username: telegramUsername || `tg_${telegramId}`,
+      }).eq("id", userId);
       if (profileError) {
         const { error: rollbackError } = await admin.auth.admin.deleteUser(userId);
         if (rollbackError) console.error("telegram-auth: could not roll back incomplete account:", rollbackError.message);
