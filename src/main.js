@@ -2246,6 +2246,7 @@ async function renderCommands(host) {
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Переключить мут',description:'Бесплатная команда: удаляет новые входящие сообщения в текущем Business-диалоге. Требуется право Telegram Business «Удалять все сообщения».',access:'free',group:'Управление чатом'},
+    {syntax:'.font текст',title:'Красивый шрифт',description:'Преобразует латинские буквы в математический Unicode-стиль.',access:'free',group:'Оформление'},
     {syntax:'.crop',title:'Обрезать фото',description:'Ответь на фотографию: обрежет её по центру в квадрат.',access:'free',group:'Медиа'},
     {syntax:'.resize ШИРИНА ВЫСОТА',title:'Изменить размер фото',description:'Ответь на фотографию и укажи стороны от 64 до 2048 px, например .resize 1080 1080.',access:'free',group:'Медиа'},
     {syntax:'.rotate 90',title:'Повернуть фото',description:'Ответь на фотографию: поворачивает на 90, 180 или 270 градусов.',access:'free',group:'Медиа'},
