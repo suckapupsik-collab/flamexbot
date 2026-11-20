@@ -1573,7 +1573,8 @@ function animateFortuneWheel(prizeType) {
  const wheel=document.querySelector('#fortune-wheel');
  if(!wheel)return Promise.resolve();
  const centers={free_spin:36,addon:108,premium_7d:180,premium_30d:252,premium_90d:324,coins_10:36,coins_50:108,coins_100:180,coins_250:252,premium_day:180};
- const target=centers[prizeType]??252;
+ if(!Object.prototype.hasOwnProperty.call(centers,prizeType))return Promise.resolve(false);
+ const target=centers[prizeType];
  if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
    wheel.style.transform='rotate('+((360-target)%360)+'deg)';
    return Promise.resolve();
@@ -1599,7 +1600,7 @@ async function renderTariffs(host, initialTab='premium') {
  const wheelWeeklySpins=Number(wheelPublicSettings?.premium_weekly_spins||0);
  const wheelOddsRows=wheelOddsConfig||[];
  const wheelOddsTotal=wheelOddsRows.filter(p=>p.is_active).reduce((sum,p)=>sum+Number(p.weight||0),0);
- const wheelOddsHtml=wheelOddsError?'<span>Не удалось загрузить актуальные шансы.</span>':wheelOddsRows.map(p=>'<span>'+((p.is_active&&wheelOddsTotal>0?Number(p.weight)/wheelOddsTotal*100:0)).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+esc(p.prize_label)+'</span>').join('');
+ const wheelOddsHtml=wheelOddsError?'<span>Не удалось загрузить актуальные шансы.</span>':wheelOddsTotal>0?wheelOddsRows.map(p=>'<span>'+((p.is_active&&Number(p.weight)>0?Number(p.weight)/wheelOddsTotal*100:0)).toLocaleString('ru-RU',{maximumFractionDigits:2})+'% · '+esc(p.prize_label)+'</span>').join(''):'<span>Награды временно недоступны.</span>';
  const {data:trialRecord,error:trialRecordError}=await supabase.from('flamexbot_trials').select('expires_at').eq('user_id',state.session.user.id).maybeSingle();
  const [{data:subscriptionPayments,error:subscriptionPaymentError},{data:addonPayments,error:addonPaymentError}]=await Promise.all([
    supabase.from('flamexbot_star_payments')
@@ -1806,7 +1807,10 @@ async function renderTariffs(host, initialTab='premium') {
  const oddsToggle=host.querySelector('#toggle-wheel-odds');
  if(oddsToggle)oddsToggle.addEventListener('click',()=>{const panel=host.querySelector('#wheel-odds-panel');if(!panel)return;const opening=panel.hidden;panel.hidden=!opening;oddsToggle.textContent=opening?'Скрыть шансы':'Показать шансы';oddsToggle.setAttribute('aria-expanded',String(opening));});
  const wheelButton=host.querySelector('#spin-wheel');
+ const wheelUnavailable=Boolean(wheelOddsError)||wheelOddsTotal<=0;
+ if(wheelButton&&wheelUnavailable){wheelButton.disabled=true;wheelButton.textContent='Колесо временно недоступно';wheelButton.title='Нет доступных наград или не удалось загрузить шансы';}
  wheelButton?.addEventListener('click',async()=>{
+   if(wheelUnavailable){toast('Колесо временно недоступно: нет активных наград.');return;}
    const freeSpin=(state.profile?.wheel_free_spins||0)>0;
    wheelButton.disabled=true;wheelButton.textContent=freeSpin?'Используем прокрутку…':'Создаём счёт…';
    try{
@@ -1852,7 +1856,7 @@ async function renderTariffs(host, initialTab='premium') {
      });
      if(!opened)toast('Счёт открыт в Telegram.');
    }catch(error){toast('Колесо: '+(error.message||'ошибка'));}
-   finally{if(host.contains(wheelButton)){wheelButton.disabled=false;wheelButton.textContent=(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐';}}
+   finally{if(host.contains(wheelButton)){wheelButton.disabled=wheelUnavailable;wheelButton.textContent=wheelUnavailable?'Колесо временно недоступно':(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐';}}
  });
  const addonButton=host.querySelector('#buy-command-protection');
  addonButton?.addEventListener('click',async()=>{
@@ -2136,13 +2140,21 @@ async function renderProfile(host) {
   pinToggle?.addEventListener('click',async()=>{const id=state.session.user.id,enabled=Boolean(localStorage.getItem(pinKey(id))),status=document.querySelector('#profile-pin-status');if(enabled){const current=prompt('Введите текущий PIN-код');if(current===null)return;if(!(await checkPin(id,current))){toast('Неверный PIN-код');return;}localStorage.removeItem(pinKey(id));sessionStorage.removeItem(pinUnlockKey(id));pinToggle.classList.remove('is-on');pinToggle.setAttribute('aria-pressed','false');status.textContent='PIN-защита выключена';toast('PIN-защита отключена');return;}const first=prompt('Придумай PIN-код из 4–8 цифр');if(first===null)return;if(!/^\d{4,8}$/.test(first)){toast('PIN должен содержать 4–8 цифр');return;}const second=prompt('Повтори PIN-код');if(second===null)return;if(first!==second){toast('PIN-коды не совпадают');return;}await setPin(id,first);sessionStorage.setItem(pinUnlockKey(id),'1');pinToggle.classList.add('is-on');pinToggle.setAttribute('aria-pressed','true');status.textContent='PIN-защита включена';toast('PIN-защита включена');});
   document.querySelector('[data-telegram-link]').addEventListener('click', () => telegramAuthFlow({ linkCurrent: true }));
   document.querySelector('#refresh-business').addEventListener('click', async e => {
-    e.currentTarget.disabled = true;
-    const { data, error } = await supabase.from('flamexbot_business_connections')
-      .select('is_enabled,rights,connected_at,updated_at').eq('profile_id', state.session.user.id).maybeSingle();
-    state.businessConnection = data || null;
-    if (error) toast('Не удалось обновить статус');
-    else { toast(data?.is_enabled ? 'Telegram Business подключён' : 'Подключение пока не найдено'); renderProfile(host); }
-    e.currentTarget.disabled = false;
+    const btn=e.currentTarget;btn.disabled=true;btn.textContent='Проверяем в Telegram…';
+    try {
+      const {data:live,error:liveError}=await supabase.functions.invoke('flamexbot-business-status',{body:{profile_id:state.session.user.id}});
+      if(liveError||live?.error)throw new Error(live?.error||liveError?.message||'Telegram временно недоступен');
+      state.businessConnection={is_enabled:live.connected===true,rights:live.rights||{},connected_at:live.connected_at||null,updated_at:new Date().toISOString()};
+      toast(live.connected?'✅ Telegram Business подключён':'Подключение отключено в Telegram');
+    } catch(error) {
+      const {data:cached, error:cacheError}=await supabase.from('flamexbot_business_connections').select('is_enabled,rights,connected_at,updated_at').eq('profile_id',state.session.user.id).maybeSingle();
+      state.businessConnection=cached||null;
+      if(!cacheError&&cached)toast((cached.is_enabled?'Подключение есть':'Подключение не найдено')+' · сохранённый статус, Telegram не ответил');
+      else toast('Не удалось проверить Telegram Business: '+(error?.message||'ошибка'));
+    } finally {
+      btn.disabled=false;btn.textContent='↻ Проверить подключение';
+      renderProfile(host);
+    }
   });
   document.querySelector('#profile-form').addEventListener('submit', async e => {
     e.preventDefault(); const fd = new FormData(e.currentTarget);
@@ -2607,7 +2619,7 @@ async function renderSeasonEvents(host,showHistory=false) {
     btn.disabled=false;btn.textContent='Скрыть победителей';
     if(error){panel.innerHTML='<div class="business-warning">'+esc(error.message)+'</div>';return;}
     const medals=['🥇','🥈','🥉'];
-    panel.innerHTML=(data||[]).map(row=>'<div class="season-event-winner"><span class="season-event-winner-rank">'+(medals[Number(row.rank_position)-1]||('#'+row.rank_position))+'</span><span class="season-event-winner-avatar">'+(row.avatar_url?'<img src="'+esc(row.avatar_url)+'" alt="">':'🔥')+'</span><span class="season-event-winner-name"><b>'+esc(row.display_name||'Участник')+'</b><small>'+(row.username?'@'+esc(row.username):'Участник FLAMEXBOT')+' · '+formatMskDateTime(row.claimed_at)+'</small></span><strong>'+Number(row.progress_at_claim||0)+' / цель</strong><em>+'+Number(row.reward_xp||0)+' XP</em></div>').join('')||'<div class="empty-state">Пока никто не забрал награду. Стань первым!</div>';
+    panel.innerHTML=(data||[]).map(row=>'<div class="season-event-winner"><span class="season-event-winner-rank">'+(medals[Number(row.rank_position)-1]||('#'+row.rank_position))+'</span><span class="season-event-winner-avatar">'+((row.avatar_url||row.telegram_photo_url)?'<img src="'+esc(row.avatar_url||row.telegram_photo_url)+'" alt="">':'🔥')+'</span><span class="season-event-winner-name"><b>'+esc(row.display_name||'Участник')+'</b><small>'+(row.username?'@'+esc(row.username):'Участник FLAMEXBOT')+' · '+formatMskDateTime(row.claimed_at)+'</small></span><strong>'+Number(row.progress_at_claim||0)+' / цель</strong><em>+'+Number(row.reward_xp||0)+' XP</em></div>').join('')||'<div class="empty-state">Пока никто не забрал награду. Стань первым!</div>';
   }));
   host.querySelectorAll('[data-event-view]').forEach(btn=>btn.addEventListener('click',()=>renderSeasonEvents(host,btn.dataset.eventView==='history')));
   host.querySelectorAll('[data-claim-event]').forEach(btn=>btn.addEventListener('click',async()=>{
