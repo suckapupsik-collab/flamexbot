@@ -2245,7 +2245,10 @@ async function renderCommands(host) {
     {syntax:'/commands',title:'Справка по командам',description:'Открывает ту же справку, что и /help.',access:'free',group:'Личный чат с ботом'},
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
-    {syntax:'.mute',title:'Переключить мут',description:'Первый запуск включает удаление новых входящих сообщений, повторный .mute выключает. Нужны Premium и право Telegram Business «Удалять все сообщения».',access:'premium',group:'Управление чатом'},
+    {syntax:'.mute',title:'Переключить мут',description:'Бесплатная команда: удаляет новые входящие сообщения в текущем Business-диалоге. Требуется право Telegram Business «Удалять все сообщения».',access:'free',group:'Управление чатом'},
+    {syntax:'.monitor',title:'Включить журнал активности',description:'Включает журнал сообщений только в текущем подключённом Business-диалоге.',access:'free',group:'Мониторинг'},
+    {syntax:'.stopmonitor',title:'Остановить мониторинг',description:'Останавливает журнал активности текущего Business-диалога.',access:'free',group:'Мониторинг'},
+    {syntax:'.monitorlog',title:'История активности',description:'Показывает до 15 последних сообщений после включения мониторинга.',access:'free',group:'Мониторинг'},
     {syntax:'.antimute',title:'Переключить антимут',description:'Повторно отправляет ваше сообщение от имени Business-аккаунта и удаляет оригинал. Для включения нужны Premium и право «Удалять все сообщения»; выключение бесплатно.',access:'premium',group:'Управление чатом'},
     
     {syntax:'.afk причина',title:'Переключить автоответ',description:'Повторный запуск .afk выключает автоответ. При включении можно указать текст ответа.',access:'premium',group:'Автоматизация'},
