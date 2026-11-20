@@ -2348,7 +2348,7 @@ async function renderCommands(host) {
     {syntax:".hack",title:"Hack",description:"Только симуляция взлома игрового терминала.",access:"premium",group:"RP-команды"},
     {syntax:".ddos",title:"DDoS",description:"Шуточная атака конфетти, не сетевой трафик.",access:"premium",group:"RP-команды"},
     {syntax:".ban",title:"Ban",description:"Шуточный игровой бан на 1 секунду.",access:"premium",group:"RP-команды"},
-    {syntax:".burger",title:"Бургер-ловушка",description:"Ставит одноразовую ловушку на следующее сообщение собеседника.",access:"premium",group:"RP-команды"},
+    {syntax:".burger",title:"Бургер-ловушка",description:"Ставит открытый стикер из набора Burger; после следующего сообщения собеседника отправляет второй кадр. Одноразовая ловушка.",access:"premium",group:"RP-команды"},
     {syntax:".обнять",title:"RP: обнять",description:"Русский алиас команды .hug.",access:"free",group:"RP-команды"},
     {syntax:".поцеловать",title:"RP: поцеловать",description:"Русский алиас команды .kiss.",access:"free",group:"RP-команды"},
     {syntax:".расцеловать",title:"RP: расцеловать",description:"Русский алиас команды .kiss.",access:"free",group:"RP-команды"},
