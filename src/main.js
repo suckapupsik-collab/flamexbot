@@ -2246,6 +2246,7 @@ async function renderCommands(host) {
     {syntax:'/premium',title:'Купить или продлить Premium',description:'Создаёт счёт Telegram Stars на 30 дней. Оплата разовая, автоматического продления нет.',access:'free',group:'Подписка · личный чат'},
     {syntax:'.commands',title:'Полный справочник',description:'Открывает список всех доступных команд в переписке.',access:'free',group:'Основные'},
     {syntax:'.mute',title:'Переключить мут',description:'Бесплатная команда: удаляет новые входящие сообщения в текущем Business-диалоге. Требуется право Telegram Business «Удалять все сообщения».',access:'free',group:'Управление чатом'},
+    {syntax:'.sticker',title:'Создать стикер',description:'Ответь на фотографию: создаёт PNG-стикер 512×512 и добавляет его в твой набор FLAMEXBOT.',access:'free',group:'Медиа'},
     {syntax:'.round',title:'Круглое фото',description:'Ответь на фото: создаёт PNG с круглой обрезкой и прозрачным фоном.',access:'free',group:'Медиа'},
     {syntax:'.wanted',title:'Разыскивается',description:'Ответь на фото: отправляет шуточный постер «Разыскивается» с именем или username отправителя фото.',access:'free',group:'Медиа'},
     {syntax:'.stories',title:'История 3×3',description:'Ответь на фото: нарезает его на 9 частей и публикует 9 историй от Business-аккаунта. Нужны права управления историями.',access:'free',group:'Медиа'},
