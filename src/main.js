@@ -18,6 +18,17 @@ const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
 let toastTimer = null;
 const toast = message => { const el = document.querySelector('.toast'); if (!el) return; clearTimeout(toastTimer); el.textContent = String(message || ''); el.classList.toggle('show', Boolean(message)); if (!message) return; toastTimer = setTimeout(() => { el.classList.remove('show'); el.textContent = ''; }, 3000); };
 const applyTheme = theme => { document.documentElement.dataset.theme = ['orange','blue','green','red','violet'].includes(theme) ? theme : 'orange'; };
+const RIGHT_LABELS = {
+  can_reply:'Отвечать на сообщения',can_read_messages:'Читать сообщения',can_delete_sent_messages:'Удалять отправленные',
+  can_delete_all_messages:'Удалять все сообщения',can_edit_name:'Менять имя',can_edit_bio:'Менять описание',
+  can_edit_profile_photo:'Менять фото',can_edit_username:'Менять username',can_change_gift_settings:'Настройки подарков',
+  can_view_gifts_and_stars:'Видеть подарки и Stars',can_convert_gifts_to_stars:'Конвертировать подарки',
+  can_transfer_and_upgrade_gifts:'Передавать подарки',can_transfer_stars:'Переводить Stars',can_manage_stories:'Управлять историями'
+};
+const rightsChips = rights => {
+  const granted=Object.entries(rights||{}).filter(([,value])=>value===true).map(([key])=>key);
+  return granted.length?granted.map(key=>'<span class="right-chip">'+esc(RIGHT_LABELS[key]||key.replace(/^can_/,'').replace(/_/g,' '))+'</span>').join(''):'<span class="right-chip is-empty">Права не выданы</span>';
+};
 const avatarHue = name => { let h=0; for(const c of String(name||'F')) h=(h*31+c.charCodeAt(0))%360; return h; };
 const avatarFallback = (name,size='') => `<span class="avatar avatar-fallback ${size}" style="--ah:${avatarHue(name)}" aria-label="Аватар пользователя">${esc((name||'F').trim().slice(0,1).toUpperCase())}</span>`;
 const avatar = (url,name,size='') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.insertAdjacentHTML('afterend',this.dataset.fb);this.remove()" data-fb="${esc(avatarFallback(name,size))}" />` : avatarFallback(name,size);
@@ -2109,7 +2120,7 @@ async function renderProfile(host) {
         <div><b>2.</b><span>Добавь FLAMEXBOT и самостоятельно выбери, к каким диалогам и данным открыть доступ.</span></div>
       </div>
       <div class="business-connection-info">
-        ${businessConnected ? `<b>Бот активен</b><small>Подключено: ${businessConnection.connected_at ? formatMskDateTime(businessConnection.connected_at,{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
+        ${businessConnected ? `<b>Бот активен</b><small>Подключено: ${businessConnection.connected_at ? formatMskDateTime(businessConnection.connected_at,{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small><div class="right-chips">${rightsChips(rights)}</div>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
       </div>
       ${businessError ? '<p class="business-warning">Не удалось получить статус подключения. Проверь Telegram Business и попробуй ещё раз.</p>' : ''}
       <button class="outline small" type="button" id="refresh-business">↻ Проверить подключение</button>
