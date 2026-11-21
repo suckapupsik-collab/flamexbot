@@ -547,8 +547,10 @@ async function sendAntimutRestore(args: {
   connection: any;
   chatId: string | number;
   businessChatId: string;
+  sourceMessageId: number;
 }) {
-  const { original, originalMessageId, previousAttempt, activationAt, connection, chatId, businessChatId } = args;
+  const { original, originalMessageId, previousAttempt, activationAt, connection, chatId, businessChatId, sourceMessageId } = args;
+  if (!admin) throw new Error("Supabase client unavailable during antimut restore");
   const messageDateMs = Number(original?.date) * 1000;
   // Re-read the setting immediately before sending. Disabling or re-enabling antimut
   // invalidates work claimed by an older handler.
@@ -571,8 +573,17 @@ async function sendAntimutRestore(args: {
   console.log("Antimut restore sending", JSON.stringify({
     chat_id: String(chatId), original_message_id: originalMessageId, attempt: nextAttempt,
   }));
-  const resent = await telegram(prepared.method, prepared.payload);
-  if (!resent?.message_id) throw new Error("Antimut restore failed: Telegram returned no message id");
+  let resent: any;
+  try {
+    resent = await telegram(prepared.method, prepared.payload);
+    if (!resent?.message_id) throw new Error("Antimut restore failed: Telegram returned no message id");
+  } catch (sendError) {
+    const { error: releaseClaimError } = await admin.from("flamexbot_business_messages")
+      .update({ antimut_restore_claimed_at: null })
+      .eq("business_chat_id", businessChatId).eq("telegram_message_id", sourceMessageId);
+    if (releaseClaimError) console.error("Could not release failed antimut restore claim:", releaseClaimError.message);
+    throw sendError;
+  }
   const sentMedia = resent.photo?.at(-1) ?? resent.video ?? resent.animation ?? resent.document ?? resent.audio ?? resent.voice ?? resent.sticker ?? null;
   const sentAt = new Date((resent.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
   const { error: saveError } = await admin.from("flamexbot_business_messages").upsert({
@@ -826,6 +837,7 @@ async function saveBusinessMessage(message: any, connectionOverride?: any, captu
               connection,
               chatId: message.chat.id,
               businessChatId: chat.id,
+              sourceMessageId: Number(message.message_id),
             });
           }
         }
@@ -1168,6 +1180,7 @@ async function deleteBusinessMessages(update: any) {
         connection,
         chatId: update.chat.id,
         businessChatId: chat.id,
+        sourceMessageId: Number(item.telegram_message_id),
       });
     }
   }
@@ -2145,7 +2158,7 @@ ${tgEmoji("lock")} <b>Административные команды · тол�
     }]] };
     await reply(
       enabled
-        ? `${tgEmoji("diamond")} <b>Антимут включён</b>\n\nЕсли другой бот удалит ваше сообщение, FLAMEXBOT автоматически отправит его повторно через подключённый Business-аккаунт.\n\nРежим можно отключить кнопкой ниже или повторной командой <code>.antimute</code>.`
+        ? `${tgEmoji("diamond")} <b>Антимут включён</b>\n\nЕсли другой бот удалит ваше сообщение, FLAMEXBOT восстановит его до 3 раз, пока антимут включён.\n\nРежим можно отключить кнопкой ниже или повторной командой <code>.antimute</code>.`
         : `${tgEmoji("lock")} <b>Антимут выключен</b>\nПовторная отправка ваших сообщений остановлена. Включить режим снова можно кнопкой ниже или командой <code>.antimute</code>.`,
       "HTML",
       antimutMarkup,
