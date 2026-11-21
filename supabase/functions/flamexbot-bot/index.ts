@@ -3412,6 +3412,24 @@ async function saveSupportRequestMessage(message: any,content: string) {
   }
 }
 
+async function refreshBusinessConnectionByTelegramId(telegramUserId: string) {
+  const { data: current, error } = await admin.from("flamexbot_business_connections")
+    .select("connection_id,is_enabled,rights,connected_at,reconnected_welcome_pending")
+    .eq("telegram_user_id", String(telegramUserId)).maybeSingle();
+  if (error) throw error;
+  if (!current?.connection_id) return current ?? null;
+  try {
+    const live = await telegram("getBusinessConnection", { business_connection_id: current.connection_id });
+    await saveBusinessConnection(live);
+  } catch (refreshError) {
+    console.warn("Live Business connection refresh failed:", String((refreshError as any)?.message ?? refreshError));
+  }
+  const { data: latest, error: latestError } = await admin.from("flamexbot_business_connections")
+    .select("connection_id,is_enabled,rights,connected_at,reconnected_welcome_pending")
+    .eq("telegram_user_id", String(telegramUserId)).maybeSingle();
+  if (latestError) throw latestError;
+  return latest ?? current;
+}
 async function isRequiredChannelMember(telegramUserId: string | number) {
   if (!telegramUserId || !/^\d+$/.test(String(telegramUserId))) return false;
   const member = await telegram("getChatMember", { chat_id: "@flamexbot1", user_id: Number(telegramUserId) });
@@ -3674,12 +3692,7 @@ async function processTelegramUpdate(update: any) {
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
         /^\/status(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
       const telegramUserId=String(update.message.from?.id ?? "");
-      const {data:profile,error:profileError}=await admin.from("profiles").select("id").eq("telegram_id",telegramUserId).maybeSingle();
-      if(profileError)throw profileError;
-      const {data:connection,error:connectionError}=profile
-        ? await admin.from("flamexbot_business_connections").select("is_enabled,rights").eq("profile_id",profile.id).maybeSingle()
-        : {data:null,error:null};
-      if(connectionError)throw connectionError;
+      const connection=await refreshBusinessConnectionByTelegramId(telegramUserId);
       const connected=Boolean(connection?.is_enabled);
       const canReply=connection?.rights?.can_reply===true;
       const canDelete=connection?.rights?.can_delete_all_messages===true;
@@ -3859,9 +3872,9 @@ async function processTelegramUpdate(update: any) {
         await sendRequiredSubscriptionPrompt(chatId);
         return new Response("OK", { status: 200 });
       }
-      const { data: startConnection, error: startConnectionError } = await admin.from("flamexbot_business_connections")
-        .select("connection_id,is_enabled,reconnected_welcome_pending").eq("telegram_user_id", telegramUserId).maybeSingle();
-      if (startConnectionError) console.warn("Start Business connection lookup failed:", startConnectionError.message);
+      let startConnection = null;
+      try { startConnection = await refreshBusinessConnectionByTelegramId(telegramUserId); }
+      catch (startConnectionError) { console.warn("Start Business connection lookup failed:", startConnectionError.message); }
       const businessConnected = startConnection?.is_enabled === true;
       const welcomeBack = businessConnected && startConnection?.reconnected_welcome_pending === true;
       const requestedGuide = startMatch?.[1] === "connect_guide";
