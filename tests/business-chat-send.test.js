@@ -35,14 +35,15 @@ test("Mini App exposes the backend unAFK command", () => {
 
 const botWebhookSource = await readFile(new URL("../supabase/functions/flamexbot-bot/index.ts", import.meta.url), "utf8");
 
-test("Business commands are dispatched before slower webhook processing", () => {
+test("Business commands are dispatched early and never auto-delete the command", () => {
   const captureAt = botWebhookSource.indexOf("business command captured at webhook ingress");
   const normalProcessingAt = botWebhookSource.indexOf("const directTelegramUserId");
   assert.ok(captureAt >= 0, "early Business command capture must exist");
   assert.ok(normalProcessingAt >= 0, "normal webhook processing marker must exist");
   assert.ok(captureAt < normalProcessingAt, "commands must be handled before unrelated webhook work");
   assert.match(botWebhookSource, /earlyBusinessMessage\.message_id/);
-  assert.match(botWebhookSource, /Business command already deleted or could not be removed/);
+  assert.match(botWebhookSource, /Keep the owner.*command in chat history\. FLAMEXBOT must never auto-delete it/);
+  assert.match(botWebhookSource, /const ALLOW_BUSINESS_MESSAGE_DELETION = false/);
 });
 
 test("ordinary Business messages are archived before slower webhook processing", () => {
@@ -56,12 +57,39 @@ test("ordinary Business messages are archived before slower webhook processing",
 
 test("Antimut restores owner messages only after Telegram reports deletion", () => {
   const handlerAt = botWebhookSource.indexOf("async function deleteBusinessMessages");
-  const restoreAt = botWebhookSource.indexOf("Antimut deletion detected; restoring owner message", handlerAt);
+  const restoreAt = botWebhookSource.indexOf("await sendAntimutRestore({", handlerAt);
   const oldImmediateAt = botWebhookSource.indexOf("Antimut resend started");
   assert.ok(handlerAt >= 0, "Business deletion handler must exist");
   assert.ok(restoreAt > handlerAt, "restore must run from the deletion handler");
   assert.equal(oldImmediateAt, -1, "messages must not be resent immediately on send");
-  assert.match(botWebhookSource, /item\.direction!=="outbound"\|\|item\.deleted_at/);
-  assert.match(botWebhookSource, /prefs\?\.antimut_enabled/);
-  assert.match(botWebhookSource, /_flamexbot_antimut_resent:true/);
+  assert.match(botWebhookSource, /item\.direction\s*!==\s*"outbound"\s*\|\|\s*item\.deleted_at/);
+  assert.match(botWebhookSource, /prefs\?\.antimut_enabled\s*===\s*true/);
+  assert.match(botWebhookSource, /Antimut ignored deletion of its own restored message/);
+  assert.match(botWebhookSource, /_flamexbot_antimut_resent\s*===\s*true/);
+});
+
+const telegramAuthSource = await readFile(new URL("../supabase/functions/telegram-auth/index.ts", import.meta.url), "utf8");
+test("Telegram registration is blocked until required channel subscription is confirmed", () => {
+  const verifyAt = telegramAuthSource.indexOf("const user = await verifyTelegramInitData");
+  const subscriptionAt = telegramAuthSource.indexOf("checkRequiredChannel(botToken, String(user.id))");
+  const createAt = telegramAuthSource.indexOf("admin.auth.admin.createUser");
+  assert.ok(subscriptionAt > verifyAt, "subscription must be checked after Telegram initData verification");
+  assert.ok(createAt > subscriptionAt, "profile creation must happen after subscription check");
+  assert.match(telegramAuthSource, /reason: "subscription_required"/);
+});
+test("Bot commands require the channel and Mini App registration", () => {
+  assert.match(botWebhookSource, /isRequiredChannelMember\(accessTelegramUserId\)/);
+  assert.match(botWebhookSource, /hasRegisteredMiniAppProfile\(accessTelegramUserId\)/);
+  assert.match(botWebhookSource, /fx:check_subscription/);
+  assert.match(botWebhookSource, /sendMiniAppRegistrationPrompt/);
+});
+test("Mini App validates subscription and account registration on boot and navigation", () => {
+  assert.match(miniAppSource, /flamexbot-access-check/);
+  assert.match(miniAppSource, /access\.session_matches !== true/);
+  assert.match(miniAppSource, /renderSubscriptionGate/);
+  assert.match(miniAppSource, /registration: access\.registered !== true/);
+});
+test("Home and profile status use live Telegram Business verification", () => {
+  assert.match(miniAppSource, /checkLiveBusiness\(supabase,profile\.id\)/);
+  assert.match(miniAppSource, /homeBusinessUnknown/);
 });
