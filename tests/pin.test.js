@@ -38,7 +38,7 @@ test('PIN keypad clears the busy lock and input when verification throws', async
     assert.equal(await pad.submit(), false);
     assert.equal(root.dataset.busy, '0');
     assert.match(root.error.textContent, /Не удалось проверить PIN/);
-    assert.equal(root.dots.innerHTML, '<i></i><i></i><i></i><i></i>');
+    assert.equal(root.dots.innerHTML, '<i class=""></i><i class=""></i><i class=""></i><i class=""></i>');
 
     for (const digit of '5678') await pad.press(digit);
     assert.equal(await pad.submit(), true);
