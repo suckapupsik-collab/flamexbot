@@ -56,3 +56,5 @@
 .fx-confetti{position:fixed;inset:0;z-index:1190;pointer-events:none}
 @keyframes fx-pin-in{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.wheel3.is-spinning .wheel3-hub,.wheel3.is-landed,.pin-dialog{animation:none!important}}
+
+.right-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}.right-chip{display:inline-flex;align-items:center;padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--orange) 8%,transparent);font-size:11px;line-height:1.25;color:var(--text)}.right-chip.is-empty{color:var(--muted);background:transparent}
