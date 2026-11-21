@@ -1,14 +1,17 @@
 const META = {
   free_spin: ["🎁","Прокрутка","#2fc4b2"], addon: ["🛡️","Защита","#43b97f"],
   premium_7d: ["⭐","7 дней","#ff9340"], premium_30d: ["⭐","30 дней","#9b6cf0"],
-  premium_90d: ["👑","90 дней","#f2b93b"], premium_day: ["⭐","1 день","#ff9340"],
+  premium_90d: ["👑","90 дней","#f2b93b"], premium_day: ["⭐","1 день","#ff9340"], unavailable: ["⏸️","Нет наград","#475569"],
   coins_10: ["🪙","10","#5b7fd6"], coins_50: ["🪙","50","#4c9be0"],
   coins_100: ["💰","100","#d9694f"], coins_250: ["💎","250","#c25bd0"]
 };
+export const DEFAULT_PRIZES = ["free_spin","coins_10","premium_7d","coins_50","addon","coins_100","premium_30d","coins_250","premium_90d"].map(type=>({prize_type:type,prize_label:META[type][1]}));
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const polar = (r,d) => { const a=(d-90)*Math.PI/180; return [r*Math.cos(a),r*Math.sin(a)]; };
-export function buildSectors(rows) {
-  return (Array.isArray(rows)?rows:[]).filter(r=>r && r.is_active!==false && Number(r.weight ?? 1)>0).slice(0,14).map((r,i)=>{
+export function buildSectors(rows,{fallbackOnEmpty=false}={}) {
+  const active=(Array.isArray(rows)?rows:[]).filter(r=>r && r.is_active!==false && Number(r.weight ?? 1)>0);
+  const list=active.length?active:(fallbackOnEmpty?DEFAULT_PRIZES:[{prize_type:"unavailable",prize_code:"unavailable",prize_label:"Награды временно недоступны"}]);
+  return list.slice(0,14).map((r,i)=>{
     const type=r.prize_type||r.type||r.prize_code||"", m=META[type]||["🎁",String(r.prize_label||"Приз").slice(0,9),["#ff9340","#5b7fd6","#43b97f","#9b6cf0"][i%4]];
     return {type,code:r.prize_code||"",label:r.prize_label||m[1],icon:m[0],short:m[1],color:m[2]};
   });
