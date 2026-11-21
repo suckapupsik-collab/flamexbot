@@ -73,3 +73,12 @@ The live Supabase ledger snapshot contains **116** applied entries, latest `2026
 2. No migration ledger rows were changed.
 3. No archive SQL was replayed or renamed to imitate a production migration.
 4. Continue recovery by finding original SQL from Git history, backup clones, workstation backups, or deployment records, and reconcile exact version/name before any future migration operation.
+
+
+## Historical-source recovery update (2026-11-21)
+
+The 11 files listed above as differing from current GitHub main have now all been matched to exact historical GitHub revisions. SHA-256 was computed independently for the archive file and historical commit content; all 11 pairs match exactly.
+
+Verified historical copies are preserved under `recovery/migrations/`, outside the active Supabase migration directory. This is deliberate: they are recoverable source artifacts and must not be picked up or replayed by Supabase CLI.
+
+See [`recovery/README.md`](../recovery/README.md) for the per-file historical commit and SHA-256 manifest. This improves source recovery, but does not prove which exact body was applied to production or change the production ledger.
