@@ -466,6 +466,142 @@ function messageMedia(message: any) {
   }
   return { type: "text", fileId: null };
 }
+function isOwnerAuthoredBusinessMessage(message: any, connection: any) {
+  return Boolean(
+    message?.from?.id != null &&
+    String(message.from.id) === String(connection?.telegram_user_id ?? "") &&
+    !message?.sender_business_bot?.id
+  );
+}
+const ANTIMUT_MAX_RESTORES = 3;
+async function getActiveAntimutActivation(connection: any, chatId: string | number, messageDateMs: number, expectedActivationAt?: string | null) {
+  if (!admin || !connection?.is_enabled || connection?.rights?.can_reply !== true) return null;
+  const { data: prefs, error } = await admin.from("flamexbot_business_chat_settings")
+    .select("antimut_enabled,antimut_enabled_at")
+    .eq("profile_id", connection.profile_id)
+    .eq("business_chat_id", chatId)
+    .maybeSingle();
+  if (error) throw error;
+  if (prefs?.antimut_enabled !== true || !prefs.antimut_enabled_at) return null;
+  const activationAt = String(prefs.antimut_enabled_at);
+  if (expectedActivationAt && activationAt !== expectedActivationAt) return null;
+  const activationMs = new Date(activationAt).getTime();
+  if (!Number.isFinite(activationMs)) return null;
+  // Telegram message.date has one-second precision. Compare at the same precision.
+  if (!Number.isFinite(messageDateMs) || messageDateMs < Math.floor(activationMs / 1000) * 1000) return null;
+  return activationAt;
+}
+function buildAntimutRestorePayload(original: any, connectionId: string, chatId: number | string) {
+  const media = messageMedia(original);
+  const body = String(original?.text ?? original?.caption ?? "").trim();
+  const payload: Record<string, unknown> = {
+    business_connection_id: connectionId,
+    chat_id: chatId,
+    preserve_plain_emoji: true,
+  };
+  let method = "sendMessage";
+  if (media.fileId) {
+    const map: Record<string, { method: string; field: string }> = {
+      photo: { method: "sendPhoto", field: "photo" },
+      video: { method: "sendVideo", field: "video" },
+      animation: { method: "sendAnimation", field: "animation" },
+      document: { method: "sendDocument", field: "document" },
+      audio: { method: "sendAudio", field: "audio" },
+      voice: { method: "sendVoice", field: "voice" },
+      sticker: { method: "sendSticker", field: "sticker" },
+      video_note: { method: "sendVideoNote", field: "video_note" },
+    };
+    const selected = map[media.type];
+    if (!selected) return null;
+    method = selected.method;
+    payload[selected.field] = media.fileId;
+    if (body && selected.field !== "sticker" && selected.field !== "video_note") payload.caption = body;
+    if (original.caption_entities?.length) payload.caption_entities = original.caption_entities;
+  } else if (original?.contact) {
+    method = "sendContact";
+    Object.assign(payload, {
+      phone_number: original.contact.phone_number,
+      first_name: original.contact.first_name,
+      last_name: original.contact.last_name,
+      vcard: original.contact.vcard,
+    });
+  } else if (original?.location) {
+    method = "sendLocation";
+    Object.assign(payload, {
+      latitude: original.location.latitude,
+      longitude: original.location.longitude,
+    });
+  } else if (body) {
+    payload.text = body;
+    if (original.entities?.length) payload.entities = original.entities;
+  } else {
+    return null;
+  }
+  return { method, payload, media, body };
+}
+async function sendAntimutRestore(args: {
+  original: any;
+  originalMessageId: number;
+  previousAttempt: number;
+  activationAt: string;
+  connection: any;
+  chatId: string | number;
+  businessChatId: string;
+}) {
+  const { original, originalMessageId, previousAttempt, activationAt, connection, chatId, businessChatId } = args;
+  const messageDateMs = Number(original?.date) * 1000;
+  // Re-read the setting immediately before sending. Disabling or re-enabling antimut
+  // invalidates work claimed by an older handler.
+  const stillActive = await getActiveAntimutActivation(connection, businessChatId, messageDateMs, activationAt);
+  if (!stillActive) {
+    console.log("Antimut restore cancelled because the setting is now off or has changed", JSON.stringify({
+      chat_id: String(chatId), original_message_id: originalMessageId,
+    }));
+    return null;
+  }
+  const nextAttempt = previousAttempt + 1;
+  if (nextAttempt > ANTIMUT_MAX_RESTORES) return null;
+  const prepared = buildAntimutRestorePayload(original, connection.connection_id, chatId);
+  if (!prepared) {
+    console.warn("Antimut restore skipped: unsupported or empty message", JSON.stringify({
+      chat_id: String(chatId), original_message_id: originalMessageId,
+    }));
+    return null;
+  }
+  console.log("Antimut restore sending", JSON.stringify({
+    chat_id: String(chatId), original_message_id: originalMessageId, attempt: nextAttempt,
+  }));
+  const resent = await telegram(prepared.method, prepared.payload);
+  if (!resent?.message_id) throw new Error("Antimut restore failed: Telegram returned no message id");
+  const sentMedia = resent.photo?.at(-1) ?? resent.video ?? resent.animation ?? resent.document ?? resent.audio ?? resent.voice ?? resent.sticker ?? null;
+  const sentAt = new Date((resent.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
+  const { error: saveError } = await admin.from("flamexbot_business_messages").upsert({
+    business_chat_id: businessChatId,
+    telegram_message_id: resent.message_id,
+    direction: "outbound",
+    sender_profile_id: connection.profile_id,
+    content: resent.text ?? resent.caption ?? prepared.body,
+    message_type: prepared.media.type,
+    media_file_id: sentMedia?.file_id ?? prepared.media.fileId ?? null,
+    media_url: null,
+    reply_to_message_id: original.reply_to_message?.message_id ?? null,
+    created_at: sentAt,
+    raw: {
+      ...resent,
+      _flamexbot_antimut_resent: true,
+      _flamexbot_antimut_attempt: nextAttempt,
+      _flamexbot_antimut_activation_at: activationAt,
+      _flamexbot_restored_from: originalMessageId,
+      _flamexbot_antimut_original_message: original,
+    },
+  }, { onConflict: "business_chat_id,telegram_message_id" });
+  if (saveError) throw saveError;
+  console.log("Antimut restore succeeded", JSON.stringify({
+    chat_id: String(chatId), original_message_id: originalMessageId,
+    restored_message_id: resent.message_id, attempt: nextAttempt,
+  }));
+  return resent.message_id;
+}
 const telegramFileInfoCache = new Map<string, { value: any; expiresAt: number }>();
 async function getTelegramFileInfo(fileId: string) {
   const cached = telegramFileInfoCache.get(fileId);
@@ -669,69 +805,29 @@ async function saveBusinessMessage(message: any, connectionOverride?: any, captu
         .eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id);
       if (markLateDeleteError) throw markLateDeleteError;
 
-      const { data: antimutPrefs, error: antimutPrefsError } = await admin.from("flamexbot_business_chat_settings")
-        .select("antimut_enabled,antimut_enabled_at").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
-      if (antimutPrefsError) throw antimutPrefsError;
       const originalCreatedAt = new Date((message.date ?? Math.floor(Date.now() / 1000)) * 1000).getTime();
-      const antimutActivationAt = antimutPrefs?.antimut_enabled_at ? new Date(antimutPrefs.antimut_enabled_at).getTime() : Number.POSITIVE_INFINITY;
-      if (antimutPrefs?.antimut_enabled && Number.isFinite(antimutActivationAt) && originalCreatedAt >= antimutActivationAt && connection.is_enabled && connection.rights?.can_reply === true) {
-        const original = message, body = String(original.text ?? original.caption ?? content ?? "").trim();
-        const payload: Record<string, unknown> = { business_connection_id: connection.connection_id, chat_id: message.chat.id, preserve_plain_emoji: true };
-        let method = "sendMessage";
-        if (media.fileId) {
-          const map: Record<string, { method: string; field: string }> = {
-            photo: { method: "sendPhoto", field: "photo" }, video: { method: "sendVideo", field: "video" },
-            animation: { method: "sendAnimation", field: "animation" }, document: { method: "sendDocument", field: "document" },
-            audio: { method: "sendAudio", field: "audio" }, voice: { method: "sendVoice", field: "voice" },
-            sticker: { method: "sendSticker", field: "sticker" }, video_note: { method: "sendVideoNote", field: "video_note" },
-          };
-          const selected = map[media.type];
-          if (selected) {
-            method = selected.method;
-            payload[selected.field] = media.fileId;
-            if (body && selected.field !== "sticker" && selected.field !== "video_note") payload.caption = body;
-            if (original.caption_entities?.length) payload.caption_entities = original.caption_entities;
-          } else {
-            method = "";
-          }
-        } else if (original.contact) {
-          method = "sendContact";
-          Object.assign(payload, { phone_number: original.contact.phone_number, first_name: original.contact.first_name, last_name: original.contact.last_name, vcard: original.contact.vcard });
-        } else if (original.location) {
-          method = "sendLocation";
-          Object.assign(payload, { latitude: original.location.latitude, longitude: original.location.longitude });
-        } else if (body) {
-          payload.text = body;
-          if (original.entities?.length) payload.entities = original.entities;
-        } else {
-          method = "";
-        }
-        if (method) {
+      if (isOwnerAuthoredBusinessMessage(message, connection)) {
+        const activationAt = await getActiveAntimutActivation(connection, chat.id, originalCreatedAt);
+        if (activationAt) {
           const { data: lateRestoreClaim, error: lateRestoreClaimError } = await admin.from("flamexbot_business_messages")
             .update({ antimut_restore_claimed_at: new Date().toISOString() })
             .eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id)
             .is("antimut_restore_claimed_at", null).select("telegram_message_id").maybeSingle();
           if (lateRestoreClaimError) throw lateRestoreClaimError;
-          if (!lateRestoreClaim) return chat.id;
-          console.log("Antimut late archive race detected; restoring owner message", JSON.stringify({ chat_id: String(message.chat.id), original_message_id: message.message_id }));
-          let resent: any;
-          try { resent = await telegram(method, payload); }
-          catch (restoreSendError) {
-            console.warn("Antimut late restore send failed; claim retained to prevent duplicate sends:", (restoreSendError as any)?.message ?? restoreSendError);
-            throw restoreSendError;
+          if (lateRestoreClaim) {
+            console.log("Antimut late archive race detected", JSON.stringify({
+              chat_id: String(message.chat.id), original_message_id: message.message_id,
+            }));
+            await sendAntimutRestore({
+              original: message,
+              originalMessageId: Number(message.message_id),
+              previousAttempt: 0,
+              activationAt,
+              connection,
+              chatId: message.chat.id,
+              businessChatId: chat.id,
+            });
           }
-          if (!resent?.message_id) throw new Error("Antimut late restore failed: Telegram returned no message id");
-          const sentMedia = resent.photo?.at(-1) ?? resent.video ?? resent.animation ?? resent.document ?? resent.audio ?? resent.voice ?? resent.sticker ?? null;
-          const sentAt = new Date((resent.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
-          const { error: saveRestoreError } = await admin.from("flamexbot_business_messages").upsert({
-            business_chat_id: chat.id, telegram_message_id: resent.message_id, direction: "outbound",
-            sender_profile_id: connection.profile_id, content: resent.text ?? resent.caption ?? body,
-            message_type: media.type, media_file_id: sentMedia?.file_id ?? media.fileId ?? null, media_url: null,
-            reply_to_message_id: original.reply_to_message?.message_id ?? null, created_at: sentAt,
-            raw: { ...resent, _flamexbot_antimut_resent: true, _flamexbot_restored_from: Number(message.message_id) },
-          }, { onConflict: "business_chat_id,telegram_message_id" });
-          if (saveRestoreError) throw saveRestoreError;
-          console.log("Antimut late restore succeeded", JSON.stringify({ chat_id: String(message.chat.id), original_message_id: message.message_id, restored_message_id: resent.message_id }));
         }
       }
     }
@@ -949,62 +1045,131 @@ async function updateBusinessMessage(message: any) {
 }
 async function deleteBusinessMessages(update: any) {
   if (!admin || !update?.business_connection_id || !update?.chat?.id || !Array.isArray(update.message_ids)) return;
-  const {data:connection,error}=await admin.from("flamexbot_business_connections").select("profile_id,connection_id,is_enabled,rights").eq("connection_id",update.business_connection_id).maybeSingle();
-  if(error)throw error;if(!connection?.profile_id)return;
-  const {data:chat,error:chatError}=await admin.from("flamexbot_business_chats").select("id").eq("profile_id",connection.profile_id).eq("telegram_chat_id",String(update.chat.id)).maybeSingle();
-  if(chatError)throw chatError;if(!chat)return;
-  const {data:messages,error:messagesError}=await admin.from("flamexbot_business_messages").select("telegram_message_id,direction,content,message_type,media_file_id,media_url,raw,deleted_at,created_at,antimut_restore_claimed_at").eq("business_chat_id",chat.id).in("telegram_message_id",update.message_ids);
-  if(messagesError)throw messagesError;
-  const deletedAt=new Date().toISOString();
-  console.warn("Telegram reported deleted Business messages; the update does not identify the deleting actor", JSON.stringify({ chat_id: String(update.chat.id), message_ids: update.message_ids }));
-  const {data:prefs,error:prefsError}=await admin.from("flamexbot_business_chat_settings")
-    .select("antimut_enabled,antimut_enabled_at").eq("profile_id",connection.profile_id).eq("business_chat_id",chat.id).maybeSingle();
-  if(prefsError)throw prefsError;
-  const activationAt=prefs?.antimut_enabled_at?new Date(prefs.antimut_enabled_at).getTime():Number.POSITIVE_INFINITY;
-  const restoreCandidates=(connection.is_enabled&&connection.rights?.can_reply===true&&prefs?.antimut_enabled&&Number.isFinite(activationAt))
-    ?(messages||[]).filter((item:any)=>item.direction==="outbound"&&!item.deleted_at&&!item.antimut_restore_claimed_at&&item.raw&&item.raw._flamexbot_antimut_resent!==true&&item.created_at&&new Date(item.created_at).getTime()>=activationAt)
-    :[];
-  let restoreClaimedIds=new Set<number>();
-  if(restoreCandidates.length){
-    const {data:claimed,error:claimError}=await admin.from("flamexbot_business_messages")
-      .update({antimut_restore_claimed_at:deletedAt}).eq("business_chat_id",chat.id)
-      .in("telegram_message_id",restoreCandidates.map((item:any)=>item.telegram_message_id))
-      .is("antimut_restore_claimed_at",null).is("deleted_at",null).select("telegram_message_id");
-    if(claimError)throw claimError;
-    restoreClaimedIds=new Set((claimed||[]).map((item:any)=>Number(item.telegram_message_id)));
+  const { data: connection, error } = await admin.from("flamexbot_business_connections")
+    .select("profile_id,telegram_user_id,connection_id,is_enabled,rights")
+    .eq("connection_id", update.business_connection_id).maybeSingle();
+  if (error) throw error;
+  if (!connection?.profile_id) return;
+  const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats")
+    .select("id").eq("profile_id", connection.profile_id)
+    .eq("telegram_chat_id", String(update.chat.id)).maybeSingle();
+  if (chatError) throw chatError;
+  if (!chat) return;
+
+  const { data: messages, error: messagesError } = await admin.from("flamexbot_business_messages")
+    .select("telegram_message_id,direction,content,message_type,media_file_id,media_url,raw,deleted_at,created_at,antimut_restore_claimed_at")
+    .eq("business_chat_id", chat.id).in("telegram_message_id", update.message_ids);
+  if (messagesError) throw messagesError;
+  const deletedAt = new Date().toISOString();
+  console.warn("Telegram reported deleted Business messages; the update does not identify the deleting actor",
+    JSON.stringify({ chat_id: String(update.chat.id), message_ids: update.message_ids }));
+
+  const { data: prefs, error: prefsError } = await admin.from("flamexbot_business_chat_settings")
+    .select("antimut_enabled,antimut_enabled_at")
+    .eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
+  if (prefsError) throw prefsError;
+  const currentActivationAt = prefs?.antimut_enabled_at ? String(prefs.antimut_enabled_at) : null;
+  const currentActivationMs = currentActivationAt ? new Date(currentActivationAt).getTime() : Number.POSITIVE_INFINITY;
+
+  const restoreCandidates = (connection.is_enabled && connection.rights?.can_reply === true &&
+    prefs?.antimut_enabled === true && currentActivationAt && Number.isFinite(currentActivationMs))
+    ? (messages || []).flatMap((item: any) => {
+        const raw = item.raw ?? {};
+        const isOurPreviousRestore = raw._flamexbot_antimut_resent === true;
+        const original = isOurPreviousRestore ? raw._flamexbot_antimut_original_message : raw;
+        const previousAttempt = isOurPreviousRestore ? Number(raw._flamexbot_antimut_attempt ?? 1) : 0;
+        const activationForChain = isOurPreviousRestore
+          ? String(raw._flamexbot_antimut_activation_at ?? "")
+          : currentActivationAt;
+        const ownerAuthored = original && String(original.from?.id ?? "") === String(connection.telegram_user_id);
+        const externalBusinessBotMessage = !isOurPreviousRestore && Boolean(raw.sender_business_bot?.id);
+        const originalDateMs = Number(original?.date) * 1000;
+        const sameActivation = activationForChain === currentActivationAt;
+        const insideActivationWindow = Number.isFinite(originalDateMs) &&
+          originalDateMs >= Math.floor(currentActivationMs / 1000) * 1000;
+        if (item.direction !== "outbound" || item.deleted_at || item.antimut_restore_claimed_at ||
+            !ownerAuthored || externalBusinessBotMessage || !sameActivation || !insideActivationWindow) return [];
+        if (previousAttempt >= ANTIMUT_MAX_RESTORES) {
+          console.warn("Antimut retry limit reached; another actor keeps deleting restored messages", JSON.stringify({
+            chat_id: String(update.chat.id),
+            original_message_id: raw._flamexbot_restored_from ?? item.telegram_message_id,
+            last_message_id: item.telegram_message_id,
+            attempts: previousAttempt,
+          }));
+          return [];
+        }
+        return [{
+          ...item,
+          antimutOriginalMessage: original,
+          antimutOriginalMessageId: Number(raw._flamexbot_restored_from ?? item.telegram_message_id),
+          antimutPreviousAttempt: previousAttempt,
+          antimutActivationAt: activationForChain,
+        }];
+      })
+    : [];
+
+  const restoreClaimedIds = new Set<number>();
+  if (restoreCandidates.length) {
+    const { data: claimed, error: claimError } = await admin.from("flamexbot_business_messages")
+      .update({ antimut_restore_claimed_at: deletedAt })
+      .eq("business_chat_id", chat.id)
+      .in("telegram_message_id", restoreCandidates.map((item: any) => item.telegram_message_id))
+      .is("antimut_restore_claimed_at", null).is("deleted_at", null)
+      .select("telegram_message_id");
+    if (claimError) throw claimError;
+    for (const row of claimed || []) restoreClaimedIds.add(Number(row.telegram_message_id));
   }
-  const events=await Promise.all((messages||[]).filter((item:any)=>!item.deleted_at).map(async(item:any)=>{
-    const raw=item.raw??{},originalName=raw.document?.file_name??raw.audio?.file_name??raw.video?.file_name??raw.animation?.file_name;
-    const archivedUrl=item.media_url||(item.media_file_id?await archiveBusinessMedia(item.media_file_id,connection.profile_id,chat.id,item.telegram_message_id,originalName):null);
-    return {profile_id:connection.profile_id,business_chat_id:chat.id,telegram_message_id:item.telegram_message_id,event_type:"deleted",original_content:item.content??"",message_type:item.message_type??"text",media_file_id:item.media_file_id??null,media_url:archivedUrl,original_raw:raw,occurred_at:deletedAt};
+
+  const events = await Promise.all((messages || []).filter((item: any) => !item.deleted_at).map(async (item: any) => {
+    const raw = item.raw ?? {};
+    const originalName = raw.document?.file_name ?? raw.audio?.file_name ?? raw.video?.file_name ?? raw.animation?.file_name;
+    const archivedUrl = item.media_url || (item.media_file_id
+      ? await archiveBusinessMedia(item.media_file_id, connection.profile_id, chat.id, item.telegram_message_id, originalName)
+      : null);
+    return {
+      profile_id: connection.profile_id, business_chat_id: chat.id,
+      telegram_message_id: item.telegram_message_id, event_type: "deleted",
+      original_content: item.content ?? "", message_type: item.message_type ?? "text",
+      media_file_id: item.media_file_id ?? null, media_url: archivedUrl,
+      original_raw: raw, occurred_at: deletedAt,
+    };
   }));
-  const known=new Set((messages||[]).map((item:any)=>Number(item.telegram_message_id)));
-  const missing=update.message_ids.filter((id:number)=>!known.has(Number(id))).map((id:number)=>({profile_id:connection.profile_id,business_chat_id:chat.id,telegram_message_id:id,event_type:"deleted",original_content:"[Текст не был сохранён до получения события об удалении]",message_type:"unknown",media_file_id:null,media_url:null,original_raw:{},occurred_at:deletedAt}));
-  if(events.length||missing.length){const {error:eventError}=await admin.from("flamexbot_business_message_events").upsert([...events,...missing],{onConflict:"business_chat_id,telegram_message_id,event_type,occurred_at",ignoreDuplicates:true});if(eventError)throw eventError;}
-  const {error:markError}=await admin.from("flamexbot_business_messages").update({deleted_at:deletedAt}).eq("business_chat_id",chat.id).in("telegram_message_id",update.message_ids).is("deleted_at",null);
-  if(markError)throw markError;
-  if(restoreClaimedIds.size){
-      for(const item of(messages||[])){
-        if(!restoreClaimedIds.has(Number(item.telegram_message_id)))continue;
-        const original=item.raw,media=messageMedia(original),body=String(original.text??original.caption??item.content??"").trim();
-        const payload:Record<string,unknown>={business_connection_id:connection.connection_id,chat_id:update.chat.id,preserve_plain_emoji:true};
-        let method="sendMessage";
-        if(media.fileId){
-          const map:Record<string,{method:string;field:string}>={photo:{method:"sendPhoto",field:"photo"},video:{method:"sendVideo",field:"video"},animation:{method:"sendAnimation",field:"animation"},document:{method:"sendDocument",field:"document"},audio:{method:"sendAudio",field:"audio"},voice:{method:"sendVoice",field:"voice"},sticker:{method:"sendSticker",field:"sticker"},video_note:{method:"sendVideoNote",field:"video_note"}};
-          const selected=map[media.type];if(!selected)continue;method=selected.method;payload[selected.field]=media.fileId;
-          if(body&&selected.field!=="sticker"&&selected.field!=="video_note")payload.caption=body;
-          if(original.caption_entities?.length)payload.caption_entities=original.caption_entities;
-        }else if(original.contact){method="sendContact";Object.assign(payload,{phone_number:original.contact.phone_number,first_name:original.contact.first_name,last_name:original.contact.last_name,vcard:original.contact.vcard});}
-        else if(original.location){method="sendLocation";Object.assign(payload,{latitude:original.location.latitude,longitude:original.location.longitude});}
-        else{if(!body)continue;payload.text=body;if(original.entities?.length)payload.entities=original.entities;}
-        console.log("Antimut deletion detected; restoring owner message",JSON.stringify({chat_id:String(update.chat.id),original_message_id:item.telegram_message_id}));
-        const resent=await telegram(method,payload);if(!resent?.message_id)throw new Error("Antimut restore failed: Telegram returned no message id");
-        const sentMedia=resent.photo?.at(-1)??resent.video??resent.animation??resent.document??resent.audio??resent.voice??resent.sticker??null;
-        const sentAt=new Date((resent.date??Math.floor(Date.now()/1000))*1000).toISOString();
-        const {error:saveError}=await admin.from("flamexbot_business_messages").upsert({business_chat_id:chat.id,telegram_message_id:resent.message_id,direction:"outbound",sender_profile_id:connection.profile_id,content:resent.text??resent.caption??body,message_type:media.type,media_file_id:sentMedia?.file_id??media.fileId??null,media_url:null,reply_to_message_id:original.reply_to_message?.message_id??null,created_at:sentAt,raw:{...resent,_flamexbot_antimut_resent:true,_flamexbot_restored_from:Number(item.telegram_message_id)}},{onConflict:"business_chat_id,telegram_message_id"});
-        if(saveError)throw saveError;
-        console.log("Antimut restore succeeded",JSON.stringify({chat_id:String(update.chat.id),original_message_id:item.telegram_message_id,restored_message_id:resent.message_id}));
-      }
+  const known = new Set((messages || []).map((item: any) => Number(item.telegram_message_id)));
+  const missing = update.message_ids
+    .filter((id: number) => !known.has(Number(id)))
+    .map((id: number) => ({
+      profile_id: connection.profile_id, business_chat_id: chat.id,
+      telegram_message_id: id, event_type: "deleted",
+      original_content: "[Текст не был сохранён до получения события об удалении]",
+      message_type: "unknown", media_file_id: null, media_url: null,
+      original_raw: {}, occurred_at: deletedAt,
+    }));
+  if (events.length || missing.length) {
+    const { error: eventError } = await admin.from("flamexbot_business_message_events")
+      .upsert([...events, ...missing], {
+        onConflict: "business_chat_id,telegram_message_id,event_type,occurred_at",
+        ignoreDuplicates: true,
+      });
+    if (eventError) throw eventError;
+  }
+  const { error: markError } = await admin.from("flamexbot_business_messages")
+    .update({ deleted_at: deletedAt })
+    .eq("business_chat_id", chat.id).in("telegram_message_id", update.message_ids).is("deleted_at", null);
+  if (markError) throw markError;
+
+  if (restoreClaimedIds.size) {
+    for (const item of restoreCandidates) {
+      if (!restoreClaimedIds.has(Number(item.telegram_message_id))) continue;
+      await sendAntimutRestore({
+        original: item.antimutOriginalMessage,
+        originalMessageId: item.antimutOriginalMessageId,
+        previousAttempt: item.antimutPreviousAttempt,
+        activationAt: item.antimutActivationAt,
+        connection,
+        chatId: update.chat.id,
+        businessChatId: chat.id,
+      });
+    }
   }
   return chat.id;
 }
@@ -1972,7 +2137,7 @@ ${tgEmoji("lock")} <b>Административные команды · тол�
       await reply(tgEmoji("warning") + " <b>Для антимута нужно право «Отправлять сообщения» в настройках Telegram Business.</b>", "HTML");
       return true;
     }
-    const { error: settingError } = await admin.from("flamexbot_business_chat_settings").upsert({ profile_id: profile.id, business_chat_id: currentBusinessChat.id, antimut_enabled: enabled, antimut_enabled_at: enabled ? new Date().toISOString() : null }, { onConflict: "profile_id,business_chat_id" });
+    const { error: settingError } = await admin.from("flamexbot_business_chat_settings").upsert({ profile_id: profile.id, business_chat_id: currentBusinessChat.id, antimut_enabled: enabled, antimut_enabled_at: enabled ? new Date(Math.floor(Date.now() / 1000) * 1000).toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "profile_id,business_chat_id" });
     if (settingError) throw settingError;
     const antimutMarkup = { inline_keyboard: [[{
       text: enabled ? "Выключить антимут" : "Включить антимут",
@@ -2585,7 +2750,8 @@ async function handleBusinessActionCallback(query: any) {
   const field = action === "mute" ? "is_muted" : "antimut_enabled";
   const { error: updateError } = await admin.from("flamexbot_business_chat_settings").upsert({
     profile_id: chat.profile_id, business_chat_id: chat.id, [field]: enabled,
-    ...(action === "antimut" ? { antimut_enabled_at: enabled ? new Date().toISOString() : null } : {}),
+    ...(action === "antimut" ? { antimut_enabled_at: enabled ? new Date(Math.floor(Date.now() / 1000) * 1000).toISOString() : null } : {}),
+    updated_at: new Date().toISOString(),
     ...(action === "mute" ? { auto_flood_muted: false } : {}),
   }, { onConflict: "profile_id,business_chat_id" });
   if (updateError) throw updateError;
