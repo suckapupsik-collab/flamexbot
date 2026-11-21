@@ -53,3 +53,15 @@ test("ordinary Business messages are archived before slower webhook processing",
   assert.match(botWebhookSource, /saveBusinessMessage\(earlyArchiveMessage, archiveConnection, true\)/);
   assert.match(botWebhookSource, /if \(captureOnly\) return chat\.id;/);
 });
+
+test("Antimut restores owner messages only after Telegram reports deletion", () => {
+  const handlerAt = botWebhookSource.indexOf("async function deleteBusinessMessages");
+  const restoreAt = botWebhookSource.indexOf("Antimut deletion detected; restoring owner message", handlerAt);
+  const oldImmediateAt = botWebhookSource.indexOf("Antimut resend started");
+  assert.ok(handlerAt >= 0, "Business deletion handler must exist");
+  assert.ok(restoreAt > handlerAt, "restore must run from the deletion handler");
+  assert.equal(oldImmediateAt, -1, "messages must not be resent immediately on send");
+  assert.match(botWebhookSource, /item\.direction!=="outbound"\|\|item\.deleted_at/);
+  assert.match(botWebhookSource, /prefs\?\.antimut_enabled/);
+  assert.match(botWebhookSource, /_flamexbot_antimut_resent:true/);
+});
