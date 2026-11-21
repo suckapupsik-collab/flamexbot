@@ -82,6 +82,7 @@ test("Bot commands require the channel and Mini App registration", () => {
   assert.match(botWebhookSource, /hasRegisteredMiniAppProfile\(accessTelegramUserId\)/);
   assert.match(botWebhookSource, /fx:check_subscription/);
   assert.match(botWebhookSource, /sendMiniAppRegistrationPrompt/);
+  assert.match(botWebhookSource, /!update\.message\?\.successful_payment/);
 });
 test("Mini App validates subscription and account registration on boot and navigation", () => {
   assert.match(miniAppSource, /flamexbot-access-check/);
