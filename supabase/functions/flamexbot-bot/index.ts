@@ -3412,6 +3412,25 @@ async function saveSupportRequestMessage(message: any,content: string) {
   }
 }
 
+async function isRequiredChannelMember(telegramUserId: string | number) {
+  if (!telegramUserId || !/^\d+$/.test(String(telegramUserId))) return false;
+  const member = await telegram("getChatMember", { chat_id: "@flamexbot1", user_id: Number(telegramUserId) });
+  const status = String(member?.status ?? "");
+  return ["creator", "administrator", "member"].includes(status) ||
+    (status === "restricted" && member?.is_member === true);
+}
+function requiredSubscriptionMarkup() {
+  return { inline_keyboard: [
+    [{ text: "Подписаться на канал", url: "https://t.me/flamexbot1" }],
+    [{ text: "Я подписался — проверить", callback_data: "fx:check_subscription" }],
+  ] };
+}
+async function sendRequiredSubscriptionPrompt(chatId: number | string, technicalError = false) {
+  const title = technicalError
+    ? "⚠️ Не удалось проверить подписку через Telegram. Попробуй ещё раз чуть позже."
+    : "🔒 Для использования FLAMEXBOT обязательна подписка на канал @flamexbot1.";
+  await sendRichTelegramMessage(chatId, title + "\n\n1. Подпишись на канал.\n2. Нажми «Я подписался — проверить».\n3. После проверки откроется FLAMEXBOT.", "HTML", requiredSubscriptionMarkup());
+}
 async function processTelegramUpdate(update: any) {
   const startedAt=Date.now();
   try {
@@ -3531,6 +3550,37 @@ async function processTelegramUpdate(update: any) {
         return new Response("OK", { status: 200 });
       }
     }
+    const isStartEntry = update.message?.chat?.type === "private" && /^\/(?:start|app)(?:@\w+)?(?:\s|$)/i.test(String(update.message.text ?? "").trim());
+    const isSubscriptionCheck = update.callback_query?.data === "fx:check_subscription";
+    let accessTelegramUserId = update.message?.from?.id ?? update.callback_query?.from?.id ?? update.pre_checkout_query?.from?.id ?? null;
+    if (accessTelegramUserId == null && update.business_message?.business_connection_id) {
+      const { data: ownerConnection, error: ownerLookupError } = await admin.from("flamexbot_business_connections")
+        .select("telegram_user_id").eq("connection_id", update.business_message.business_connection_id).maybeSingle();
+      if (ownerLookupError) throw ownerLookupError;
+      accessTelegramUserId = ownerConnection?.telegram_user_id ?? null;
+    }
+    if (accessTelegramUserId == null && update.deleted_business_messages?.business_connection_id) {
+      const { data: ownerConnection, error: ownerLookupError } = await admin.from("flamexbot_business_connections")
+        .select("telegram_user_id").eq("connection_id", update.deleted_business_messages.business_connection_id).maybeSingle();
+      if (ownerLookupError) throw ownerLookupError;
+      accessTelegramUserId = ownerConnection?.telegram_user_id ?? null;
+    }
+    if (accessTelegramUserId != null && !isStartEntry && !isSubscriptionCheck) {
+      let subscribed = false;
+      try {
+        subscribed = await isRequiredChannelMember(accessTelegramUserId);
+      } catch (subscriptionError) {
+        console.error("Required channel membership check failed:", String((subscriptionError as any)?.message ?? subscriptionError));
+        const targetChat = update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? accessTelegramUserId;
+        await sendRequiredSubscriptionPrompt(targetChat, true);
+        return new Response("OK", { status: 200 });
+      }
+      if (!subscribed) {
+        const targetChat = update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? accessTelegramUserId;
+        await sendRequiredSubscriptionPrompt(targetChat);
+        return new Response("OK", { status: 200 });
+      }
+    }
     if (update.message?.chat?.type === "private" && update.message.from?.id) {
       const notificationUserId = update.message.from.id;
       const notificationChatId = update.message.chat.id;
@@ -3568,7 +3618,22 @@ async function processTelegramUpdate(update: any) {
         else await saveBotInboxMessage(update.message);
       }
     }
-    if (update.callback_query?.data === "fx:connect_guide") {
+    if (update.callback_query?.data === "fx:check_subscription") {
+      const checkUserId = update.callback_query.from?.id;
+      try {
+        const subscribed = checkUserId != null && await isRequiredChannelMember(checkUserId);
+        if (subscribed) {
+          await sendRichTelegramMessage(checkUserId, "✅ Подписка подтверждена! Теперь открой FLAMEXBOT и зарегистрируй аккаунт в Mini App.", "HTML", {
+            inline_keyboard: [[{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }]],
+          });
+        } else {
+          await sendRequiredSubscriptionPrompt(checkUserId);
+        }
+      } catch (subscriptionError) {
+        console.error("Subscription callback check failed:", String((subscriptionError as any)?.message ?? subscriptionError));
+        if (checkUserId != null) await sendRequiredSubscriptionPrompt(checkUserId, true);
+      }
+    } else if (update.callback_query?.data === "fx:connect_guide") {
       await telegram("answerCallbackQuery",{callback_query_id:update.callback_query.id});
       const guideMarkup={inline_keyboard:[[{text:"Открыть FLAMEXBOT",web_app:{url:APP_URL}}]]};
       const {data:guideBanner,error:guideBannerError}=await admin.from("flamexbot_bot_banners")
@@ -3782,6 +3847,18 @@ async function processTelegramUpdate(update: any) {
         ensureTelegramChatMenuButton(chatId),
       ]);
       const telegramUserId = String(update.message.from?.id ?? chatId);
+      let startSubscribed = false;
+      try {
+        startSubscribed = await isRequiredChannelMember(telegramUserId);
+      } catch (subscriptionError) {
+        console.error("Required channel check failed at /start:", String((subscriptionError as any)?.message ?? subscriptionError));
+        await sendRequiredSubscriptionPrompt(chatId, true);
+        return new Response("OK", { status: 200 });
+      }
+      if (!startSubscribed) {
+        await sendRequiredSubscriptionPrompt(chatId);
+        return new Response("OK", { status: 200 });
+      }
       const { data: startConnection, error: startConnectionError } = await admin.from("flamexbot_business_connections")
         .select("connection_id,is_enabled,reconnected_welcome_pending").eq("telegram_user_id", telegramUserId).maybeSingle();
       if (startConnectionError) console.warn("Start Business connection lookup failed:", startConnectionError.message);
