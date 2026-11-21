@@ -841,34 +841,71 @@ async function updateBusinessMessage(message: any) {
 }
 async function deleteBusinessMessages(update: any) {
   if (!admin || !update?.business_connection_id || !update?.chat?.id || !Array.isArray(update.message_ids)) return;
-  const { data: connection, error } = await admin.from("flamexbot_business_connections").select("profile_id").eq("connection_id", update.business_connection_id).maybeSingle();
+  const { data: connection, error } = await admin.from("flamexbot_business_connections")
+    .select("profile_id,telegram_user_id,connection_id,is_enabled,rights").eq("connection_id", update.business_connection_id).maybeSingle();
   if (error) throw error; if (!connection?.profile_id) return;
-  const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats").select("id").eq("profile_id", connection.profile_id).eq("telegram_chat_id", String(update.chat.id)).maybeSingle();
+  const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats").select("id")
+    .eq("profile_id", connection.profile_id).eq("telegram_chat_id", String(update.chat.id)).maybeSingle();
   if (chatError) throw chatError; if (!chat) return;
-  const { data: messages, error: messagesError } = await admin.from("flamexbot_business_messages").select("telegram_message_id,direction,content,message_type,media_file_id,media_url,raw,deleted_at").eq("business_chat_id", chat.id).in("telegram_message_id", update.message_ids);
+  const { data: messages, error: messagesError } = await admin.from("flamexbot_business_messages")
+    .select("telegram_message_id,direction,content,message_type,media_file_id,media_url,raw,deleted_at")
+    .eq("business_chat_id", chat.id).in("telegram_message_id", update.message_ids);
   if (messagesError) throw messagesError;
   const deletedAt = new Date().toISOString();
   const events = await Promise.all((messages || []).filter((item: any) => !item.deleted_at).map(async (item: any) => {
     const raw=item.raw??{};
     const originalName=raw.document?.file_name??raw.audio?.file_name??raw.video?.file_name??raw.animation?.file_name??undefined;
-    const archivedUrl=item.media_url||(item.media_file_id
-      ? await archiveBusinessMedia(item.media_file_id,connection.profile_id,chat.id,item.telegram_message_id,originalName)
-      : null);
-    return {
-      profile_id: connection.profile_id, business_chat_id: chat.id, telegram_message_id: item.telegram_message_id, event_type: "deleted",
-      original_content: item.content ?? "", message_type: item.message_type ?? "text", media_file_id: item.media_file_id ?? null, media_url: archivedUrl, original_raw: raw, occurred_at: deletedAt,
-    };
+    const archivedUrl=item.media_url||(item.media_file_id ? await archiveBusinessMedia(item.media_file_id,connection.profile_id,chat.id,item.telegram_message_id,originalName) : null);
+    return { profile_id:connection.profile_id,business_chat_id:chat.id,telegram_message_id:item.telegram_message_id,event_type:"deleted",
+      original_content:item.content??"",message_type:item.message_type??"text",media_file_id:item.media_file_id??null,media_url:archivedUrl,original_raw:raw,occurred_at:deletedAt };
   }));
   const knownIds = new Set((messages || []).map((item: any) => Number(item.telegram_message_id)));
-  const missingEvents = update.message_ids.filter((messageId: number) => !knownIds.has(Number(messageId))).map((messageId: number) => ({
-    profile_id: connection.profile_id, business_chat_id: chat.id, telegram_message_id: messageId,
-    event_type: "deleted", original_content: "[Текст не был сохранён до получения события об удалении]",
-    message_type: "unknown", media_file_id: null, media_url: null, original_raw: {}, occurred_at: deletedAt,
+  const missingEvents = update.message_ids.filter((id: number) => !knownIds.has(Number(id))).map((id: number) => ({
+    profile_id:connection.profile_id,business_chat_id:chat.id,telegram_message_id:id,event_type:"deleted",
+    original_content:"[Текст не был сохранён до получения события об удалении]",message_type:"unknown",media_file_id:null,media_url:null,original_raw:{},occurred_at:deletedAt,
   }));
-  const allEvents = [...events, ...missingEvents];
-  if (allEvents.length) { const { error: eventError } = await admin.from("flamexbot_business_message_events").upsert(allEvents, { onConflict: "business_chat_id,telegram_message_id,event_type,occurred_at", ignoreDuplicates: true }); if (eventError) throw eventError; }
-  const { error: deleteError } = await admin.from("flamexbot_business_messages").update({ deleted_at: deletedAt }).eq("business_chat_id", chat.id).in("telegram_message_id", update.message_ids);
-  if (deleteError) throw deleteError;
+  const allEvents=[...events,...missingEvents];
+  if(allEvents.length){const {error:eventError}=await admin.from("flamexbot_business_message_events").upsert(allEvents,{onConflict:"business_chat_id,telegram_message_id,event_type,occurred_at",ignoreDuplicates:true});if(eventError)throw eventError;}
+  const {error:deleteError}=await admin.from("flamexbot_business_messages").update({deleted_at:deletedAt}).eq("business_chat_id",chat.id).in("telegram_message_id",update.message_ids);
+  if(deleteError)throw deleteError;
+
+  // Restore owner-authored messages only after Telegram reports their deletion.
+  if(connection.is_enabled && connection.rights?.can_reply===true){
+    const {data:prefs,error:prefsError}=await admin.from("flamexbot_business_chat_settings").select("antimut_enabled")
+      .eq("profile_id",connection.profile_id).eq("business_chat_id",chat.id).maybeSingle();
+    if(prefsError)throw prefsError;
+    if(prefs?.antimut_enabled){
+      for(const item of (messages||[])){
+        if(item.direction!=="outbound"||item.deleted_at||!item.raw||item.raw._flamexbot_antimut_resent===true)continue;
+        const original=item.raw,media=messageMedia(original),body=String(original.text??original.caption??item.content??"").trim();
+        const payload:Record<string,unknown>={business_connection_id:connection.connection_id,chat_id:update.chat.id,preserve_plain_emoji:true};
+        let method="sendMessage";
+        if(media.fileId){
+          const methods:Record<string,{method:string;field:string}>={photo:{method:"sendPhoto",field:"photo"},video:{method:"sendVideo",field:"video"},animation:{method:"sendAnimation",field:"animation"},document:{method:"sendDocument",field:"document"},audio:{method:"sendAudio",field:"audio"},voice:{method:"sendVoice",field:"voice"},sticker:{method:"sendSticker",field:"sticker"},video_note:{method:"sendVideoNote",field:"video_note"}};
+          const selected=methods[media.type];if(!selected)continue;method=selected.method;payload[selected.field]=media.fileId;
+          if(body&&selected.field!=="sticker"&&selected.field!=="video_note")payload.caption=body;
+          if(original.caption_entities?.length)payload.caption_entities=original.caption_entities;
+        }else if(original.contact){method="sendContact";Object.assign(payload,{phone_number:original.contact.phone_number,first_name:original.contact.first_name,last_name:original.contact.last_name,vcard:original.contact.vcard});}
+        else if(original.venue?.location){method="sendVenue";Object.assign(payload,{latitude:original.venue.location.latitude,longitude:original.venue.location.longitude,title:original.venue.title,address:original.venue.address});}
+        else if(original.location){method="sendLocation";Object.assign(payload,{latitude:original.location.latitude,longitude:original.location.longitude});}
+        else if(original.poll){method="sendPoll";Object.assign(payload,{question:original.poll.question,options:(original.poll.options||[]).map((x:any)=>x.text),is_anonymous:original.poll.is_anonymous,allows_multiple_answers:original.poll.allows_multiple_answers});}
+        else if(original.dice){method="sendDice";payload.emoji=original.dice.emoji;}
+        else{if(!body)continue;payload.text=body;if(original.entities?.length)payload.entities=original.entities;}
+        console.log("Antimut deletion detected; restoring owner message",JSON.stringify({chat_id:String(update.chat.id),original_message_id:item.telegram_message_id,media_type:media.type}));
+        const resent=await telegram(method,payload);if(!resent?.message_id)throw new Error("Antimut restore failed: Telegram returned no message id");
+        const sentMedia=resent.photo?.at(-1)??resent.video??resent.animation??resent.document??resent.audio??resent.voice??resent.sticker??null;
+        const sentAt=new Date((resent.date??Math.floor(Date.now()/1000))*1000).toISOString();
+        const {error:saveError}=await admin.from("flamexbot_business_messages").upsert({
+          business_chat_id:chat.id,telegram_message_id:resent.message_id,direction:"outbound",sender_profile_id:connection.profile_id,
+          content:resent.text??resent.caption??body,message_type:media.type,media_file_id:sentMedia?.file_id??media.fileId??null,media_url:null,
+          reply_to_message_id:original.reply_to_message?.message_id??null,created_at:sentAt,
+          raw:{...resent,_flamexbot_antimut_resent:true,_flamexbot_restored_from:Number(item.telegram_message_id)},
+        },{onConflict:"business_chat_id,telegram_message_id"});
+        if(saveError)throw saveError;
+        console.log("Antimut restore succeeded",JSON.stringify({chat_id:String(update.chat.id),original_message_id:item.telegram_message_id,restored_message_id:resent.message_id}));
+      }
+    }
+  }
   return chat.id;
 }
 
@@ -3395,144 +3432,229 @@ async function processTelegramUpdate(update: any) {
             }
           }
         }
-        try {
-        if (ownerAuthored && ownerConnection?.is_enabled && ownerConnection.rights?.can_delete_all_messages === true) {
-          const antimutChat = savedBusinessChatId ? { id: savedBusinessChatId } : null;
-          if (antimutChat) {
-            const { data: antimutPrefs, error: antimutPrefsError } = await admin.from("flamexbot_business_chat_settings")
-              .select("antimut_enabled").eq("profile_id", ownerConnection.profile_id)
-              .eq("business_chat_id", antimutChat.id).maybeSingle();
-            if (antimutPrefsError) throw antimutPrefsError;
-            if (antimutPrefs?.antimut_enabled) {
-              const media = messageMedia(businessMessage);
-              const textContent = String(businessMessage.text ?? businessMessage.caption ?? "").trim();
-              let sendMethod = "sendMessage";
-              const payload: Record<string, unknown> = {
-                business_connection_id: businessMessage.business_connection_id,
-                chat_id: businessMessage.chat.id,
-                preserve_plain_emoji: true,
-              };
-              if (media.fileId) {
-                const mediaMethods: Record<string, { method: string; field: string }> = {
-                  photo: { method: "sendPhoto", field: "photo" },
-                  video: { method: "sendVideo", field: "video" },
-                  animation: { method: "sendAnimation", field: "animation" },
-                  document: { method: "sendDocument", field: "document" },
-                  audio: { method: "sendAudio", field: "audio" },
-                  voice: { method: "sendVoice", field: "voice" },
-                  sticker: { method: "sendSticker", field: "sticker" },
-                  video_note: { method: "sendVideoNote", field: "video_note" },
-                };
-                const selected = mediaMethods[media.type];
-                if (selected) {
-                  sendMethod = selected.method;
-                  payload[selected.field] = media.fileId;
-                  if (textContent && selected.field !== "sticker" && selected.field !== "video_note") payload.caption = textContent;
-                }
-              } else if (businessMessage.contact) {
-                sendMethod = "sendContact";
-                Object.assign(payload, {
-                  phone_number: businessMessage.contact.phone_number,
-                  first_name: businessMessage.contact.first_name,
-                  last_name: businessMessage.contact.last_name,
-                  vcard: businessMessage.contact.vcard,
-                });
-              } else if (businessMessage.venue?.location) {
-                sendMethod = "sendVenue";
-                Object.assign(payload, {
-                  latitude: businessMessage.venue.location.latitude,
-                  longitude: businessMessage.venue.location.longitude,
-                  title: businessMessage.venue.title,
-                  address: businessMessage.venue.address,
-                  foursquare_id: businessMessage.venue.foursquare_id,
-                  google_place_id: businessMessage.venue.google_place_id,
-                });
-              } else if (businessMessage.location) {
-                sendMethod = "sendLocation";
-                Object.assign(payload, {
-                  latitude: businessMessage.location.latitude,
-                  longitude: businessMessage.location.longitude,
-                  horizontal_accuracy: businessMessage.location.horizontal_accuracy,
-                  live_period: businessMessage.live_period,
-                  heading: businessMessage.heading,
-                  proximity_alert_radius: businessMessage.proximity_alert_radius,
-                });
-              } else if (businessMessage.poll) {
-                sendMethod = "sendPoll";
-                Object.assign(payload, {
-                  question: businessMessage.poll.question,
-                  options: (businessMessage.poll.options || []).map((option: any) => option.text),
-                  is_anonymous: businessMessage.poll.is_anonymous,
-                  type: businessMessage.poll.type,
-                  allows_multiple_answers: businessMessage.poll.allows_multiple_answers,
-                  correct_option_id: businessMessage.poll.correct_option_id,
-                  explanation: businessMessage.poll.explanation,
-                });
-              } else if (businessMessage.dice) {
-                sendMethod = "sendDice";
-                payload.emoji = businessMessage.dice.emoji;
-              } else {
-                payload.text = textContent;
-              }
-              if (businessMessage.reply_to_message?.message_id) {
-                payload.reply_parameters = { message_id: businessMessage.reply_to_message.message_id };
-              }
-              if (payload.text || payload.photo || payload.video || payload.animation || payload.document || payload.audio || payload.voice || payload.sticker || payload.video_note || payload.phone_number || payload.latitude !== undefined || payload.question || payload.emoji) {
-                console.log("Antimut resend started", JSON.stringify({ chat_id: String(businessMessage.chat.id), original_message_id: businessMessage.message_id, media_type: media.type }));
-                payload.business_connection_id = businessMessage.business_connection_id;
-                const resent = await telegram(sendMethod, payload);
-                if (!resent?.message_id) throw new Error("Telegram did not return the resent message id; original message was kept.");
-                try {
-                  await telegram("deleteBusinessMessages", {
-                    business_connection_id: businessMessage.business_connection_id,
-                    chat_id: String(businessMessage.chat.id),
-                    message_ids: [businessMessage.message_id],
-                  });
-                } catch (deleteOriginalError) {
-                  try {
-                    await telegram("deleteBusinessMessages", {
-                      business_connection_id: businessMessage.business_connection_id,
-                      chat_id: String(businessMessage.chat.id),
-                      message_ids: [resent.message_id],
-                    });
-                  } catch (cleanupError) {
-                    console.error("Antimut could not clean up the duplicate after original deletion failed:", (cleanupError as any)?.message ?? cleanupError);
-                  }
-                  throw deleteOriginalError;
-                }
-                console.log("Antimut resend and delete succeeded", JSON.stringify({ chat_id: String(businessMessage.chat.id), original_message_id: businessMessage.message_id, resent_message_id: resent.message_id }));
-                const sentMessage = resent;
-                const sentMedia = sentMessage.photo?.at(-1) ?? sentMessage.video ?? sentMessage.animation ?? sentMessage.document ?? sentMessage.audio ?? sentMessage.voice ?? sentMessage.sticker ?? null;
-                const sentAt = new Date((sentMessage.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
-                const deletedAt = new Date().toISOString();
-                const [sentSaveResult, eventResult, markDeletedResult] = await Promise.all([
-                  admin.from("flamexbot_business_messages").upsert({
-                    business_chat_id: antimutChat.id, telegram_message_id: sentMessage.message_id, direction: "outbound",
-                    sender_profile_id: ownerConnection.profile_id, content: sentMessage.text ?? sentMessage.caption ?? textContent,
-                    message_type: media.type, media_file_id: sentMedia?.file_id ?? media.fileId, media_url: null,
-                    reply_to_message_id: businessMessage.reply_to_message?.message_id ?? null, created_at: sentAt, raw: { ...sentMessage, _flamexbot_antimut_resent: true },
-                  }, { onConflict: "business_chat_id,telegram_message_id" }),
-                  admin.from("flamexbot_business_message_events").upsert({
-                    profile_id: ownerConnection.profile_id, business_chat_id: antimutChat.id,
-                    telegram_message_id: businessMessage.message_id, event_type: "deleted",
-                    original_content: textContent, message_type: media.type, media_file_id: media.fileId ?? null,
-                    media_url: null, original_raw: businessMessage, occurred_at: deletedAt,
-                  }, { onConflict: "business_chat_id,telegram_message_id,event_type,occurred_at", ignoreDuplicates: true }),
-                  admin.from("flamexbot_business_messages").update({ deleted_at: deletedAt })
-                    .eq("business_chat_id", antimutChat.id).eq("telegram_message_id", businessMessage.message_id),
-                ]);
-                if (sentSaveResult.error) throw sentSaveResult.error;
-                if (eventResult.error) throw eventResult.error;
-                if (markDeletedResult.error) throw markDeletedResult.error;
-                return;
-              }
+        // Antimut restoration is triggered only by deleted_business_messages.
+
+      }
+      if (isBusinessCommand) {
+        const commandToken = update.business_message.text.trim().slice(1).split(/\s+/)[0].replace(/@\w+$/,"").toLowerCase();
+        console.log("business command candidate", JSON.stringify({
+          command: commandToken,
+          chat_id: String(update.business_message.chat.id),
+          sender_id: String(update.business_message.from.id),
+          connection_found: Boolean(ownerConnection),
+          connection_enabled: Boolean(ownerConnection?.is_enabled),
+          sender_is_owner: String(update.business_message.from.id) === String(ownerConnection?.telegram_user_id ?? ""),
+        }));
+        if (ownerConnection?.is_enabled &&
+            String(update.business_message.from.id) === String(ownerConnection.telegram_user_id)) {
+          let handled = false;
+          try {
+            handled = await handleBusinessChatCommand(update.business_message, update.business_message.business_connection_id, ownerConnection);
+            console.log("business command processed", JSON.stringify({ command: commandToken, handled: Boolean(handled) }));
+          } catch (commandError) {
+            const reason = String((commandError as any)?.message ?? commandError ?? "Неизвестная ошибка").slice(0, 240);
+            console.error("Business command failed", JSON.stringify({
+              command: commandToken, chat_id: String(update.business_message.chat.id),
+              owner_id: String(ownerConnection.telegram_user_id), error: reason,
+            }));
+            try {
+              const safeReason = reason.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              await sendBusinessReply(
+                update.business_message.business_connection_id,
+                update.business_message.chat.id,
+                `${tgEmoji("warning")} <b>Команда .${commandToken} не выполнена</b>\nПричина: ${safeReason}\nПопробуй ещё раз позже. Если ошибка повторяется, сообщи администратору FLAMEXBOT.`,
+                "HTML",
+              );
+            } catch (replyError) {
+              console.error("Could not report Business command failure:", (replyError as any)?.message ?? replyError);
+            }
+          }
+          if (handled && ownerConnection.rights?.can_delete_sent_messages) {
+            try {
+              await telegram("deleteBusinessMessages", {
+                business_connection_id: update.business_message.business_connection_id,
+                chat_id: String(update.business_message.chat.id),
+                message_ids: [update.business_message.message_id],
+              });
+            } catch (deleteError) {
+              console.warn("Could not remove Business command message:", deleteError?.message ?? deleteError);
             }
           }
         }
-        } catch (antimutProcessingError) {
-          console.error("Antimut processing failed; webhook continues so other commands remain available:", (antimutProcessingError as any)?.message ?? antimutProcessingError);
-        }
       }
+    }
+    if (update.edited_business_message?.chat?.type === "private") await updateBusinessMessage(update.edited_business_message);
+    if (update.deleted_business_messages?.chat?.type === "private") await deleteBusinessMessages(update.deleted_business_messages);
+    if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
+        /^[/](start|app)(?:@\w+)?(?:\s+([A-Za-z0-9_-]+))?\s*$/i.test(update.message.text)) {
+      const chatId = update.message.chat.id;
+      const startMatch = /^\/start(?:@\w+)?(?:\s+([A-Za-z0-9_-]+))?\s*$/i.exec(update.message.text.trim());
+      const referralCode = startMatch?.[1]?.startsWith("ref_") ? startMatch[1].slice(4) : null;
+      if (referralCode && update.message.from?.id) {
+        const {error:referralError}=await admin.rpc("record_flamexbot_referral",{
+          p_telegram_user_id:String(update.message.from.id),p_code:referralCode
+        });
+        if(referralError)console.warn("Referral link processing skipped:",referralError.message);
+      }
+      await Promise.all([
+        ensureTelegramGlobalSetup(),
+        ensureTelegramChatMenuButton(chatId),
+      ]);
+      const telegramUserId = String(update.message.from?.id ?? chatId);
+      const { data: startConnection, error: startConnectionError } = await admin.from("flamexbot_business_connections")
+        .select("connection_id,is_enabled,reconnected_welcome_pending").eq("telegram_user_id", telegramUserId).maybeSingle();
+      if (startConnectionError) console.warn("Start Business connection lookup failed:", startConnectionError.message);
+      const businessConnected = startConnection?.is_enabled === true;
+      const welcomeBack = businessConnected && startConnection?.reconnected_welcome_pending === true;
+      const requestedGuide = startMatch?.[1] === "connect_guide";
+      const startMarkup = { inline_keyboard: [
+        [{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }],
+        ...(!businessConnected ? [[{ text: "Инструкция к подключению", callback_data: "fx:connect_guide" }]] : []),
+      ] };
+      const { data: startBanner, error: startBannerError } = await admin.from("flamexbot_bot_banners")
+        .select("image_url,caption,enabled").eq("banner_key","start").maybeSingle();
+      if (startBannerError) console.warn("Start banner settings unavailable:", startBannerError.message);
+      const defaultStartCaption = `${tgEmoji("sparkles")} <b>${welcomeBack ? "С возвращением в FLAMEXBOT!" : "Добро пожаловать в FLAMEXBOT!"}</b>
+
+${tgEmoji("users")} Общайся с друзьями, поддерживай ваши огоньки и возвращайся к важным диалогам каждый день.`;
+      const connectionStatus = businessConnected
+        ? (welcomeBack
+          ? `${tgEmoji("success")} <b>С возвращением! Бот снова подключён к вашему аккаунту.</b>`
+          : `${tgEmoji("success")} <b>Бот подключён к вашему аккаунту.</b>`)
+        : `${tgEmoji("warning")} <b>Вы ещё не подключили бота к своему аккаунту.</b> Нажмите «Инструкция к подключению», чтобы посмотреть шаги.`;
+      const guideText = `${tgEmoji("settings")} <b>Подключение FLAMEXBOT</b>
+
+1. Открой Telegram → Настройки → Telegram Business.
+2. Выбери «Чат-боты» → «Добавить чат-бота».
+3. Найди FLAMEXBOT и подключи его.
+4. Выдай необходимые разрешения, включая «Удалять все сообщения» для антимута.
+5. Вернись в FLAMEXBOT и проверь статус подключения.`;
+      const startCaption = requestedGuide ? guideText : `${startBanner?.caption || defaultStartCaption}
+
+${connectionStatus}`;
+      if (startBanner?.enabled && startBanner.image_url && !requestedGuide) {
+        await telegram("sendPhoto", { chat_id: chatId, photo: startBanner.image_url, caption: startCaption.slice(0,1024), parse_mode:"HTML", reply_markup:startMarkup });
+      } else {
+        await sendRichTelegramMessage(chatId,startCaption,"HTML",startMarkup);
+      }
+      if (welcomeBack) {
+        const { error: welcomeResetError } = await admin.from("flamexbot_business_connections")
+          .update({ reconnected_welcome_pending: false }).eq("telegram_user_id", telegramUserId).eq("connection_id", startConnection.connection_id);
+        if (welcomeResetError) console.warn("Reconnect welcome flag reset failed:", welcomeResetError.message);
+      }
+    }
+
+    return new Response("OK", { status: 200 });
+  } catch (error) {
+    console.error("flamexbot-bot webhook processing error:", error?.message ?? error);
+    throw error;
+  } finally {
+    if (update.callback_query?.id) callbackFeedbackContexts.delete(String(update.callback_query.id));
+    console.log("telegram update processed", JSON.stringify({update_id:update.update_id??null,duration_ms:Date.now()-startedAt}));
+  }
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "GET") {
+    try {
+      const [me, webhook] = await Promise.all([
+        telegram("getMe", {}),
+        telegram("getWebhookInfo", {}),
+      ]);
+      return new Response(JSON.stringify({
+        ok: true,
+        bot_username: me.username ?? null,
+        can_connect_to_business: me.can_connect_to_business === true,
+        webhook_url_set: Boolean(webhook.url),
+        webhook_url_matches: webhook.url === WEBHOOK_URL,
+        allowed_updates: webhook.allowed_updates ?? [],
+        pending_update_count: webhook.pending_update_count ?? 0,
+        last_error_message: webhook.last_error_message ?? null,
+        last_error_date: webhook.last_error_date ?? null,
+      }), { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    } catch (error) {
+      console.error("flamexbot-bot diagnostics error:", error?.message ?? error);
+      return new Response(JSON.stringify({ ok: false, error: "Telegram diagnostics failed" }), {
+        status: 502, headers: { "content-type": "application/json", "cache-control": "no-store" },
+      });
+    }
+  }
+  if (req.method !== "POST") return new Response("OK", { status: 200 });
+  if (req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  let update: any;
+  try {
+    update = await req.json();
+  } catch {
+    return new Response("Invalid JSON", { status: 400 });
+  }
+  if (update.callback_query?.id) {
+    const callbackId = String(update.callback_query.id);
+    const callbackMessage = update.callback_query.message;
+    callbackFeedbackContexts.set(callbackId, {
+      chatId: callbackMessage?.chat?.id ?? update.callback_query.from?.id,
+      businessConnectionId: callbackMessage?.business_connection_id,
+    });
+    if (callbackFeedbackContexts.size > 500) callbackFeedbackContexts.delete(callbackFeedbackContexts.keys().next().value!);
+    try { await telegram("answerCallbackQuery", { callback_query_id: update.callback_query.id, text: "Запрос принят" }); }
+    catch (callbackAckError) { console.warn("Early callback acknowledgement skipped:", (callbackAckError as any)?.message ?? callbackAckError); }
+  }
+  const updateId = Number(update.update_id);
+  const hasUpdateId = Number.isSafeInteger(updateId) && updateId >= 0;
+  let claimed = false;
+  if (hasUpdateId && admin) {
+    const claimStartedAt = Date.now();
+    const { data: claimResult, error: claimError } = await admin.rpc("claim_flamexbot_telegram_update_v2", {
+      p_update_id: updateId,
+    });
+    if (Date.now() - claimStartedAt >= 180) console.log("flamexbot stage slow", JSON.stringify({ stage: "update_claim", duration_ms: Date.now() - claimStartedAt }));
+    if (claimError) {
+      console.error("Telegram update claim failed:", claimError.message);
+      return new Response("Webhook temporarily unavailable", { status: 500 });
+    }
+    if (claimResult === "completed") {
+      if (update.callback_query?.id) callbackFeedbackContexts.delete(String(update.callback_query.id));
+      return new Response("OK", { status: 200 });
+    }
+    claimed = claimResult === "claimed";
+    if (!claimed) {
+      if (update.callback_query?.id) callbackFeedbackContexts.delete(String(update.callback_query.id));
+      // Keep Telegram retrying an in-flight or uncertain update; only completed updates get 200.
+      return new Response("Update is still processing; retry later", {
+        status: 503,
+        headers: { "Retry-After": "2" },
+      });
+    }
+  }
+
+  try {
+    // Telegram requires an answer to pre-checkout within 10 seconds.
+    if (update.pre_checkout_query) await handlePreCheckout(update.pre_checkout_query);
+    await processTelegramUpdate(update);
+    if (claimed && admin) {
+      const completeStartedAt = Date.now();
+      const { error: completeError } = await admin.rpc("complete_flamexbot_telegram_update", {
+        p_update_id: updateId,
+      });
+      if (Date.now() - completeStartedAt >= 180) console.log("flamexbot stage slow", JSON.stringify({ stage: "update_complete", duration_ms: Date.now() - completeStartedAt }));
+      if (completeError) throw completeError;
+    }
+    return new Response("OK", { status: 200, headers: { "Connection": "keep-alive" } });
+  } catch (error) {
+    console.error("Telegram webhook failed; update will be retried:", error?.message ?? error);
+    if (claimed && admin) {
+      const { error: failError } = await admin.rpc("fail_flamexbot_telegram_update", {
+        p_update_id: updateId,
+        p_error: String(error?.message ?? error ?? "Unknown webhook error"),
+      });
+      if (failError) console.error("Could not record failed Telegram update:", failError.message);
+    }
+    return new Response("Webhook processing failed", { status: 500 });
+  }
+});
+
       if (isBusinessCommand) {
         const commandToken = update.business_message.text.trim().slice(1).split(/\s+/)[0].replace(/@\w+$/,"").toLowerCase();
         console.log("business command candidate", JSON.stringify({
