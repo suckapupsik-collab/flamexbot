@@ -3608,7 +3608,7 @@ async function processTelegramUpdate(update: any) {
       if (ownerLookupError) throw ownerLookupError;
       accessTelegramUserId = ownerConnection?.telegram_user_id ?? null;
     }
-    if (accessTelegramUserId != null && !isStartEntry && !isSubscriptionCheck && !update.business_connection) {
+    if (accessTelegramUserId != null && !isStartEntry && !isSubscriptionCheck && !update.business_connection && !update.message?.successful_payment) {
       let subscribed = false;
       try {
         subscribed = await isRequiredChannelMember(accessTelegramUserId);
