@@ -675,6 +675,8 @@ async function saveBusinessMessage(message: any, connectionOverride?: any, captu
             payload[selected.field] = media.fileId;
             if (body && selected.field !== "sticker" && selected.field !== "video_note") payload.caption = body;
             if (original.caption_entities?.length) payload.caption_entities = original.caption_entities;
+          } else {
+            method = "";
           }
         } else if (original.contact) {
           method = "sendContact";
