@@ -591,7 +591,10 @@ async function saveBusinessMessage(message: any, connectionOverride?: any, captu
   }
   if (!connection?.profile_id || !connection.is_enabled) return null;
   const senderId = message.from?.id != null ? String(message.from.id) : null;
-  const direction = senderId && senderId === connection.telegram_user_id ? "outbound" : "inbound";
+  // Telegram explicitly marks messages sent by the connected Business bot.
+  // Treat them as outbound even if Message.from is absent or does not match the account owner.
+  const sentByBusinessBot = Boolean(message.sender_business_bot?.id);
+  const direction = sentByBusinessBot || (senderId && senderId === String(connection.telegram_user_id)) ? "outbound" : "inbound";
   const chatId = String(message.chat.id);
   const sender = direction === "inbound" ? message.from : message.chat;
   const { data: chat, error: chatError } = await admin.from("flamexbot_business_chats").upsert({
@@ -812,7 +815,8 @@ async function saveBusinessMessage(message: any, connectionOverride?: any, captu
     const shouldDeleteProfanity = Boolean(chatPrefs?.antimat_enabled) && containsBusinessProfanity(content);
     const shouldFilter = shouldDeleteSticker || shouldDeleteProfanity;
     // HARD SAFETY: moderation may delete incoming messages only; never delete messages authored by the connected Business account owner.
-    if (direction === "inbound" && senderId !== String(connection.telegram_user_id) && (shouldHardMute || shouldFilter)) {
+    // Never delete outgoing messages: Telegram's sender_business_bot marks messages sent by this Business bot.
+    if (direction === "inbound" && !message.sender_business_bot?.id && senderId !== String(connection.telegram_user_id) && (shouldHardMute || shouldFilter)) {
       if (connection.rights?.can_delete_all_messages) {
         try {
           await telegram("deleteBusinessMessages", {
