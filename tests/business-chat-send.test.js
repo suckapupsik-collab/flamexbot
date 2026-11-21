@@ -42,5 +42,14 @@ test("Business commands are dispatched before slower webhook processing", () => 
   assert.ok(normalProcessingAt >= 0, "normal webhook processing marker must exist");
   assert.ok(captureAt < normalProcessingAt, "commands must be handled before unrelated webhook work");
   assert.match(botWebhookSource, /earlyBusinessMessage\.message_id/);
-  assert.match(botWebhookSource, /Another bot may already have deleted the command/);
+  assert.match(botWebhookSource, /Business command already deleted or could not be removed/);
+});
+
+test("ordinary Business messages are archived before slower webhook processing", () => {
+  const archiveAt = botWebhookSource.indexOf("Business message archived at webhook ingress");
+  const normalProcessingAt = botWebhookSource.indexOf("const directTelegramUserId");
+  assert.ok(archiveAt >= 0, "early Business message archive must exist");
+  assert.ok(archiveAt < normalProcessingAt, "message must be archived before unrelated webhook work");
+  assert.match(botWebhookSource, /saveBusinessMessage\(earlyArchiveMessage, archiveConnection, true\)/);
+  assert.match(botWebhookSource, /if \(captureOnly\) return chat\.id;/);
 });
