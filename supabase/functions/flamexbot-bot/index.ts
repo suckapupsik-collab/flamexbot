@@ -1847,8 +1847,8 @@ ${tgEmoji("lock")} <b>Административные команды · тол�
       const antiPremium = ["premium","founder"].includes(antiSubscription?.plan) && (!antiSubscription.expires_at || new Date(antiSubscription.expires_at).getTime() > Date.now());
       if (!antiPremium) { await reply(tgEmoji("star") + " <b>Для включения антимута нужна активная подписка Premium.</b> Выключение бесплатно.", "HTML"); return true; }
     }
-    if (enabled && connectionOverride?.rights?.can_delete_all_messages !== true) {
-      await reply(tgEmoji("warning") + " <b>Для антимута нужно право «Удалять все сообщения».</b> Telegram не разрешает удалять исходные сообщения владельца только с правом удаления сообщений, отправленных ботом.", "HTML");
+    if (enabled && connectionOverride?.rights?.can_reply !== true) {
+      await reply(tgEmoji("warning") + " <b>Для антимута нужно право «Отправлять сообщения» в настройках Telegram Business.</b>", "HTML");
       return true;
     }
     const { error: settingError } = await admin.from("flamexbot_business_chat_settings").upsert({ profile_id: profile.id, business_chat_id: currentBusinessChat.id, antimut_enabled: enabled }, { onConflict: "profile_id,business_chat_id" });
@@ -1859,7 +1859,7 @@ ${tgEmoji("lock")} <b>Административные команды · тол�
     }]] };
     await reply(
       enabled
-        ? `${tgEmoji("diamond")} <b>Антимут включён</b>\n\nПосле отправки FLAMEXBOT повторно отправит ваше сообщение через подключённый Business-аккаунт в этом же чате и удалит исходный экземпляр.\n\nРежим можно отключить кнопкой ниже или повторной командой <code>.antimute</code>.`
+        ? `${tgEmoji("diamond")} <b>Антимут включён</b>\n\nЕсли другой бот удалит ваше сообщение, FLAMEXBOT автоматически отправит его повторно через подключённый Business-аккаунт.\n\nРежим можно отключить кнопкой ниже или повторной командой <code>.antimute</code>.`
         : `${tgEmoji("lock")} <b>Антимут выключен</b>\nПовторная отправка ваших сообщений остановлена. Включить режим снова можно кнопкой ниже или командой <code>.antimute</code>.`,
       "HTML",
       antimutMarkup,
@@ -2449,8 +2449,8 @@ async function handleBusinessActionCallback(query: any) {
       await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Не выдано право «Удалять все сообщения»." });
       return;
     }
-    if (action === "antimut" && connection.rights?.can_delete_all_messages !== true) {
-      await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Не выдано право «Удалять все сообщения»." });
+    if (action === "antimut" && connection.rights?.can_reply !== true) {
+      await telegram("answerCallbackQuery", { callback_query_id: query.id, text: "Не выдано право «Отправлять сообщения»." });
       return;
     }
   }
