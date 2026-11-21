@@ -3316,13 +3316,60 @@ async function processTelegramUpdate(update: any) {
       );
     }
 
+    if (update.message?.chat?.type === "private" && update.message.from?.id && typeof update.message.text === "string") {
+      const sendAsMatch = update.message.text.trim().match(/^[./](?:say|sendas|autounmute)(?:@\\w+)?\\s+(@[A-Za-z0-9_]{5,32}|\\d{5,20})\\s+([\\s\\S]+)$/i);
+      if (sendAsMatch) {
+        const ownerId = String(update.message.from.id);
+        const targetToken = sendAsMatch[1].replace(/^@/, "");
+        const outgoingText = sendAsMatch[2].trim();
+        const { data: ownerProfile, error: ownerProfileError } = await admin.from("profiles").select("id").eq("telegram_id", ownerId).maybeSingle();
+        if (ownerProfileError) throw ownerProfileError;
+        if (!ownerProfile) {
+          await sendRichTelegramMessage(update.message.chat.id, "Сначала запусти FLAMEXBOT и привяжи свой профиль.", "HTML");
+        } else {
+          const { data: business, error: businessError } = await admin.from("flamexbot_business_connections")
+            .select("connection_id,is_enabled,rights").eq("profile_id", ownerProfile.id).maybeSingle();
+          if (businessError) throw businessError;
+          if (!business?.is_enabled || business.rights?.can_reply !== true) {
+            await sendRichTelegramMessage(update.message.chat.id, "⛔ Нет активного подключения Telegram «Автоматизация чатов» или не выдано право «Отправлять сообщения». Проверь подключение FLAMEXBOT и разрешения.", "HTML");
+          } else {
+            let targetQuery = admin.from("flamexbot_business_chats")
+              .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name").eq("profile_id", ownerProfile.id);
+            targetQuery = /^\\d+$/.test(targetToken) ? targetQuery.eq("telegram_chat_id", targetToken) : targetQuery.ilike("username", targetToken);
+            const { data: targetChat, error: targetError } = await targetQuery.maybeSingle();
+            if (targetError) throw targetError;
+            if (!targetChat) {
+              await sendRichTelegramMessage(update.message.chat.id, "Не нашёл этот диалог среди доступных чатов. Сначала получи сообщение от пользователя, чтобы FLAMEXBOT увидел переписку.", "HTML");
+            } else {
+              const { data: lastIncoming, error: incomingError } = await admin.from("flamexbot_business_messages")
+                .select("created_at").eq("business_chat_id", targetChat.id).eq("direction", "inbound")
+                .order("created_at", { ascending: false }).limit(1).maybeSingle();
+              if (incomingError) throw incomingError;
+              const recentIncoming = lastIncoming?.created_at && Date.now() - new Date(lastIncoming.created_at).getTime() <= 86400000;
+              if (!recentIncoming) {
+                await sendRichTelegramMessage(update.message.chat.id, "⏳ Telegram разрешает отвечать от имени аккаунта только в личных чатах, где собеседник писал в последние 24 часа. Для этого диалога право ответа сейчас недоступно.", "HTML");
+              } else {
+                try {
+                  const sent = await sendRichTelegramMessage(targetChat.telegram_chat_id, outgoingText, undefined, undefined, business.connection_id, false);
+                  console.log("Business DM send-as completed", JSON.stringify({owner_id:ownerId,target_chat_id:String(targetChat.telegram_chat_id),message_id:sent?.message_id??null}));
+                  await sendRichTelegramMessage(update.message.chat.id, "✅ Сообщение отправлено от имени твоего Telegram-аккаунта.", "HTML");
+                } catch (sendAsError) {
+                  const reason = String((sendAsError as any)?.message ?? sendAsError).slice(0,260);
+                  console.warn("Business DM send-as failed", JSON.stringify({owner_id:ownerId,target_chat_id:String(targetChat.telegram_chat_id),error:reason}));
+                  await sendRichTelegramMessage(update.message.chat.id, "❌ Telegram не принял отправку: " + escapeHtml(reason), "HTML");
+                }
+              }
+            }
+          }
+        }
+      } else if (/^[./](?:say|sendas|autounmute)(?:@\\w+)?(?:\\s|$)/i.test(update.message.text.trim())) {
+        await sendRichTelegramMessage(update.message.chat.id, "Формат: <code>.say @username текст</code> (также .sendas или .autounmute). Отправка идёт от имени подключённого аккаунта.", "HTML");
+      }
+    }
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
-        /^[./](ping|help|inf|commands|mute|profile|afk|antimute|antimut|autoread|autotyping|autovoice|mutestick|antimat|time|timeprofile|bold|dumb|link|streak|copyp|qr|id|chatid|date|calc|upper|lower|reverse|count|wordcount|choose|roll|advertising|clone|panic|warn)(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
-      await sendRichTelegramMessage(
-        update.message.chat.id,
-        "Команда получена в личном чате с FLAMEXBOT, но здесь нет выбранного собеседника.\n\nЧтобы .bold, .dumb, .time, .mute и другие команды сработали, открой обычную личную переписку с нужным человеком и отправь команду прямо туда. FLAMEXBOT определит этот диалог автоматически.\n\nПроверка подключения здесь: /status. Справка: /help.",
-        "HTML",
-      );
+        /^[./](ping|help|inf|commands|mute|profile|afk|antimute|antimut|autoread|autotyping|autovoice|mutestick|antimat|time|timeprofile|bold|dumb|link|streak|copyp|qr|id|chatid|date|calc|upper|lower|reverse|count|wordcount|choose|roll|advertising|clone|panic|warn)(?:@\\w+)?(?:\\s|$)/i.test(update.message.text.trim())) {
+      await sendRichTelegramMessage(update.message.chat.id,
+        "Эта команда выполняется в Business-переписке. Для отправки от имени аккаунта из личного чата с FLAMEXBOT используй <code>.say @username текст</code>.", "HTML");
     }
 
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
