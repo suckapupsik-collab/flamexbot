@@ -78,3 +78,16 @@ Supabase project: `yxmfhnbqzudoiwjlrpui`
 3. Keep the event-history table creation SQL as a recovered historical source, but do not invent a ledger row for it. Find deployment/audit evidence if its exact application mechanism must be established.
 4. Keep the newer Business status migration; do not restore the obsolete archive RPC.
 5. Preserve both the 116-entry ledger snapshot and this mapping as recovery documentation. No production schema, data, or migration ledger was changed during this reconciliation.
+
+
+## Follow-up verification: Business message event history
+
+A read-only production query on 2026-11-21 confirmed:
+
+- `public.flamexbot_business_message_events` exists and contains 650 rows.
+- RLS is enabled (also reflected by the Supabase table listing).
+- The only authenticated policy is SELECT for the user's own rows, additionally guarded by `is_flamexbot_user_active()`.
+- `authenticated` has SELECT only; no INSERT, UPDATE, or DELETE grant was returned.
+- `service_role` retains server-side table privileges; `anon` has no table grants in the inspected result.
+
+This is consistent with the purpose of production migration `20261117123756 flamexbot_business_message_events_least_privilege`. It verifies the current access controls, but it does not prove the exact origin or execution version of the earlier table-creation SQL.
