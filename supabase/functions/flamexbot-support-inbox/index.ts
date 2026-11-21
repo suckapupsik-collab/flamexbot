@@ -37,9 +37,78 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action ?? "list");
 
+    if (action === "inbox_start") {
+      const targetUserId = String(body?.target_user_id ?? "");
+      if (!/^[0-9a-f-]{36}$/i.test(targetUserId)) return response({ error: "Invalid target_user_id" }, 400);
+      const { data: target, error: targetError } = await admin.from("profiles")
+        .select("id,telegram_id,telegram_username,username,display_name")
+        .eq("id", targetUserId).maybeSingle();
+      if (targetError) throw targetError;
+      if (!target) return response({ error: "Пользователь не найден." }, 404);
+      if (!target.telegram_id || !/^\d+$/.test(String(target.telegram_id))) {
+        return response({ error: "У пользователя не привязан Telegram." }, 409);
+      }
+      const now = new Date().toISOString();
+      const { data: chat, error: chatError } = await admin.from("flamexbot_bot_inbox_chats").upsert({
+        telegram_chat_id: String(target.telegram_id), telegram_user_id: String(target.telegram_id),
+        username: target.telegram_username || target.username || null,
+        first_name: target.display_name || target.username || "Пользователь",
+        last_message_preview: "Диалог открыт администрацией", last_message_at: now, updated_at: now,
+      }, { onConflict: "telegram_chat_id" })
+        .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name,last_message_preview,last_message_at,unread_count").single();
+      if (chatError) throw chatError;
+      return response({ ok: true, chat });
+    }
+    if (action === "inbox_list") {
+      const { data, error } = await admin.from("flamexbot_bot_inbox_chats")
+        .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name,last_message_preview,last_message_at,unread_count")
+        .order("last_message_at", { ascending: false }).limit(100);
+      if (error) throw error;
+      return response({ chats: data ?? [] });
+    }
+    if (action === "inbox_messages" || action === "inbox_send") {
+      const inboxChatId = String(body?.chat_id ?? "");
+      if (!/^[0-9a-f-]{36}$/i.test(inboxChatId)) return response({ error: "Invalid chat_id" }, 400);
+      const { data: inboxChat, error: inboxChatError } = await admin.from("flamexbot_bot_inbox_chats")
+        .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name")
+        .eq("id", inboxChatId).maybeSingle();
+      if (inboxChatError) throw inboxChatError;
+      if (!inboxChat) return response({ error: "Chat not found" }, 404);
+      if (action === "inbox_messages") {
+        const { data, error } = await admin.from("flamexbot_bot_inbox_messages")
+          .select("id,telegram_message_id,direction,content,message_type,created_at")
+          .eq("inbox_chat_id", inboxChatId).order("created_at", { ascending: true }).limit(300);
+        if (error) throw error;
+        const { error: readError } = await admin.from("flamexbot_bot_inbox_chats").update({ unread_count: 0 }).eq("id", inboxChatId);
+        if (readError) throw readError;
+        return response({ chat: inboxChat, messages: data ?? [] });
+      }
+      const content = String(body?.content ?? "").trim();
+      if (!content || content.length > 4096) return response({ error: "Сообщение должно содержать от 1 до 4096 символов." }, 400);
+      const telegramResponse = await fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: Number(inboxChat.telegram_chat_id), text: content, disable_web_page_preview: true }),
+        signal: AbortSignal.timeout(12000),
+      });
+      const telegramData = await telegramResponse.json();
+      if (!telegramResponse.ok || !telegramData.ok) return response({ error: telegramData.description ?? "Telegram не принял сообщение." }, 502);
+      const sent = telegramData.result;
+      const createdAt = new Date((sent.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
+      const { error: saveError } = await admin.from("flamexbot_bot_inbox_messages").upsert({
+        inbox_chat_id: inboxChatId, telegram_message_id: sent.message_id, direction: "outgoing",
+        content, message_type: "text", created_at: createdAt,
+      }, { onConflict: "inbox_chat_id,telegram_message_id" });
+      if (saveError) throw saveError;
+      const { error: updateError } = await admin.from("flamexbot_bot_inbox_chats").update({
+        last_message_preview: content.slice(0, 240), last_message_at: createdAt, updated_at: new Date().toISOString(),
+      }).eq("id", inboxChatId);
+      if (updateError) throw updateError;
+      return response({ ok: true, message: { telegram_message_id: sent.message_id, direction: "outgoing", content, message_type: "text", created_at: createdAt } });
+    }
+
     if (action === "list") {
       const { data, error } = await admin.from("flamexbot_support_chats")
-        .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name,last_message_preview,last_message_at,unread_count")
+        .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name,last_message_preview,last_message_at,unread_count,status")
         .order("last_message_at", { ascending: false }).limit(100);
       if (error) throw error;
       return response({ chats: data ?? [] });
@@ -48,10 +117,35 @@ Deno.serve(async (req: Request) => {
     const chatId = String(body?.chat_id ?? "");
     if (!/^[0-9a-f-]{36}$/i.test(chatId)) return response({ error: "Invalid chat_id" }, 400);
     const { data: chat, error: chatError } = await admin.from("flamexbot_support_chats")
-      .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name")
+      .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name,status")
       .eq("id", chatId).maybeSingle();
     if (chatError) throw chatError;
     if (!chat) return response({ error: "Chat not found" }, 404);
+
+    if (action === "close") {
+      const closedAt = new Date().toISOString();
+      const { error } = await admin.from("flamexbot_support_chats").update({ status: "closed", closed_at: closedAt }).eq("id", chatId);
+      if (error) throw error;
+      try {
+        const telegramResponse = await fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chat_id: Number(chat.telegram_chat_id), text: "✅ Твоё обращение в техподдержку FLAMEXBOT закрыто. Если появится новая проблема, отправь /support." }),
+          signal: AbortSignal.timeout(12000),
+        });
+        const telegramData = await telegramResponse.json();
+        if (telegramResponse.ok && telegramData.ok) {
+          const sent = telegramData.result;
+          await admin.from("flamexbot_support_messages").upsert({
+            support_chat_id: chatId, telegram_message_id: sent.message_id, direction: "outgoing",
+            content: "Твоё обращение в техподдержку FLAMEXBOT закрыто. Если появится новая проблема, отправь /support.",
+            message_type: "text", created_at: new Date((sent.date ?? Math.floor(Date.now()/1000))*1000).toISOString(),
+          }, { onConflict: "support_chat_id,telegram_message_id" });
+        }
+      } catch (notifyError) {
+        console.warn("Support close notification could not be sent:", notifyError);
+      }
+      return response({ ok: true });
+    }
 
     if (action === "messages") {
       const { data, error } = await admin.from("flamexbot_support_messages")
