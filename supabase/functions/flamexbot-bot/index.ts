@@ -3238,17 +3238,7 @@ async function processTelegramUpdate(update: any) {
             earlyBusinessMessage, earlyBusinessMessage.business_connection_id, earlyConnection,
           );
           if (earlyHandled) {
-            if (earlyConnection.rights?.can_delete_sent_messages === true) {
-              try {
-                await telegram("deleteBusinessMessages", {
-                  business_connection_id: earlyBusinessMessage.business_connection_id,
-                  chat_id: String(earlyBusinessMessage.chat.id),
-                  message_ids: [earlyBusinessMessage.message_id],
-                });
-              } catch (deleteError) {
-                console.warn("Business command already deleted or could not be removed:", deleteError?.message ?? deleteError);
-              }
-            }
+            // Keep the owner's command in chat history. FLAMEXBOT must never auto-delete it.
             console.log("business command processed from early capture", JSON.stringify({
               command: earlyCommandName, handled: true, message_id: earlyBusinessMessage.message_id,
             }));
@@ -3558,17 +3548,7 @@ async function processTelegramUpdate(update: any) {
               console.error("Could not report Business command failure:", (replyError as any)?.message ?? replyError);
             }
           }
-          if (handled && ownerConnection.rights?.can_delete_sent_messages) {
-            try {
-              await telegram("deleteBusinessMessages", {
-                business_connection_id: update.business_message.business_connection_id,
-                chat_id: String(update.business_message.chat.id),
-                message_ids: [update.business_message.message_id],
-              });
-            } catch (deleteError) {
-              console.warn("Could not remove Business command message:", deleteError?.message ?? deleteError);
-            }
-          }
+          // Intentionally keep handled owner commands in the conversation; no automatic deletion.
         }
       }
     }
