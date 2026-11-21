@@ -3437,6 +3437,16 @@ async function isRequiredChannelMember(telegramUserId: string | number) {
   return ["creator", "administrator", "member"].includes(status) ||
     (status === "restricted" && member?.is_member === true);
 }
+async function hasRegisteredMiniAppProfile(telegramUserId: string | number) {
+  const { data, error } = await admin.from("profiles").select("id").eq("telegram_id", String(telegramUserId)).maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.id);
+}
+async function sendMiniAppRegistrationPrompt(chatId: number | string) {
+  await sendRichTelegramMessage(chatId, "✅ Подписка подтверждена. Для доступа к функциям FLAMEXBOT сначала создай аккаунт в Mini App.", "HTML", {
+    inline_keyboard: [[{ text: "Зарегистрироваться в Mini App", web_app: { url: APP_URL } }]],
+  });
+}
 function requiredSubscriptionMarkup() {
   return { inline_keyboard: [
     [{ text: "Подписаться на канал", url: "https://t.me/flamexbot1" }],
@@ -3595,7 +3605,18 @@ async function processTelegramUpdate(update: any) {
       }
       if (!subscribed) {
         const targetChat = update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? accessTelegramUserId;
-        await sendRequiredSubscriptionPrompt(targetChat);
+        try { await sendRequiredSubscriptionPrompt(targetChat); } catch (sendError) { console.warn("Could not send subscription prompt:", String((sendError as any)?.message ?? sendError)); }
+        return new Response("OK", { status: 200 });
+      }
+      let registered = false;
+      try { registered = await hasRegisteredMiniAppProfile(accessTelegramUserId); }
+      catch (registrationError) {
+        console.error("Mini App registration lookup failed:", String((registrationError as any)?.message ?? registrationError));
+        return new Response("Temporary access check failure", { status: 503 });
+      }
+      if (!registered) {
+        const targetChat = update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? accessTelegramUserId;
+        try { await sendMiniAppRegistrationPrompt(targetChat); } catch (sendError) { console.warn("Could not send registration prompt:", String((sendError as any)?.message ?? sendError)); }
         return new Response("OK", { status: 200 });
       }
     }
@@ -3641,9 +3662,13 @@ async function processTelegramUpdate(update: any) {
       try {
         const subscribed = checkUserId != null && await isRequiredChannelMember(checkUserId);
         if (subscribed) {
-          await sendRichTelegramMessage(checkUserId, "✅ Подписка подтверждена! Теперь открой FLAMEXBOT и зарегистрируй аккаунт в Mini App.", "HTML", {
-            inline_keyboard: [[{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }]],
-          });
+          if (await hasRegisteredMiniAppProfile(checkUserId)) {
+            await sendRichTelegramMessage(checkUserId, "✅ Подписка подтверждена! Ты уже зарегистрирован — можешь открыть FLAMEXBOT.", "HTML", {
+              inline_keyboard: [[{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }]],
+            });
+          } else {
+            await sendMiniAppRegistrationPrompt(checkUserId);
+          }
         } else {
           await sendRequiredSubscriptionPrompt(checkUserId);
         }
@@ -3870,6 +3895,10 @@ async function processTelegramUpdate(update: any) {
       }
       if (!startSubscribed) {
         await sendRequiredSubscriptionPrompt(chatId);
+        return new Response("OK", { status: 200 });
+      }
+      if (!(await hasRegisteredMiniAppProfile(telegramUserId))) {
+        await sendMiniAppRegistrationPrompt(chatId);
         return new Response("OK", { status: 200 });
       }
       let startConnection = null;
