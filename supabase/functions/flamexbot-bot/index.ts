@@ -1929,6 +1929,74 @@ async function processTelegramUpdate(update: any) {
       business_enabled: update.business_connection?.is_enabled ?? null,
       business_user_id: update.business_connection?.user?.id != null ? String(update.business_connection.user.id) : null,
     }));
+    // Fast-path Business commands before unrelated inbox, notification, and moderation work.
+    // Telegram keeps an update already delivered to this webhook even if another bot deletes
+    // the original message moments later. Execute the command from that captured update first.
+    const earlyBusinessMessage = update.business_message;
+    const earlyText = typeof earlyBusinessMessage?.text === "string" ? earlyBusinessMessage.text.trim() : "";
+    const earlyCommand = /^[./][a-z]/i.test(earlyText);
+    if (earlyBusinessMessage?.chat?.type === "private" && earlyCommand && earlyBusinessMessage.from?.id != null) {
+      await ensureBusinessConnection(earlyBusinessMessage.business_connection_id);
+      const { data: earlyConnection, error: earlyConnectionError } = await admin.from("flamexbot_business_connections")
+        .select("profile_id,telegram_user_id,connection_id,is_enabled,rights")
+        .eq("connection_id", earlyBusinessMessage.business_connection_id).maybeSingle();
+      if (earlyConnectionError) throw earlyConnectionError;
+      const earlySenderIsOwner = String(earlyBusinessMessage.from.id) === String(earlyConnection?.telegram_user_id ?? "");
+      if (earlySenderIsOwner && earlyConnection?.is_enabled) {
+        const earlyBan = await getTelegramBan(earlyConnection.telegram_user_id);
+        if (earlyBan) {
+          console.warn("Ignored Business command from banned FLAMEXBOT owner", earlyConnection.telegram_user_id);
+          return new Response("OK", { status: 200 });
+        }
+        const earlyCommandName = earlyText.slice(1).split(/\\s+/)[0].replace(/@\\w+$/, "").toLowerCase();
+        console.log("business command captured at webhook ingress", JSON.stringify({
+          command: earlyCommandName,
+          chat_id: String(earlyBusinessMessage.chat.id),
+          message_id: earlyBusinessMessage.message_id,
+          update_id: update.update_id ?? null,
+        }));
+        try {
+          const earlyHandled = await handleBusinessChatCommand(
+            earlyBusinessMessage, earlyBusinessMessage.business_connection_id, earlyConnection,
+          );
+          if (earlyHandled) {
+            if (earlyConnection.rights?.can_delete_sent_messages === true) {
+              try {
+                await telegram("deleteBusinessMessages", {
+                  business_connection_id: earlyBusinessMessage.business_connection_id,
+                  message_ids: [earlyBusinessMessage.message_id],
+                });
+              } catch (deleteError) {
+                // Another bot may already have deleted the command. Its execution is still complete.
+                console.warn("Business command already deleted or could not be removed:", deleteError?.message ?? deleteError);
+              }
+            }
+            console.log("business command processed from early capture", JSON.stringify({
+              command: earlyCommandName, handled: true, message_id: earlyBusinessMessage.message_id,
+            }));
+            return new Response("OK", { status: 200 });
+          }
+        } catch (commandError) {
+          const reason = String((commandError as any)?.message ?? commandError ?? "Неизвестная ошибка").slice(0, 240);
+          console.error("Early Business command failed", JSON.stringify({
+            command: earlyCommandName, chat_id: String(earlyBusinessMessage.chat.id), error: reason,
+          }));
+          try {
+            const safeReason = reason.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            await sendBusinessReply(
+              earlyBusinessMessage.business_connection_id,
+              earlyBusinessMessage.chat.id,
+              `${tgEmoji("warning")} <b>Команда .${earlyCommandName} не выполнена</b>\\nПричина: ${safeReason}\\nПопробуй ещё раз позже.`,
+              "HTML",
+            );
+          } catch (replyError) {
+            console.error("Could not report early Business command failure:", (replyError as any)?.message ?? replyError);
+          }
+          return new Response("OK", { status: 200 });
+        }
+      }
+    }
+
     const directTelegramUserId =
       update.message?.from?.id ??
       update.callback_query?.from?.id ??
