@@ -71,3 +71,59 @@ button,.home-feature-card,.profile-menu-item,.chat-choice,.admin-action{-webkit-
 .subscription-channel-link,.subscription-check-button{display:flex;width:100%;min-height:48px;align-items:center;justify-content:center;gap:10px;margin-top:10px;text-decoration:none}
 .subscription-gate-card>small{display:block;margin-top:20px;color:var(--muted);font-size:11px;line-height:1.6}
 .business-status.is-unknown{background:color-mix(in srgb,#d69b36 14%,var(--panel));color:#d69b36;border:1px solid color-mix(in srgb,#d69b36 35%,transparent)}
+
+
+/* FLAMEXBOT entry and access transitions */
+.auth-visual:before{
+  content:"";position:absolute;inset:auto auto 8% 8%;width:280px;height:280px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,119,58,.17),transparent 68%);filter:blur(12px);
+  pointer-events:none;animation:fx-auth-aura 7s ease-in-out infinite alternate
+}
+.auth-visual:after{animation:fx-auth-ring 18s ease-in-out infinite alternate}
+.auth-visual .orbit-one{animation:fx-orbit-spin 18s linear infinite}
+.auth-visual .orbit-two{animation:fx-orbit-spin-reverse 24s linear infinite}
+.auth-visual .flame{animation:fx-flame-float 3.2s ease-in-out infinite,fx-flame-glow 3.8s ease-in-out infinite}
+.auth-visual .visual-copy{animation:fx-auth-copy .75s cubic-bezier(.2,.75,.25,1) both}
+.auth-panel .auth-card{animation:fx-auth-card .7s cubic-bezier(.2,.75,.25,1) both}
+.auth-card .eyebrow{animation:fx-auth-copy .6s .08s both}
+.auth-card h2{animation:fx-auth-copy .65s .13s both}
+.auth-card>.muted{animation:fx-auth-copy .65s .2s both}
+.telegram-login{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease,background .2s ease}
+.telegram-login:not(:disabled):hover{transform:translateY(-2px);border-color:#4d8ac2;box-shadow:0 10px 26px rgba(36,116,190,.18)}
+.telegram-login:not(:disabled):active{transform:translateY(0) scale(.99)}
+.telegram-login:disabled{opacity:.7;cursor:wait}
+.telegram-login.is-loading{box-shadow:0 0 0 3px rgba(75,151,223,.08)}
+.auth-button-spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(225,242,255,.25);border-top-color:#8bc9ff;border-radius:50%;animation:fx-spinner .72s linear infinite}
+.subscription-gate{position:relative;isolation:isolate;overflow:hidden}
+.subscription-gate:before,.subscription-gate:after{content:"";position:absolute;z-index:-1;border-radius:50%;pointer-events:none}
+.subscription-gate:before{width:380px;height:380px;top:-190px;right:-130px;background:radial-gradient(circle,rgba(255,126,63,.16),transparent 68%);animation:fx-gate-aura 8s ease-in-out infinite alternate}
+.subscription-gate:after{width:300px;height:300px;bottom:-170px;left:-110px;background:radial-gradient(circle,rgba(74,146,255,.10),transparent 70%);animation:fx-gate-aura 10s ease-in-out infinite alternate-reverse}
+.subscription-gate-card{animation:fx-auth-card .55s cubic-bezier(.2,.75,.25,1) both}
+.subscription-gate-mark{animation:fx-flame-float 3.4s ease-in-out infinite,fx-gate-mark-glow 4s ease-in-out infinite}
+.subscription-channel-link,.subscription-check-button{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.subscription-channel-link:hover,.subscription-check-button:hover{transform:translateY(-1px)}
+.subscription-channel-link:active,.subscription-check-button:active{transform:scale(.99)}
+.app-boot-loading .loader-mark{animation:fx-loader-enter .5s cubic-bezier(.2,.75,.25,1) both}
+@keyframes fx-auth-aura{from{transform:translate3d(-12px,8px,0) scale(.9);opacity:.55}to{transform:translate3d(26px,-14px,0) scale(1.13);opacity:1}}
+@keyframes fx-auth-ring{from{transform:translate3d(0,-8px,0) scale(.94);opacity:.65}to{transform:translate3d(-24px,12px,0) scale(1.05);opacity:1}}
+@keyframes fx-orbit-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes fx-orbit-spin-reverse{from{transform:rotate(-25deg)}to{transform:rotate(-385deg)}}
+@keyframes fx-flame-float{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.035)}}
+@keyframes fx-flame-glow{0%,100%{filter:drop-shadow(0 0 18px rgba(255,106,50,.45))}50%{filter:drop-shadow(0 0 32px rgba(255,135,65,.82))}}
+@keyframes fx-auth-copy{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fx-auth-card{from{opacity:0;transform:translateY(18px) scale(.985);filter:blur(5px)}to{opacity:1;transform:none;filter:none}}
+@keyframes fx-spinner{to{transform:rotate(360deg)}}
+@keyframes fx-gate-aura{from{transform:scale(.9);opacity:.5}to{transform:scale(1.15);opacity:1}}
+@keyframes fx-gate-mark-glow{0%,100%{box-shadow:0 8px 24px rgba(255,125,65,.08)}50%{box-shadow:0 10px 34px rgba(255,125,65,.22)}}
+@keyframes fx-loader-enter{from{opacity:0;transform:scale(.86) rotate(-8deg)}to{opacity:1;transform:none}}
+@media(max-width:720px){
+  .auth-visual:before{width:180px;height:180px;left:-45px;bottom:4%}
+  .auth-visual:after{width:330px;height:330px;right:-190px}
+}
+@media(prefers-reduced-motion:reduce){
+  .auth-visual:before,.auth-visual:after,.auth-visual .orbit-one,.auth-visual .orbit-two,
+  .auth-visual .flame,.auth-visual .visual-copy,.auth-panel .auth-card,.auth-card .eyebrow,
+  .auth-card h2,.auth-card>.muted,.subscription-gate:before,.subscription-gate:after,
+  .subscription-gate-card,.subscription-gate-mark,.app-boot-loading .loader-mark{animation:none!important}
+  .auth-button-spinner{animation-duration:1.2s}
+}
