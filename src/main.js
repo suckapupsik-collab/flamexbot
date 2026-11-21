@@ -91,9 +91,15 @@ const formatMskTime = (value = new Date()) => new Intl.DateTimeFormat('ru-RU',{t
 const formatMskDateTime = (value,options={day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) => new Intl.DateTimeFormat('ru-RU',{...options,timeZone:'Europe/Moscow'}).format(new Date(value));
 
 async function checkRequiredAppAccess() {
+  const session = state.session;
   const initData = window.Telegram?.WebApp?.initData;
-  if (!initData) return { ok: false, reason: "telegram_required", error: "Открой FLAMEXBOT через Telegram Mini App." };
-  const { data, error } = await supabase.functions.invoke("flamexbot-access-check", { body: { initData } });
+  if (!session?.access_token && !initData) {
+    return { ok: false, reason: "telegram_required", error: "Открой FLAMEXBOT через Telegram Mini App." };
+  }
+  const options = session?.access_token
+    ? { body: {}, headers: { Authorization: `Bearer ${session.access_token}` } }
+    : { body: { initData } };
+  const { data, error } = await supabase.functions.invoke("flamexbot-access-check", options);
   if (error) {
     let details = null;
     try { details = await error.context?.json?.(); } catch {}
@@ -104,8 +110,8 @@ async function checkRequiredAppAccess() {
 
 function renderSubscriptionGate(access = {}) {
   const telegramRequired = access.reason === "telegram_required";
-  const technicalError = access.reason === "membership_check_unavailable" || access.reason === "configuration_error" || access.ok === false;
-  const headline = telegramRequired ? "Открой Mini App в Telegram" : "Подписка обязательна";
+  const technicalError = access.reason === "membership_check_unavailable" || access.reason === "configuration_error" || access.reason === "invalid_telegram_data" || access.ok === false;
+  const headline = telegramRequired ? "Открой Mini App в Telegram" : technicalError ? "Не удалось проверить доступ" : "Подписка обязательна";
   const description = telegramRequired
     ? "FLAMEXBOT работает только внутри Telegram Mini App. Открой приложение кнопкой в боте."
     : technicalError
@@ -171,7 +177,8 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
       token_hash: data.token_hash,
       type: 'magiclink',
     });
-    if (authError) throw authError;
+    if (authError) throw new Error('Telegram подтвердил аккаунт, но Supabase не завершил вход: ' + (authError.message || 'ошибка проверки токена'));
+    if (!authData.session) throw new Error('Supabase не вернул активную сессию. Закрой и заново открой FLAMEXBOT из Telegram.');
     await boot(authData.session);
   } catch (error) {
     const target = document.querySelector('#auth-error');
@@ -395,6 +402,12 @@ async function loadPage() {
       state.blockedReason = 'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.';
       await supabase.auth.signOut();
       renderBlockedScreen();
+      return;
+    }
+    if (access.reason === 'invalid_session') {
+      await supabase.auth.signOut();
+      state.session = null;
+      renderAuth({ registration: true });
       return;
     }
     if (access.subscribed !== true) { renderSubscriptionGate(access); return; }
@@ -3236,6 +3249,12 @@ async function boot(session) {
     state.blockedReason = 'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.';
     if (session) await supabase.auth.signOut();
     renderBlockedScreen();
+    return;
+  }
+  if (access.reason === 'invalid_session' && session) {
+    await supabase.auth.signOut();
+    state.session = null;
+    renderAuth({ registration: true });
     return;
   }
   if (access.subscribed !== true) { renderSubscriptionGate(access); return; }
