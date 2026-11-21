@@ -55,8 +55,11 @@ async function verifyTelegramInitData(initData: string, botToken: string) {
   if (!constantTimeEqual(expected, receivedHash.toLowerCase())) throw new Error("Подпись Telegram недействительна.");
   const authDate = Number(params.get("auth_date"));
   const now = Math.floor(Date.now() / 1000);
-  if (!Number.isFinite(authDate) || authDate > now + 60 || now - authDate > 300) {
-    throw new Error("Данные Telegram устарели. Перезапусти мини-приложение.");
+  // A user can take more than five minutes to complete login inside the Mini App.
+  // The signed payload is still protected by Telegram HMAC and this endpoint also
+  // reserves its hash once to prevent the same auth payload from being replayed.
+  if (!Number.isFinite(authDate) || authDate > now + 300 || now - authDate > 24 * 60 * 60) {
+    throw new Error("Данные Telegram устарели. Закрой и заново открой Mini App.");
   }
   const rawUser = params.get("user");
   if (!rawUser) throw new Error("Telegram не передал данные пользователя.");
@@ -106,7 +109,6 @@ Deno.serve(async (req: Request) => {
       telegram_id: telegramId,
       telegram_username: telegramUsername,
       telegram_photo_url: photoUrl,
-      ...(telegramUsername ? { username: telegramUsername } : {}),
       display_name: displayName || "Пользователь Telegram",
       avatar_url: photoUrl,
       updated_at: new Date().toISOString(),
@@ -129,12 +131,19 @@ Deno.serve(async (req: Request) => {
 
     if (userId) {
       const { data: moderation, error: moderationError } = await admin.from("profiles")
-        .select("is_banned,ban_reason").eq("id", userId).maybeSingle();
+        .select("is_banned,ban_reason,username").eq("id", userId).maybeSingle();
       if (moderationError) throw moderationError;
       if (moderation?.is_banned) {
         return response({ error: moderation.ban_reason || "Этот аккаунт заблокирован администрацией FLAMEXBOT." }, 403);
       }
-      const { error } = await admin.from("profiles").update(profileUpdate).eq("id", userId);
+      let profileUsername = telegramUsername || moderation?.username || `tg_${telegramId}`;
+      if (telegramUsername) {
+        const { data: usernameOwner, error: usernameLookupError } = await admin.from("profiles")
+          .select("id").eq("username", telegramUsername).maybeSingle();
+        if (usernameLookupError) throw usernameLookupError;
+        if (usernameOwner && usernameOwner.id !== userId) profileUsername = moderation?.username || `tg_${telegramId}`;
+      }
+      const { error } = await admin.from("profiles").update({ ...profileUpdate, username: profileUsername }).eq("id", userId);
       if (error) {
         if (error.code === "23505") return response({ error: "Этот Telegram уже привязан к другому аккаунту." }, 409);
         throw error;
@@ -143,6 +152,7 @@ Deno.serve(async (req: Request) => {
         user_metadata: {
           telegram_id: telegramId,
           telegram_username: telegramUsername,
+          username: profileUsername,
           full_name: displayName || "Пользователь Telegram",
           name: displayName || "Пользователь Telegram",
           avatar_url: photoUrl || "",
@@ -150,12 +160,20 @@ Deno.serve(async (req: Request) => {
         },
       });
     } else {
+      let profileUsername = telegramUsername || `tg_${telegramId}`;
+      if (telegramUsername) {
+        const { data: usernameOwner, error: usernameLookupError } = await admin.from("profiles")
+          .select("id").eq("username", telegramUsername).maybeSingle();
+        if (usernameLookupError) throw usernameLookupError;
+        if (usernameOwner) profileUsername = `tg_${telegramId}`;
+      }
       const syntheticEmail = `tg-${telegramId}@telegram.flamexbot.invalid`;
       const { data, error } = await admin.auth.admin.createUser({
         email: syntheticEmail,
         password: `${crypto.randomUUID()}-Aa9!`,
         email_confirm: true,
         user_metadata: {
+          username: profileUsername,
           full_name: displayName || "Пользователь Telegram",
           name: displayName || "Пользователь Telegram",
           avatar_url: photoUrl || "",
@@ -168,7 +186,7 @@ Deno.serve(async (req: Request) => {
       userId = data.user.id;
       const { error: profileError } = await admin.from("profiles").update({
         ...profileUpdate,
-        username: telegramUsername || `tg_${telegramId}`,
+        username: profileUsername,
       }).eq("id", userId);
       if (profileError) {
         const { error: rollbackError } = await admin.auth.admin.deleteUser(userId);
