@@ -19,7 +19,7 @@ function padMarkup(len) {
 }
 
 /** Keypad driver. onSubmit(pin) must resolve true when accepted (pad stays), anything else clears the input. */
-function bindPad(root, { min = 4, max = 8, onSubmit }) {
+export function bindPad(root, { min = 4, max = 8, onSubmit }) {
   let value = '';
   const dotsEl = root.querySelector('.pin-dots');
   const render = () => {
@@ -27,11 +27,20 @@ function bindPad(root, { min = 4, max = 8, onSubmit }) {
     dotsEl.innerHTML = Array.from({ length: slots }, (_, i) => `<i class="${i < value.length ? 'on' : ''}"></i>`).join('');
   };
   const submit = async () => {
-    if (root.dataset.busy === '1' || value.length < min) return;
+    if (root.dataset.busy === '1' || value.length < min) return false;
     root.dataset.busy = '1';
-    const res = await onSubmit(value);
-    root.dataset.busy = '0';
+    let res = false;
+    try {
+      res = await onSubmit(value);
+    } catch {
+      const errorEl = root.querySelector('.pin-error');
+      if (errorEl) errorEl.textContent = 'Не удалось проверить PIN. Попробуй ещё раз.';
+      haptic('error');
+    } finally {
+      root.dataset.busy = '0';
+    }
     if (res !== true) { value = ''; render(); }
+    return res === true;
   };
   const press = async k => {
     if (root.dataset.busy === '1') return;
