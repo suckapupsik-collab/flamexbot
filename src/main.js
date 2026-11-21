@@ -32,16 +32,23 @@ async function checkPin(id,pin){try{const v=JSON.parse(localStorage.getItem(pinK
 async function gatePin(session){return gatePinV2({app,session,pinKey,unlockKey:pinUnlockKey,checkPin,onSignOut:()=>supabase.auth.signOut()});}
 
 async function fetchBusinessConnectionForProfile(profile){
-  if(!profile?.id)return {data:null,error:null};
-  let result=await supabase.from('flamexbot_business_connections')
+  if(!profile?.id)return {data:null,error:null,live:false};
+  const live=await checkLiveBusiness(supabase,profile.id);
+  if(live?.live===true){
+    return {data:{
+      is_enabled:live.connected===true,rights:live.rights||{},connected_at:live.connected_at||null,
+      updated_at:new Date().toISOString(),connection_id:null,telegram_user_id:profile.telegram_id||null
+    },error:null,live:true};
+  }
+  let cached=await supabase.from('flamexbot_business_connections')
     .select('is_enabled,rights,connected_at,updated_at,reconnected_welcome_pending,connection_id,telegram_user_id')
     .eq('profile_id',profile.id).maybeSingle();
-  if(!result.data&&!result.error&&profile.telegram_id){
-    result=await supabase.from('flamexbot_business_connections')
+  if(!cached.data&&!cached.error&&profile.telegram_id){
+    cached=await supabase.from('flamexbot_business_connections')
       .select('is_enabled,rights,connected_at,updated_at,reconnected_welcome_pending,connection_id,telegram_user_id')
       .eq('telegram_user_id',String(profile.telegram_id)).maybeSingle();
   }
-  return result;
+  return {data:cached.data||null,error:live?.error?new Error(live.error):cached.error||new Error('Telegram не подтвердил статус Business-подключения.'),live:false};
 }
 
 
@@ -422,9 +429,10 @@ async function loadPage() {
       const referralCode=referralLinkData?.code||null;
       const {data:homeBusinessConnection,error:homeBusinessError}=await fetchBusinessConnectionForProfile(p);
       state.businessConnection=homeBusinessConnection||null;
-      const homeBusinessConnected=Boolean(homeBusinessConnection?.is_enabled);
+      const homeBusinessConnected=Boolean(homeBusinessConnection?.is_enabled)&&!homeBusinessError;
+      const homeBusinessUnknown=Boolean(homeBusinessError);
       host.innerHTML=`<div class="welcome-row"><div><div class="eyebrow">ТВОЙ FLAMEXBOT</div><h1>С возвращением, ${esc(p.display_name||p.username||'друг')} ${verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false)} ${badgeMarkup(state.profileBadges,true)}</h1><p class="muted">Твои люди, огоньки, достижения и новые возможности — в одном пространстве.</p></div><div class="date-chip"><span>✦</span> ${formatMskDate(new Date(),{day:'numeric',month:'long',weekday:'long'})}</div></div>
-        <div class="home-status-line ${homeBusinessConnected?'is-connected':'is-disconnected'}"><span class="status-dot"></span><span>${homeBusinessConnected?'Telegram Business подключён':'Telegram Business не подключён'}</span>${homeBusinessConnected?'<button type="button" data-go="profile">Настройки</button>':'<a href="https://t.me/Flamexgame?start=connect_guide" target="_blank" rel="noopener">Подключить</a>'}</div>
+        <div class="home-status-line ${homeBusinessConnected?'is-connected':'is-disconnected'}"><span class="status-dot"></span><span>${homeBusinessConnected?'Telegram Business подключён':homeBusinessUnknown?'Не удалось подтвердить статус Telegram Business':'Telegram Business не подключён'}</span>${homeBusinessConnected?'<button type="button" data-go="profile">Настройки</button>':'<button type="button" data-go="profile">'+(homeBusinessUnknown?'Повторить проверку':'Подключить')+'</button>'}</div>
         <div class="hero-card"><div class="hero-copy"><div class="eyebrow">ТВОЯ ИСТОРИЯ ПРОДОЛЖАЕТСЯ</div><h2>Больше общения.<br/><em>Больше огня.</em></h2><p>Поддерживай связь с близкими, открывай достижения и собирай свою историю в FLAMEXBOT.</p><button class="primary" data-go="messages">Открыть переписки <b>→</b></button></div><div class="hero-fire"><span class="hero-fire-core">🔥</span><span class="fire-glow"></span><span class="fire-orbit fire-orbit-a"></span><span class="fire-orbit fire-orbit-b"></span></div><div class="hero-watermark">FLAME</div></div>
         <div class="stats-grid"><div class="stat-card"><span class="stat-icon">✧</span><small>ТВОЙ ТАРИФ</small><strong>${planLabel()}</strong><span class="stat-foot">Твои возможности</span></div><div class="stat-card"><span class="stat-icon">🔥</span><small>АКТИВНЫЕ ОГОНЬКИ</small><strong>${state.streaks.filter(s=>effectiveStreakDays(s)>0).length}</strong><span class="stat-foot">Общие серии</span></div><div class="stat-card"><span class="stat-icon">🏆</span><small>ДОСТИЖЕНИЯ</small><strong>${earned.count||0}</strong><span class="stat-foot">Открытые награды</span></div></div>
         <section class="home-referral-card">
@@ -2152,7 +2160,8 @@ async function renderProfile(host) {
   const p = state.profile || {}; const profileAvatar = p.avatar_url || p.telegram_photo_url;
   const {data:businessConnection,error:businessError}=await fetchBusinessConnectionForProfile(p);
   state.businessConnection = businessConnection || null;
-  const businessConnected = Boolean(businessConnection?.is_enabled);
+  const businessConnected = Boolean(businessConnection?.is_enabled) && !businessError;
+  const businessUnknown = Boolean(businessError);
   const rights = businessConnection?.rights || {};
   const grantedRights = Object.entries(rights).filter(([, value]) => value === true).map(([key]) => key);
   host.innerHTML = `<div class="page-heading"><div class="eyebrow">ТВОЙ АККАУНТ</div><h1>Профиль ${verifiedMarkMarkup((isFounderProfile(p)||state.profileBadges.includes('verified'))&&p.show_badges!==false)}</h1><div class="profile-badge-row">${badgeMarkup(state.profileBadges)}</div><p class="muted">Управляй именем, оформлением, значками и подключением Telegram Business.</p></div>
@@ -2168,13 +2177,13 @@ async function renderProfile(host) {
       <button class="primary">Сохранить изменения <b>→</b></button>
     </form>
     <section class="business-card">
-      <div class="business-card-head"><div><div class="eyebrow">ПОДКЛЮЧЕНИЕ TELEGRAM</div><h2>Telegram Business</h2><p class="muted">Подключи Telegram Business и выбери разрешения, с которыми FLAMEXBOT сможет работать в твоих диалогах.</p></div><span class="business-status ${businessConnected ? 'is-connected' : ''}">${businessConnected ? 'Активен' : 'Неактивен'}</span></div>
+      <div class="business-card-head"><div><div class="eyebrow">ПОДКЛЮЧЕНИЕ TELEGRAM</div><h2>Telegram Business</h2><p class="muted">Подключи Telegram Business и выбери разрешения, с которыми FLAMEXBOT сможет работать в твоих диалогах.</p></div><span class="business-status ${businessConnected ? 'is-connected' : businessUnknown ? 'is-unknown' : ''}">${businessConnected ? 'Активен' : businessUnknown ? 'Не удалось проверить' : 'Неактивен'}</span></div>
       <div class="business-steps">
         <div><b>1.</b><span>В Telegram открой <strong>Настройки → Telegram Business → Чат-боты</strong>.</span></div>
         <div><b>2.</b><span>Добавь FLAMEXBOT и самостоятельно выбери, к каким диалогам и данным открыть доступ.</span></div>
       </div>
       <div class="business-connection-info">
-        ${businessConnected ? `<b>Бот активен</b><small>Подключено: ${businessConnection.connected_at ? formatMskDateTime(businessConnection.connected_at,{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small><div class="right-chips">${renderRightsChips(rights)}</div>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
+        ${businessUnknown ? '<b>Telegram пока не подтвердил состояние подключения</b><small>Отображаемый сохранённый статус не считается актуальным. Нажми «Проверить подключение».</small>' : businessConnected ? `<b>Бот активен</b><small>Подключено: ${businessConnection.connected_at ? formatMskDateTime(businessConnection.connected_at,{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small><div class="right-chips">${renderRightsChips(rights)}</div>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
       </div>
       ${businessError ? '<p class="business-warning">Не удалось получить статус подключения. Проверь Telegram Business и попробуй ещё раз.</p>' : ''}
       <button class="outline small" type="button" id="refresh-business">↻ Проверить подключение</button>
