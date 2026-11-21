@@ -58,7 +58,7 @@ export function bindPad(root, { min = 4, max = 8, onSubmit }) {
   };
   document.addEventListener('keydown', keyHandler);
   render();
-  return { submit, dispose: () => document.removeEventListener('keydown', keyHandler) };
+  return { submit, press, dispose: () => document.removeEventListener('keydown', keyHandler) };
 }
 
 export function gatePin({ app, session, pinKey, unlockKey, checkPin, onSignOut }) {
