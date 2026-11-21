@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import './style.css';
 import './pin-enhance.css';
 import { gatePin as gatePinV2, promptPinSetup, promptPinVerify } from './features/pin.js';
+import { loadBusinessStatuses, checkLiveBusiness, rightsChips, grantedRights } from './features/status.js';
 import { createWheel, buildSectors, findSector, confetti } from './features/wheel.js';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -19,17 +20,7 @@ const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
 let toastTimer = null;
 const toast = message => { const el = document.querySelector('.toast'); if (!el) return; clearTimeout(toastTimer); el.textContent = String(message || ''); el.classList.toggle('show', Boolean(message)); if (!message) return; toastTimer = setTimeout(() => { el.classList.remove('show'); el.textContent = ''; }, 3000); };
 const applyTheme = theme => { document.documentElement.dataset.theme = ['orange','blue','green','red','violet'].includes(theme) ? theme : 'orange'; };
-const RIGHT_LABELS = {
-  can_reply:'Отвечать на сообщения',can_read_messages:'Читать сообщения',can_delete_sent_messages:'Удалять отправленные',
-  can_delete_all_messages:'Удалять все сообщения',can_edit_name:'Менять имя',can_edit_bio:'Менять описание',
-  can_edit_profile_photo:'Менять фото',can_edit_username:'Менять username',can_change_gift_settings:'Настройки подарков',
-  can_view_gifts_and_stars:'Видеть подарки и Stars',can_convert_gifts_to_stars:'Конвертировать подарки',
-  can_transfer_and_upgrade_gifts:'Передавать подарки',can_transfer_stars:'Переводить Stars',can_manage_stories:'Управлять историями'
-};
-const rightsChips = rights => {
-  const granted=Object.entries(rights||{}).filter(([,value])=>value===true).map(([key])=>key);
-  return granted.length?granted.map(key=>'<span class="right-chip">'+esc(RIGHT_LABELS[key]||key.replace(/^can_/,'').replace(/_/g,' '))+'</span>').join(''):'<span class="right-chip is-empty">Права не выданы</span>';
-};
+const renderRightsChips = rightsChips;
 const avatarHue = name => { let h=0; for(const c of String(name||'F')) h=(h*31+c.charCodeAt(0))%360; return h; };
 const avatarFallback = (name,size='') => `<span class="avatar avatar-fallback ${size}" style="--ah:${avatarHue(name)}" aria-label="Аватар пользователя">${esc((name||'F').trim().slice(0,1).toUpperCase())}</span>`;
 const avatar = (url,name,size='') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.insertAdjacentHTML('afterend',this.dataset.fb);this.remove()" data-fb="${esc(avatarFallback(name,size))}" />` : avatarFallback(name,size);
@@ -1457,12 +1448,9 @@ async function renderUsers(host) {
     p_search:filters.search||null,p_verified:filters.verified,p_premium:filters.premium,p_banned:filters.banned,p_limit:50,p_offset:filters.offset||0
   });
   const users=data||[];
-  const userIds=users.map(user=>user.id).filter(Boolean);
-  const {data:connectionRows,error:connectionError}=userIds.length
-    ?await supabase.rpc('admin_get_flamexbot_business_status',{p_user_ids:userIds})
-    :{data:[],error:null};
-  if(connectionError)console.warn('Admin Business status:',connectionError.message);
-  const connectionMap=new Map((connectionRows||[]).map(connection=>[connection.profile_id,connection]));
+  let connectionMap=new Map();
+  try { connectionMap=await loadBusinessStatuses(supabase,users); }
+  catch(connectionError){ console.warn('Admin Business status:',connectionError.message); }
   users.forEach(user=>{user.business_status=connectionMap.get(user.id)||null;user.business_connected=user.business_status?.is_enabled===true;});
   const actorOwner=state.session.user.id===FOUNDER_PROFILE_ID;
   const total=users[0]?.total_count||0;
@@ -2121,7 +2109,7 @@ async function renderProfile(host) {
         <div><b>2.</b><span>Добавь FLAMEXBOT и самостоятельно выбери, к каким диалогам и данным открыть доступ.</span></div>
       </div>
       <div class="business-connection-info">
-        ${businessConnected ? `<b>Бот активен</b><small>Подключено: ${businessConnection.connected_at ? formatMskDateTime(businessConnection.connected_at,{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small><div class="right-chips">${rightsChips(rights)}</div>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
+        ${businessConnected ? `<b>Бот активен</b><small>Подключено: ${businessConnection.connected_at ? formatMskDateTime(businessConnection.connected_at,{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'дата не указана'}</small><small>Выдано разрешений: ${grantedRights.length}</small><div class="right-chips">${renderRightsChips(rights)}</div>` : '<b>Ожидаем подтверждения</b><small>После подтверждения подключения Telegram статус появится здесь автоматически.</small>'}
       </div>
       ${businessError ? '<p class="business-warning">Не удалось получить статус подключения. Проверь Telegram Business и попробуй ещё раз.</p>' : ''}
       <button class="outline small" type="button" id="refresh-business">↻ Проверить подключение</button>
@@ -2134,10 +2122,10 @@ async function renderProfile(host) {
   document.querySelector('#refresh-business').addEventListener('click', async e => {
     const btn=e.currentTarget;btn.disabled=true;btn.textContent='Проверяем в Telegram…';
     try {
-      const {data:live,error:liveError}=await supabase.functions.invoke('flamexbot-business-status',{body:{profile_id:state.session.user.id}});
-      if(liveError||live?.error)throw new Error(live?.error||liveError?.message||'Telegram временно недоступен');
-      state.businessConnection={is_enabled:live.connected===true,rights:live.rights||{},connected_at:live.connected_at||null,updated_at:new Date().toISOString()};
-      toast(live.connected?'✅ Telegram Business подключён':'Подключение отключено в Telegram');
+      const live=await checkLiveBusiness(supabase,state.session.user.id);
+      if(!live.ok&&!live.cached)throw new Error(live.error||'Telegram временно недоступен');
+      state.businessConnection={is_enabled:live.connected===true,rights:live.rights||{},connected_at:live.connected_at||null,updated_at:live.updated_at||new Date().toISOString()};
+      toast(live.live?(live.connected?'✅ Telegram Business подключён':'Подключение отключено в Telegram'):'Показан сохранённый статус: Telegram временно недоступен');
     } catch(error) {
       const {data:cached, error:cacheError}=await supabase.from('flamexbot_business_connections').select('is_enabled,rights,connected_at,updated_at').eq('profile_id',state.session.user.id).maybeSingle();
       state.businessConnection=cached||null;
