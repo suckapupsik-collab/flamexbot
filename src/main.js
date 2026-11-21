@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
+import { gatePin as gatePinV2, promptPinSetup, promptPinVerify } from './features/pin.js';
+import { createWheel, buildSectors, findSector, confetti } from './features/wheel.js';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -16,12 +18,14 @@ const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
 let toastTimer = null;
 const toast = message => { const el = document.querySelector('.toast'); if (!el) return; clearTimeout(toastTimer); el.textContent = String(message || ''); el.classList.toggle('show', Boolean(message)); if (!message) return; toastTimer = setTimeout(() => { el.classList.remove('show'); el.textContent = ''; }, 3000); };
 const applyTheme = theme => { document.documentElement.dataset.theme = ['orange','blue','green','red','violet'].includes(theme) ? theme : 'orange'; };
-const avatar = (url, name, size = '') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'avatar avatar-fallback ${size}',textContent:'👤',ariaLabel:'Аватар пользователя'}))" />` : `<span class="avatar avatar-fallback ${size}" aria-label="Аватар пользователя">👤</span>`;
+const avatarHue = name => { let h=0; for(const c of String(name||'F')) h=(h*31+c.charCodeAt(0))%360; return h; };
+const avatarFallback = (name,size='') => `<span class="avatar avatar-fallback ${size}" style="--ah:${avatarHue(name)}" aria-label="Аватар пользователя">${esc((name||'F').trim().slice(0,1).toUpperCase())}</span>`;
+const avatar = (url,name,size='') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.insertAdjacentHTML('afterend',this.dataset.fb);this.remove()" data-fb="${esc(avatarFallback(name,size))}" />` : avatarFallback(name,size);
 const pinKey=id=>'flamexbot.pin.v1.'+id, pinUnlockKey=id=>'flamexbot.pin.unlock.'+id;
 async function pinHash(pin,salt){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:150000,hash:'SHA-256'},key,256);return [...new Uint8Array(bits)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function setPin(id,pin){const salt=crypto.getRandomValues(new Uint8Array(16));localStorage.setItem(pinKey(id),JSON.stringify({salt:btoa(String.fromCharCode(...salt)),hash:await pinHash(pin,salt)}));}
 async function checkPin(id,pin){try{const v=JSON.parse(localStorage.getItem(pinKey(id))||'null');if(!v)return false;return await pinHash(pin,Uint8Array.from(atob(v.salt),c=>c.charCodeAt(0)))===v.hash;}catch{return false;}}
-async function gatePin(session){const id=session?.user?.id;if(!id||!localStorage.getItem(pinKey(id))||sessionStorage.getItem(pinUnlockKey(id))==='1')return true;return new Promise(resolve=>{app.innerHTML='<main class="auth-shell"><section class="auth-panel" style="display:grid;place-items:center;min-height:70vh"><div class="auth-card pin-gate-card"><div class="pin-gate-orbit"><span>✦</span><i></i><b></b></div><div class="eyebrow">FLAMEXBOT SECURITY</div><h2>Добро пожаловать обратно</h2><p class="muted">Разблокируйте FLAMEXBOT</p><form id="pin-gate"><label>PIN-код<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" required /></label><button class="primary full">Войти</button></form><p id="pin-error" class="auth-error"></p><button id="pin-exit" class="outline small" type="button">Выйти</button></div></section></main>';document.querySelector('#pin-gate').addEventListener('submit',async e=>{e.preventDefault();if(await checkPin(id,new FormData(e.currentTarget).get('pin'))){sessionStorage.setItem(pinUnlockKey(id),'1');const panel=document.querySelector('.pin-gate-card');panel?.classList.add('is-unlocked');setTimeout(()=>resolve(true),260);}else {const panel=document.querySelector('.pin-gate-card');panel?.classList.remove('is-shaking');void panel?.offsetWidth;panel?.classList.add('is-shaking');document.querySelector('#pin-error').textContent='Неверный PIN-код. Попробуй ещё раз.';}});document.querySelector('#pin-exit').addEventListener('click',async()=>{await supabase.auth.signOut();resolve(false);});});}
+async function gatePin(session){return gatePinV2({app,session,pinKey,unlockKey:pinUnlockKey,checkPin,onSignOut:()=>supabase.auth.signOut()});}
 
 async function fetchBusinessConnectionForProfile(profile){
   if(!profile?.id)return {data:null,error:null};
@@ -1446,8 +1450,8 @@ async function renderUsers(host) {
     ?await supabase.rpc('admin_get_flamexbot_business_status',{p_user_ids:userIds})
     :{data:[],error:null};
   if(connectionError)console.warn('Admin Business status:',connectionError.message);
-  const connectionMap=new Map((connectionRows||[]).map(connection=>[connection.profile_id,Boolean(connection.is_enabled)]));
-  users.forEach(user=>{user.business_connected=connectionMap.get(user.id)===true;});
+  const connectionMap=new Map((connectionRows||[]).map(connection=>[connection.profile_id,connection]));
+  users.forEach(user=>{user.business_status=connectionMap.get(user.id)||null;user.business_connected=user.business_status?.is_enabled===true;});
   const actorOwner=state.session.user.id===FOUNDER_PROFILE_ID;
   const total=users[0]?.total_count||0;
   const roleOptions=[
@@ -1475,7 +1479,7 @@ async function renderUsers(host) {
       const currentRole=badges.find(code=>code!=='premium'&&code!=='verified')||'';
       const display=u.display_name||u.username||'Пользователь';
       return `<article class="admin-user-card" data-user-card="${u.id}">
-        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':u.business_connected?'<span class="user-flag active">● Business подключён</span>':'<span class="user-flag free">○ Business не подключён</span>'}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
+        <div class="admin-user-main"><div class="admin-user-avatar">${avatar(u.avatar_url||u.telegram_photo_url,display,'avatar-lg')}</div><div class="admin-user-identity"><div class="admin-user-name"><b>${esc(display)}${verifiedMarkMarkup(Boolean(u.is_verified)||owner)}</b>${badgeMarkup(badges,false,false)}</div><small>${u.telegram_username?'@'+esc(u.telegram_username):'Telegram не привязан'} · ${u.telegram_id?'ID '+esc(u.telegram_id):'Web-аккаунт'}</small><small>В FLAMEXBOT с ${formatMskDate(u.created_at)}</small></div><div class="admin-user-flags">${u.is_banned?'<span class="user-flag banned">⛔ Заблокирован</span>':u.business_connected?'<span class="user-flag active" title="Обновлено: '+(u.business_status?.updated_at?formatMskDateTime(u.business_status.updated_at):'—')+'">● Business подключён</span>':(u.business_status?'<span class="user-flag banned" title="Подключение отключено в Telegram">⊘ Business отключён</span>':'<span class="user-flag free">○ Business не подключён</span>')}${u.is_premium?'<span class="user-flag premium">✦ Premium</span>':'<span class="user-flag free">Free</span>'}</div></div>
         <div class="admin-user-actions">
           <button class="admin-action" data-admin-open="${u.id}">Открыть управление →</button><button class="admin-action" data-admin-message="${u.id}" ${u.telegram_id?"":"disabled title=\"Telegram не привязан\""}>✉ Написать</button>
           <button class="admin-action ${u.is_verified?'verified':''}" data-user-action="${u.is_verified?'unverify':'verify'}" data-user-id="${u.id}" ${locked?'disabled':''}>${u.is_verified?'🔵 Снять галочку':'🔵 Выдать галочку'}</button>
@@ -1566,26 +1570,14 @@ async function renderAdminUser(host) {
 
 
 
-function animateFortuneWheel(prizeType) {
- const wheel=document.querySelector('#fortune-wheel');
- if(!wheel)return Promise.resolve();
- const centers={free_spin:36,addon:108,premium_7d:180,premium_30d:252,premium_90d:324,coins_10:36,coins_50:108,coins_100:180,coins_250:252,premium_day:180};
- if(!Object.prototype.hasOwnProperty.call(centers,prizeType))return Promise.resolve(false);
- const target=centers[prizeType];
- if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
-   wheel.style.transform='rotate('+((360-target)%360)+'deg)';
-   return Promise.resolve();
- }
- wheel.style.transition='none';
- wheel.style.transform='rotate(0deg)';
- void wheel.offsetWidth;
- return new Promise(resolve=>{
-   requestAnimationFrame(()=>{
-     wheel.style.transition='transform 5.1s cubic-bezier(.12,.78,.12,1)';
-     wheel.style.transform='rotate('+(360*6-target)+'deg)';
-   });
-   window.setTimeout(resolve,5250);
- });
+let activeFortuneWheel = null;
+async function animateFortuneWheel(prize) {
+ const result = typeof prize === 'string' ? { prize_type: prize } : (prize || {});
+ const index = findSector(activeFortuneWheel?.sectors || [], result);
+ if (index < 0) { activeFortuneWheel?.stopWaiting(); console.warn('No visual sector for won prize:', result); return false; }
+ await activeFortuneWheel.spinTo(index);
+ confetti(document.querySelector('#wheel-host'));
+ return true;
 }
 
 async function renderTariffs(host, initialTab='premium') {
@@ -1678,18 +1670,7 @@ async function renderTariffs(host, initialTab='premium') {
   </section>
   <section class="business-card wheel-card">
    <div class="eyebrow">LUCKY SPIN</div><h2>🎡 Колесо фортуны</h2>
-   <div class="fortune-wheel-stage" aria-label="Колесо фортуны">
-    <span class="fortune-wheel-pointer">▼</span>
-    <div class="fortune-wheel" id="fortune-wheel">
-     <span class="wheel-prize wheel-prize-spin">🎁</span>
-     <span class="wheel-prize wheel-prize-addon">🛡️</span>
-     <span class="wheel-prize wheel-prize-premium7">⭐<small>7д</small></span>
-     <span class="wheel-prize wheel-prize-premium30">⭐<small>30д</small></span>
-     <span class="wheel-prize wheel-prize-premium90">⭐<small>90д</small></span>
-     <span class="wheel-prize wheel-prize-coins">🪙<small>монеты</small></span>
-     <span class="fortune-wheel-center">✦</span>
-    </div>
-   </div>
+   <div class="wheel-host" id="wheel-host" aria-label="Колесо фортуны"></div>
    <p class="muted">Прокрутка стоит ${wheelPriceStars} ⭐. Выигрывай Premium на 7, 30 и 90 дней, защиту от команд, бесплатные прокрутки или монеты на баланс: 10, 50, 100 и 250.</p>
    <div class="wheel-odds-controls"><button class="outline small" type="button" id="toggle-wheel-odds" aria-expanded="false">Показать шансы</button><div class="wheel-odds" id="wheel-odds-panel" hidden>${wheelOddsHtml}</div></div>
    <button class="primary" id="spin-wheel" type="button">${(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐'}</button>
@@ -1803,6 +1784,7 @@ async function renderTariffs(host, initialTab='premium') {
  });
  const oddsToggle=host.querySelector('#toggle-wheel-odds');
  if(oddsToggle)oddsToggle.addEventListener('click',()=>{const panel=host.querySelector('#wheel-odds-panel');if(!panel)return;const opening=panel.hidden;panel.hidden=!opening;oddsToggle.textContent=opening?'Скрыть шансы':'Показать шансы';oddsToggle.setAttribute('aria-expanded',String(opening));});
+ activeFortuneWheel=createWheel(host.querySelector('#wheel-host'),buildSectors(wheelOddsRows));
  const wheelButton=host.querySelector('#spin-wheel');
  const wheelUnavailable=Boolean(wheelOddsError)||wheelOddsTotal<=0;
  if(wheelButton&&wheelUnavailable){wheelButton.disabled=true;wheelButton.textContent='Колесо временно недоступно';wheelButton.title='Нет доступных наград или не удалось загрузить шансы';}
@@ -1815,7 +1797,7 @@ async function renderTariffs(host, initialTab='premium') {
      if(error||data?.error)throw new Error(data?.error||error?.message||'Не удалось выполнить прокрутку');
      if(freeSpin&&data?.free_spin===true){
        const prize=data.prize||{};
-       if(prize.prize_type)await animateFortuneWheel(prize.prize_type);
+       if(prize.prize_type)await animateFortuneWheel(prize);
        const {data:profile,error:profileError}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
        if(profileError)console.warn('Wheel profile refresh:',profileError.message);
        state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins??Math.max(0,Number(state.profile?.wheel_free_spins||0)-1),command_protection_expires_at:profile?.command_protection_expires_at??state.profile?.command_protection_expires_at};
@@ -2134,7 +2116,7 @@ async function renderProfile(host) {
     </section>
     <section class="profile-security-card"><div class="profile-security-head"><div><div class="eyebrow">БЕЗОПАСНОСТЬ</div><h2>PIN-защита</h2><p class="muted">Блокировка Mini App при повторном входе на этом устройстве.</p></div><button type="button" class="security-toggle ${localStorage.getItem(pinKey(state.session.user.id))?'is-on':''}" id="profile-pin-toggle" aria-pressed="${Boolean(localStorage.getItem(pinKey(state.session.user.id)))}"><span></span></button></div><small id="profile-pin-status">${localStorage.getItem(pinKey(state.session.user.id))?'PIN-защита включена':'PIN-защита выключена'}</small></section>`;
   const pinToggle=document.querySelector('#profile-pin-toggle');
-  pinToggle?.addEventListener('click',async()=>{const id=state.session.user.id,enabled=Boolean(localStorage.getItem(pinKey(id))),status=document.querySelector('#profile-pin-status');if(enabled){const current=prompt('Введите текущий PIN-код');if(current===null)return;if(!(await checkPin(id,current))){toast('Неверный PIN-код');return;}localStorage.removeItem(pinKey(id));sessionStorage.removeItem(pinUnlockKey(id));pinToggle.classList.remove('is-on');pinToggle.setAttribute('aria-pressed','false');status.textContent='PIN-защита выключена';toast('PIN-защита отключена');return;}const first=prompt('Придумай PIN-код из 4–8 цифр');if(first===null)return;if(!/^\d{4,8}$/.test(first)){toast('PIN должен содержать 4–8 цифр');return;}const second=prompt('Повтори PIN-код');if(second===null)return;if(first!==second){toast('PIN-коды не совпадают');return;}await setPin(id,first);sessionStorage.setItem(pinUnlockKey(id),'1');pinToggle.classList.add('is-on');pinToggle.setAttribute('aria-pressed','true');status.textContent='PIN-защита включена';toast('PIN-защита включена');});
+  pinToggle?.addEventListener('click',async()=>{const id=state.session.user.id,enabled=Boolean(localStorage.getItem(pinKey(id))),status=document.querySelector('#profile-pin-status');if(enabled){if(!(await promptPinVerify(id,checkPin,'Введи текущий PIN'))){toast('PIN не подтверждён');return;}localStorage.removeItem(pinKey(id));localStorage.removeItem('flamexbot.pin.lock.'+id);sessionStorage.removeItem(pinUnlockKey(id));pinToggle.classList.remove('is-on');pinToggle.setAttribute('aria-pressed','false');status.textContent='PIN-защита выключена';toast('PIN-защита отключена');return;}const res=await promptPinSetup();if(!res)return;if(res.mismatch){toast('PIN-коды не совпадают');return;}await setPin(id,res.pin);sessionStorage.setItem(pinUnlockKey(id),'1');pinToggle.classList.add('is-on');pinToggle.setAttribute('aria-pressed','true');status.textContent='PIN-защита включена';toast('🔒 PIN-защита включена');});
   document.querySelector('[data-telegram-link]').addEventListener('click', () => telegramAuthFlow({ linkCurrent: true }));
   document.querySelector('#refresh-business').addEventListener('click', async e => {
     const btn=e.currentTarget;btn.disabled=true;btn.textContent='Проверяем в Telegram…';
