@@ -1784,14 +1784,15 @@ async function renderTariffs(host, initialTab='premium') {
  });
  const oddsToggle=host.querySelector('#toggle-wheel-odds');
  if(oddsToggle)oddsToggle.addEventListener('click',()=>{const panel=host.querySelector('#wheel-odds-panel');if(!panel)return;const opening=panel.hidden;panel.hidden=!opening;oddsToggle.textContent=opening?'Скрыть шансы':'Показать шансы';oddsToggle.setAttribute('aria-expanded',String(opening));});
- activeFortuneWheel=createWheel(host.querySelector('#wheel-host'),buildSectors(wheelOddsRows));
+ const wheelSectors=buildSectors(wheelOddsRows);
+ activeFortuneWheel=createWheel(host.querySelector('#wheel-host'),wheelSectors);
  const wheelButton=host.querySelector('#spin-wheel');
- const wheelUnavailable=Boolean(wheelOddsError)||wheelOddsTotal<=0;
+ const wheelUnavailable=Boolean(wheelOddsError)||wheelOddsTotal<=0||!wheelSectors.length;
  if(wheelButton&&wheelUnavailable){wheelButton.disabled=true;wheelButton.textContent='Колесо временно недоступно';wheelButton.title='Нет доступных наград или не удалось загрузить шансы';}
  wheelButton?.addEventListener('click',async()=>{
    if(wheelUnavailable){toast('Колесо временно недоступно: нет активных наград.');return;}
    const freeSpin=(state.profile?.wheel_free_spins||0)>0;
-   wheelButton.disabled=true;wheelButton.textContent=freeSpin?'Используем прокрутку…':'Создаём счёт…';
+   wheelButton.disabled=true;wheelButton.textContent=freeSpin?'Используем прокрутку…':'Создаём счёт…';activeFortuneWheel?.startWaiting();
    try{
      const {data,error}=await supabase.functions.invoke('create-wheel-invoice',{body:freeSpin?{action:'free_spin'}:{}});
      if(error||data?.error)throw new Error(data?.error||error?.message||'Не удалось выполнить прокрутку');
@@ -1821,7 +1822,7 @@ async function renderTariffs(host, initialTab='premium') {
            if(order?.status==='paid'){result=order;break;}
            await new Promise(resolve=>setTimeout(resolve,600));
          }
-         if(result)await animateFortuneWheel(result.prize_type);
+         if(result)await animateFortuneWheel(result);
          toast(result?'🎉 Выпало: '+result.prize_label:'Платёж принят. Награда появится после подтверждения Telegram.');
          const {data:profile}=await supabase.from('profiles').select('wheel_free_spins,command_protection_expires_at').eq('id',state.session.user.id).maybeSingle();
          state.profile={...(state.profile||{}),wheel_free_spins:profile?.wheel_free_spins||0,command_protection_expires_at:profile?.command_protection_expires_at};
@@ -1835,7 +1836,7 @@ async function renderTariffs(host, initialTab='premium') {
      });
      if(!opened)toast('Счёт открыт в Telegram.');
    }catch(error){toast('Колесо: '+(error.message||'ошибка'));}
-   finally{if(host.contains(wheelButton)){wheelButton.disabled=wheelUnavailable;wheelButton.textContent=wheelUnavailable?'Колесо временно недоступно':(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐';}}
+   finally{activeFortuneWheel?.stopWaiting();if(host.contains(wheelButton)){wheelButton.disabled=wheelUnavailable;wheelButton.textContent=wheelUnavailable?'Колесо временно недоступно':(state.profile?.wheel_free_spins||0)>0?'Использовать бесплатную прокрутку':'Крутить за '+wheelPriceStars+' ⭐';}}
  });
  const addonButton=host.querySelector('#buy-command-protection');
  addonButton?.addEventListener('click',async()=>{
