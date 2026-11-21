@@ -23,6 +23,25 @@ async function hmac(keyBytes: Uint8Array, message: string) {
 async function sha256(value: string) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))));
 }
+async function checkRequiredChannel(botToken: string, telegramUserId: string) {
+  const response = await fetch("https://api.telegram.org/bot" + botToken + "/getChatMember", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: "@flamexbot1", user_id: Number(telegramUserId) }),
+    signal: AbortSignal.timeout(9000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok !== true) {
+    const description = String(payload?.description ?? "");
+    console.error("telegram-auth membership check failed:", description || response.status);
+    throw new Error(/chat not found|not enough rights|administrator/i.test(description)
+      ? "Не удалось проверить подписку. Добавьте FLAMEXBOT администратором канала @flamexbot1."
+      : "Telegram временно не смог проверить подписку. Попробуй ещё раз.");
+  }
+  const member = payload.result ?? {};
+  return ["creator", "administrator", "member"].includes(String(member.status ?? "")) ||
+    (member.status === "restricted" && member.is_member === true);
+}
 async function verifyTelegramInitData(initData: string, botToken: string) {
   if (!initData || initData.length > 16_384) throw new Error("Некорректные данные Telegram.");
   const params = new URLSearchParams(initData);
@@ -62,6 +81,13 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const initData = typeof body?.initData === "string" ? body.initData : "";
     const user = await verifyTelegramInitData(initData, botToken);
+    const subscribed = await checkRequiredChannel(botToken, String(user.id));
+    if (!subscribed) {
+      return response({
+        error: "Для использования FLAMEXBOT подпишись на канал @flamexbot1 и повтори вход.",
+        reason: "subscription_required",
+      }, 403);
+    }
     admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const initHash = await sha256(initData);
     await admin.from("telegram_init_data_uses").delete().lt("used_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
