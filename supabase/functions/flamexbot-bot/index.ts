@@ -473,7 +473,7 @@ function isOwnerAuthoredBusinessMessage(message: any, connection: any) {
     !message?.sender_business_bot?.id
   );
 }
-const ANTIMUT_MAX_RESTORES = 3;
+const ANTIMUT_MAX_RESTORES = 1;
 async function getActiveAntimutActivation(connection: any, chatId: string | number, messageDateMs: number, expectedActivationAt?: string | null) {
   if (!admin || !connection?.is_enabled || connection?.rights?.can_reply !== true) return null;
   const { data: prefs, error } = await admin.from("flamexbot_business_chat_settings")
@@ -1088,8 +1088,18 @@ async function deleteBusinessMessages(update: any) {
     ? (messages || []).flatMap((item: any) => {
         const raw = item.raw ?? {};
         const isOurPreviousRestore = raw._flamexbot_antimut_resent === true;
-        const original = isOurPreviousRestore ? raw._flamexbot_antimut_original_message : raw;
-        const previousAttempt = isOurPreviousRestore ? Number(raw._flamexbot_antimut_attempt ?? 1) : 0;
+        // A restored copy is never eligible for another restore. This prevents
+        // antimut from chasing an external bot that deletes every replacement.
+        if (isOurPreviousRestore) {
+          console.warn("Antimut ignored deletion of its own restored message", JSON.stringify({
+            chat_id: String(update.chat.id),
+            message_id: item.telegram_message_id,
+            original_message_id: raw._flamexbot_restored_from ?? item.telegram_message_id,
+          }));
+          return [];
+        }
+        const original = raw;
+        const previousAttempt = 0;
         const activationForChain = isOurPreviousRestore
           ? String(raw._flamexbot_antimut_activation_at ?? "")
           : currentActivationAt;
