@@ -61,3 +61,13 @@ button,.home-feature-card,.profile-menu-item,.chat-choice,.admin-action{-webkit-
 @keyframes fx-shimmer{from{background-position:120% 0}to{background-position:-100% 0}}
 @media(max-width:720px){.admin-action,.outline.small,.primary.small{min-height:40px}.page-content{padding-bottom:calc(28px + var(--fx-safe-b))}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+
+.subscription-gate{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0%,color-mix(in srgb,var(--orange) 18%,transparent),transparent 55%),var(--bg)}
+.subscription-gate-card{width:min(100%,520px);padding:clamp(26px,6vw,48px);border:1px solid var(--line);border-radius:26px;background:var(--panel);box-shadow:0 24px 90px rgba(0,0,0,.25);text-align:center}
+.subscription-gate-mark{display:grid;place-items:center;width:64px;height:64px;margin:0 auto 22px;border-radius:20px;background:color-mix(in srgb,var(--orange) 17%,var(--panel));color:var(--orange);font-size:34px;font-weight:900}
+.subscription-gate-card h1{margin:10px 0 12px;font:850 clamp(27px,6vw,38px) Manrope,system-ui}
+.subscription-gate-card p{margin:0 auto 22px;max-width:400px;color:var(--muted);font-size:14px;line-height:1.65}
+.subscription-channel-link,.subscription-check-button{display:flex;width:100%;min-height:48px;align-items:center;justify-content:center;gap:10px;margin-top:10px;text-decoration:none}
+.subscription-gate-card>small{display:block;margin-top:20px;color:var(--muted);font-size:11px;line-height:1.6}
+.business-status.is-unknown{background:color-mix(in srgb,#d69b36 14%,var(--panel));color:#d69b36;border:1px solid color-mix(in srgb,#d69b36 35%,transparent)}
