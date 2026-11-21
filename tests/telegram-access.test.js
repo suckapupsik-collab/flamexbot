@@ -65,3 +65,11 @@ test("Entry animations include reduced-motion accessibility support", () => {
   assert.match(animationSource, /@keyframes fx-gate-aura/);
   assert.match(animationSource, /prefers-reduced-motion:reduce/);
 });
+
+test("Existing profiles without Telegram can link their Telegram identity without creating a duplicate profile", () => {
+  assert.match(accessSource, /reason: "telegram_link_required"/);
+  assert.match(appSource, /linkRequired/);
+  assert.match(appSource, /gate-telegram-link/);
+  assert.match(appSource, /telegramAuthFlow\(\{ linkCurrent: true \}\)/);
+  assert.match(appSource, /await boot\(state\.session\)/);
+});
