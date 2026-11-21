@@ -9,6 +9,8 @@ const FOUNDER_TELEGRAM_ID = "7781170049";
 const WEBHOOK_URL = "https://yxmfhnbqzudoiwjlrpui.supabase.co/functions/v1/flamexbot-bot";
 const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") || "fxbot_whsec_6c2d9a7e4f1b8c3d5a0e7f9b2c4d6a8e";
 const API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : "";
+// Safety lock: FLAMEXBOT must never delete messages in connected Business chats.
+const ALLOW_BUSINESS_MESSAGE_DELETION = false;
 const admin = SUPABASE_URL && SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } }) : null;
 
 function isFounderTarget(chatId: unknown, userId?: unknown) {
@@ -30,6 +32,15 @@ async function getTelegramBan(telegramUserId: unknown) {
 const answeredCallbackQueries = new Set<string>();
 const callbackFeedbackContexts = new Map<string, { chatId: number | string; businessConnectionId?: string }>();
 async function telegram(method: string, body: Record<string, unknown>) {
+  if (!ALLOW_BUSINESS_MESSAGE_DELETION && ["deleteBusinessMessages", "deleteMessage", "deleteMessages"].includes(method)) {
+    console.error("FLAMEXBOT_SAFETY_BLOCKED_MESSAGE_DELETION", JSON.stringify({
+      method,
+      chat_id: body.chat_id ?? null,
+      message_ids: Array.isArray(body.message_ids) ? body.message_ids : (body.message_id != null ? [body.message_id] : []),
+      stack: new Error().stack?.split("\n").slice(1, 5),
+    }));
+    throw new Error("Message deletion is disabled by FLAMEXBOT safety lock");
+  }
   if (method === "answerCallbackQuery" && body.callback_query_id != null) {
     const callbackId = String(body.callback_query_id);
     if (answeredCallbackQueries.has(callbackId)) {
@@ -782,8 +793,8 @@ async function saveBusinessMessage(message: any, connectionOverride?: any, captu
         if (autoMuteError) throw autoMuteError;
         const canDeleteIncoming = connection.rights?.can_delete_all_messages === true;
         const notice = `${tgEmoji("warning")} <b>FLAMEXBOT · защита от флуда сработала</b>\nВ этом диалоге получено 10 или более сообщений за 2 секунды.\n${canDeleteIncoming
-          ? "Автоматический мут включён: новые сообщения будут удаляться."
-          : "Диалог помечен мутом, но Telegram не выдал право удалять входящие сообщения. Включи право «Удалять все сообщения» в Telegram Business."}\nОткрой FLAMEXBOT и нажми «Размут», когда будешь готов продолжить общение.`;
+          ? "Автоматический мут включён, но удаление сообщений отключено защитой FLAMEXBOT."
+          : "Диалог помечен мутом; автоматическое удаление сообщений отключено защитой FLAMEXBOT."}\nОткрой FLAMEXBOT и нажми «Размут», когда будешь готов продолжить общение.`;
         try {
           await sendRichTelegramMessage(connection.telegram_user_id, notice, "HTML");
         } catch (notifyError) {
@@ -816,7 +827,7 @@ async function saveBusinessMessage(message: any, connectionOverride?: any, captu
     const shouldFilter = shouldDeleteSticker || shouldDeleteProfanity;
     // HARD SAFETY: moderation may delete incoming messages only; never delete messages authored by the connected Business account owner.
     // Never delete outgoing messages: Telegram's sender_business_bot marks messages sent by this Business bot.
-    if (direction === "inbound" && !message.sender_business_bot?.id && senderId !== String(connection.telegram_user_id) && (shouldHardMute || shouldFilter)) {
+    if (ALLOW_BUSINESS_MESSAGE_DELETION && direction === "inbound" && !message.sender_business_bot?.id && senderId !== String(connection.telegram_user_id) && (shouldHardMute || shouldFilter)) {
       if (connection.rights?.can_delete_all_messages) {
         try {
           await telegram("deleteBusinessMessages", {
@@ -945,6 +956,7 @@ async function deleteBusinessMessages(update: any) {
   const {data:messages,error:messagesError}=await admin.from("flamexbot_business_messages").select("telegram_message_id,direction,content,message_type,media_file_id,media_url,raw,deleted_at,created_at,antimut_restore_claimed_at").eq("business_chat_id",chat.id).in("telegram_message_id",update.message_ids);
   if(messagesError)throw messagesError;
   const deletedAt=new Date().toISOString();
+  console.warn("Telegram reported deleted Business messages; the update does not identify the deleting actor", JSON.stringify({ chat_id: String(update.chat.id), message_ids: update.message_ids }));
   const {data:prefs,error:prefsError}=await admin.from("flamexbot_business_chat_settings")
     .select("antimut_enabled,antimut_enabled_at").eq("profile_id",connection.profile_id).eq("business_chat_id",chat.id).maybeSingle();
   if(prefsError)throw prefsError;
@@ -2440,6 +2452,13 @@ async function handleBusinessActionCallback(query: any) {
       }
       return;
     }
+    if(decision==="yes"&&!ALLOW_BUSINESS_MESSAGE_DELETION){
+      await telegram("answerCallbackQuery",{callback_query_id:query.id,text:"Удаление переписки отключено защитой FLAMEXBOT.",show_alert:true});
+      if(query.message?.chat?.id&&query.message?.message_id){
+        await telegram("editMessageText",{business_connection_id:panicChat.business_connection_id,chat_id:query.message.chat.id,message_id:query.message.message_id,text:"Удаление переписки отключено защитой FLAMEXBOT. Сообщения сохранены."});
+      }
+      return;
+    }
     if(!panicConnection.is_enabled||panicConnection.rights?.can_delete_all_messages!==true){
       await telegram("answerCallbackQuery",{callback_query_id:query.id,text:"Нет активного Business-подключения или права удалять все сообщения.",show_alert:true});return;
     }
@@ -2580,10 +2599,10 @@ async function handleBusinessActionCallback(query: any) {
   }]] };
   const body = action === "mute"
     ? (enabled
-      ? `${tgEmoji("lock")} <b>Мут включён</b>\nНовые входящие сообщения в этом диалоге будут удаляться. История чата остаётся без изменений.`
-      : `${tgEmoji("success")} <b>Размут выполнен</b>\nУдаление новых сообщений остановлено.`)
+      ? `${tgEmoji("lock")} <b>Мут включён</b>\nАвтоматическое удаление сообщений отключено защитой FLAMEXBOT. Переписка остаётся на месте.`
+      : `${tgEmoji("success")} <b>Размут выполнен</b>\nОграничение обработки сообщений снято.`)
     : (enabled
-      ? `${tgEmoji("success")} <b>Антимут включён</b>\nСообщения владельца будут повторно отправляться через подключённый Business-аккаунт, а исходная копия удаляться.`
+      ? `${tgEmoji("success")} <b>Антимут включён</b>\nЕсли Telegram сообщит об удалении сообщения владельца, FLAMEXBOT повторно отправит его. Сам FLAMEXBOT не удаляет сообщения.`
       : `${tgEmoji("lock")} <b>Антимут выключен</b>\nПовторная отправка сообщений остановлена.`);
   if (query.message?.chat?.id && query.message?.message_id) {
     try {
