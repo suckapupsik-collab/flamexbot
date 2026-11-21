@@ -14,7 +14,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY && !SUPABASE_KEY.startsWith('YOUR_
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
-const state = { session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessMessagesHasMore: false, businessMessagesLoadingOlder: false, businessMessagesInitialLoaded: false, businessMessagesOldestAt: null, businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', selectedAdminUserId: null, avatarRefreshAttempted: new Set(), webhookSetupAttempted: false, businessMediaUrlCache: new Map(), messageRefreshInFlight: new Set(), messageRefreshPending: new Set(), messageRefreshTimers: new Map(), businessListRefreshTimer: null, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
+const state = { access: null, session: null, profile: null, profileBadges: [], subscription: null, businessConnection: null, businessRights: null, isAdmin: false, page: 'home', busy: false, streaks: [], businessChats: [], activeBusinessChat: null, businessMessages: [], businessMessagesHasMore: false, businessMessagesLoadingOlder: false, businessMessagesInitialLoaded: false, businessMessagesOldestAt: null, businessChatChannel: null, businessListChannel: null, presenceChannel: null, moderationChannel: null, onlineUserIds: [], notificationChannel: null, notificationCount: 0, menuListenersBound: false, blockedReason: null, friendSearchQuery: '', selectedAdminUserId: null, avatarRefreshAttempted: new Set(), webhookSetupAttempted: false, businessMediaUrlCache: new Map(), messageRefreshInFlight: new Set(), messageRefreshPending: new Set(), messageRefreshTimers: new Map(), businessListRefreshTimer: null, userFilters: { search: '', verified: 'all', premium: 'all', banned: 'all', offset: 0 } };
 const app = document.querySelector('#app');
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => (name || 'F').trim().slice(0, 1).toUpperCase();
@@ -83,6 +83,50 @@ const formatMskDate = (value,options={day:'numeric',month:'long'}) => new Intl.D
 const formatMskTime = (value = new Date()) => new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'}).format(new Date(value));
 const formatMskDateTime = (value,options={day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) => new Intl.DateTimeFormat('ru-RU',{...options,timeZone:'Europe/Moscow'}).format(new Date(value));
 
+async function checkRequiredAppAccess() {
+  const initData = window.Telegram?.WebApp?.initData;
+  if (!initData) return { ok: false, reason: "telegram_required", error: "Открой FLAMEXBOT через Telegram Mini App." };
+  const { data, error } = await supabase.functions.invoke("flamexbot-access-check", { body: { initData } });
+  if (error) {
+    let details = null;
+    try { details = await error.context?.json?.(); } catch {}
+    return { ...(details || {}), ok: false, error: details?.error || error.message || "Не удалось проверить доступ." };
+  }
+  return data || { ok: false, reason: "empty_response", error: "Сервер проверки доступа вернул пустой ответ." };
+}
+
+function renderSubscriptionGate(access = {}) {
+  const telegramRequired = access.reason === "telegram_required";
+  const technicalError = access.reason === "membership_check_unavailable" || access.reason === "configuration_error" || access.ok === false;
+  const headline = telegramRequired ? "Открой Mini App в Telegram" : "Подписка обязательна";
+  const description = telegramRequired
+    ? "FLAMEXBOT работает только внутри Telegram Mini App. Открой приложение кнопкой в боте."
+    : technicalError
+      ? (access.error || "Сейчас не получилось проверить подписку. Проверь подключение и повтори попытку.")
+      : "Чтобы пользоваться FLAMEXBOT, подпишись на официальный канал. После проверки можно будет зарегистрироваться и открыть приложение.";
+  app.innerHTML = "<main class=\"subscription-gate\"><div class=\"subscription-gate-card\"><div class=\"subscription-gate-mark\">✦</div><div class=\"eyebrow\">FLAMEXBOT ACCESS</div><h1>" + esc(headline) + "</h1><p>" + esc(description) + "</p><a class=\"primary subscription-channel-link\" id=\"subscribe-channel\" href=\"https://t.me/flamexbot1\">Открыть канал @flamexbot1 <b>↗</b></a><button class=\"outline subscription-check-button\" type=\"button\" id=\"retry-subscription\">Я подписался — проверить</button><small>Проверка выполняется через Telegram. Без подписки доступ к командам и Mini App закрыт.</small></div></main><div class=\"toast\"></div>";
+  document.querySelector("#subscribe-channel")?.addEventListener("click", event => {
+    const webApp = window.Telegram?.WebApp;
+    if (webApp?.openTelegramLink) { event.preventDefault(); webApp.openTelegramLink("https://t.me/flamexbot1"); }
+  });
+  document.querySelector("#retry-subscription")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Проверяем подписку…";
+    try {
+      const fresh = await checkRequiredAppAccess();
+      state.access = fresh;
+      if (fresh.subscribed === true) {
+        if (state.session && fresh.session_matches === true && fresh.registered === true) await boot(state.session);
+        else renderAuth({ registration: fresh.registered !== true });
+      } else {
+        renderSubscriptionGate(fresh);
+      }
+    } catch (error) {
+      renderSubscriptionGate({ reason: "membership_check_unavailable", error: error?.message || "Не удалось проверить подписку." });
+    }
+  });
+}
 async function telegramAuthFlow({ linkCurrent = false } = {}) {
   const webApp = window.Telegram?.WebApp;
   const initData = webApp?.initData;
@@ -98,7 +142,11 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
     const { data, error } = await supabase.functions.invoke('telegram-auth', { body: { initData } });
     if (error) {
       let message = error.message || 'Ошибка Telegram-входа.';
-      try { const details = await error.context?.json?.(); if (details?.error) message = details.error; } catch {}
+      try {
+        const details = await error.context?.json?.();
+        if (details?.reason === 'subscription_required') { renderSubscriptionGate({ reason: 'subscription_required' }); return; }
+        if (details?.error) message = details.error;
+      } catch {}
       throw new Error(message);
     }
     if (data?.linked_existing_session) {
@@ -136,7 +184,7 @@ function renderBlockedScreen() {
   });
 }
 
-function renderAuth() {
+function renderAuth({ registration = false } = {}) {
   const inTelegram = Boolean(window.Telegram?.WebApp?.initData);
   app.innerHTML = `
     <main class="auth-shell">
@@ -146,8 +194,8 @@ function renderAuth() {
         <div class="visual-footer">© 2026 FLAMEXBOT <span>СОЗДАНО ДЛЯ ОБЩЕНИЯ</span></div>
       </section>
       <section class="auth-panel"><div class="mobile-brand brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><div class="auth-card">
-        <div class="eyebrow">ТВОЁ ПРОСТРАНСТВО НАЧИНАЕТСЯ ЗДЕСЬ</div><h2>Войти через Telegram</h2><p class="muted">Один быстрый вход — и все твои переписки, огоньки и настройки будут под рукой.</p>
-        <button class="telegram-login full" id="telegram-login" ${inTelegram ? '' : 'disabled'}><span>✈</span> Продолжить через Telegram</button>
+        <div class="eyebrow">ТВОЁ ПРОСТРАНСТВО НАЧИНАЕТСЯ ЗДЕСЬ</div><h2>${registration ? 'Регистрация в FLAMEXBOT' : 'Войти через Telegram'}</h2><p class="muted">${registration ? 'Создай свой аккаунт прямо в Mini App. Без регистрации пользоваться FLAMEXBOT нельзя.' : 'Один быстрый вход — и все твои переписки, огоньки и настройки будут под рукой.'}</p>
+        <button class="telegram-login full" id="telegram-login" ${inTelegram ? '' : 'disabled'}><span>✈</span> ${registration ? 'Зарегистрироваться через Telegram' : 'Продолжить через Telegram'}</button>
         <p class="auth-note">${inTelegram ? 'Подтверди вход, чтобы открыть своё пространство FLAMEXBOT.' : 'Открой FLAMEXBOT через кнопку Mini App в нашем Telegram-боте.'}</p>
         <div class="auth-error" id="auth-error"></div>
       </div><div class="panel-bottom">ТВОИ ЛЮДИ. ТВОЯ ИСТОРИЯ. ТВОЙ ОГОНЁК.</div></section>
@@ -334,6 +382,21 @@ async function loadPage() {
   host.classList.remove('page-enter');void host.offsetWidth;host.classList.add('page-enter');
   host.innerHTML=`<div class="page-loading"><div class="loader-mark"><span>✦</span><i></i><b></b></div><strong>Загружаем FLAMEXBOT</strong><small>Подготавливаем твоё пространство…</small></div>`;
   try {
+    const access = await checkRequiredAppAccess();
+    state.access = access;
+    if (access.reason === 'banned') {
+      state.blockedReason = 'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.';
+      await supabase.auth.signOut();
+      renderBlockedScreen();
+      return;
+    }
+    if (access.subscribed !== true) { renderSubscriptionGate(access); return; }
+    if (access.registered !== true || access.session_matches !== true) {
+      await supabase.auth.signOut();
+      state.session = null;
+      renderAuth({ registration: access.registered !== true });
+      return;
+    }
     if(state.page==='home'){
       const [streaks,earned,deletedEvents,editedEvents]=await Promise.all([
         supabase.from('streaks').select('*').or(`user_low.eq.${state.session.user.id},user_high.eq.${state.session.user.id}`).order('current_days',{ascending:false}),
@@ -3158,8 +3221,24 @@ async function boot(session) {
   const currentUserId=state.session?.user?.id||null;
   if(!session||(currentUserId&&nextUserId!==currentUserId))await clearUserScopedState();
   state.session=session;
-  if(!session){
-    if(state.blockedReason)renderBlockedScreen();else renderAuth();
+  const access = await checkRequiredAppAccess();
+  state.access = access;
+  if (access.reason === 'banned') {
+    state.blockedReason = 'Этот аккаунт временно заблокирован администрацией FLAMEXBOT.';
+    if (session) await supabase.auth.signOut();
+    renderBlockedScreen();
+    return;
+  }
+  if (access.subscribed !== true) { renderSubscriptionGate(access); return; }
+  if (!session) {
+    if (state.blockedReason) renderBlockedScreen();
+    else renderAuth({ registration: access.registered !== true });
+    return;
+  }
+  if (access.registered !== true || access.session_matches !== true) {
+    await supabase.auth.signOut();
+    state.session = null;
+    renderAuth({ registration: access.registered !== true });
     return;
   }
   if(nextUserId===currentUserId&&document.querySelector('.app-layout'))return;
