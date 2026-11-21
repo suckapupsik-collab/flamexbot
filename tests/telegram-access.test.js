@@ -50,7 +50,7 @@ test("Telegram login preserves a valid username and falls back on collisions", (
 test("Telegram login reports stale and replayed credentials clearly", () => {
   assert.match(appSource, /Закрой Mini App и открой его заново из Telegram/);
   assert.match(appSource, /Данные Telegram устарели/);
-  assert.match(appSource, /Не вернул активную сессию/);
+  assert.match(appSource, /не вернул активную сессию/);
 });
 
 test("Subscription and registration gates remain visible and actionable", () => {
