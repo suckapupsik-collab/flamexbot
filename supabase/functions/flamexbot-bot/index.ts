@@ -988,7 +988,6 @@ async function deleteBusinessMessages(update: any) {
         if(saveError)throw saveError;
         console.log("Antimut restore succeeded",JSON.stringify({chat_id:String(update.chat.id),original_message_id:item.telegram_message_id,restored_message_id:resent.message_id}));
       }
-    }
   }
   return chat.id;
 }
