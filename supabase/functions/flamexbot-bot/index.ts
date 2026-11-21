@@ -366,7 +366,6 @@ async function ensureTelegramGlobalSetup() {
             { command: "commands", description: "Список доступных команд" },
             { command: "premium", description: "Купить или продлить Premium" },
             { command: "support", description: "Написать в техподдержку" },
-            { command: "say", description: "Отправить от имени аккаунта" },
             { command: "cancel_support", description: "Закрыть обращение в поддержку" },
           ],
         }),
@@ -630,6 +629,83 @@ async function saveBusinessMessage(message: any, connectionOverride?: any, captu
       .update({warn_count:0,updated_at:new Date().toISOString()})
       .eq("profile_id",connection.profile_id).eq("business_chat_id",chat.id).eq("warn_enabled",true);
     if(warnResetError)throw warnResetError;
+  }
+  if (direction === "outbound") {
+    // Telegram may deliver deleted_business_messages before business_message.
+    // Reconcile the placeholder and restore the owner's message here, otherwise
+    // the deletion handler cannot find the message in the archive.
+    const placeholder = "[Текст не был сохранён до получения события об удалении]";
+    const { data: pendingDeletion, error: pendingDeletionError } = await admin.from("flamexbot_business_message_events")
+      .select("id,occurred_at").eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id)
+      .eq("event_type", "deleted").eq("original_content", placeholder)
+      .order("occurred_at", { ascending: false }).limit(1).maybeSingle();
+    if (pendingDeletionError) throw pendingDeletionError;
+    if (pendingDeletion) {
+      const archivedUrl = media.fileId
+        ? await archiveBusinessMedia(media.fileId, connection.profile_id, chat.id, message.message_id, originalName)
+        : null;
+      const { error: reconcileError } = await admin.from("flamexbot_business_message_events")
+        .update({
+          original_content: content, message_type: media.type, media_file_id: media.fileId,
+          media_url: archivedUrl, original_raw: message,
+        }).eq("id", pendingDeletion.id);
+      if (reconcileError) throw reconcileError;
+      const { error: markLateDeleteError } = await admin.from("flamexbot_business_messages")
+        .update({ deleted_at: pendingDeletion.occurred_at })
+        .eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id);
+      if (markLateDeleteError) throw markLateDeleteError;
+
+      const { data: antimutPrefs, error: antimutPrefsError } = await admin.from("flamexbot_business_chat_settings")
+        .select("antimut_enabled").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
+      if (antimutPrefsError) throw antimutPrefsError;
+      if (antimutPrefs?.antimut_enabled && connection.is_enabled && connection.rights?.can_reply === true) {
+        const original = message, body = String(original.text ?? original.caption ?? content ?? "").trim();
+        const payload: Record<string, unknown> = { business_connection_id: connection.connection_id, chat_id: message.chat.id, preserve_plain_emoji: true };
+        let method = "sendMessage";
+        if (media.fileId) {
+          const map: Record<string, { method: string; field: string }> = {
+            photo: { method: "sendPhoto", field: "photo" }, video: { method: "sendVideo", field: "video" },
+            animation: { method: "sendAnimation", field: "animation" }, document: { method: "sendDocument", field: "document" },
+            audio: { method: "sendAudio", field: "audio" }, voice: { method: "sendVoice", field: "voice" },
+            sticker: { method: "sendSticker", field: "sticker" }, video_note: { method: "sendVideoNote", field: "video_note" },
+          };
+          const selected = map[media.type];
+          if (selected) {
+            method = selected.method;
+            payload[selected.field] = media.fileId;
+            if (body && selected.field !== "sticker" && selected.field !== "video_note") payload.caption = body;
+            if (original.caption_entities?.length) payload.caption_entities = original.caption_entities;
+          }
+        } else if (original.contact) {
+          method = "sendContact";
+          Object.assign(payload, { phone_number: original.contact.phone_number, first_name: original.contact.first_name, last_name: original.contact.last_name, vcard: original.contact.vcard });
+        } else if (original.location) {
+          method = "sendLocation";
+          Object.assign(payload, { latitude: original.location.latitude, longitude: original.location.longitude });
+        } else if (body) {
+          payload.text = body;
+          if (original.entities?.length) payload.entities = original.entities;
+        } else {
+          method = "";
+        }
+        if (method) {
+          console.log("Antimut late archive race detected; restoring owner message", JSON.stringify({ chat_id: String(message.chat.id), original_message_id: message.message_id }));
+          const resent = await telegram(method, payload);
+          if (!resent?.message_id) throw new Error("Antimut late restore failed: Telegram returned no message id");
+          const sentMedia = resent.photo?.at(-1) ?? resent.video ?? resent.animation ?? resent.document ?? resent.audio ?? resent.voice ?? resent.sticker ?? null;
+          const sentAt = new Date((resent.date ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
+          const { error: saveRestoreError } = await admin.from("flamexbot_business_messages").upsert({
+            business_chat_id: chat.id, telegram_message_id: resent.message_id, direction: "outbound",
+            sender_profile_id: connection.profile_id, content: resent.text ?? resent.caption ?? body,
+            message_type: media.type, media_file_id: sentMedia?.file_id ?? media.fileId ?? null, media_url: null,
+            reply_to_message_id: original.reply_to_message?.message_id ?? null, created_at: sentAt,
+            raw: { ...resent, _flamexbot_antimut_resent: true, _flamexbot_restored_from: Number(message.message_id) },
+          }, { onConflict: "business_chat_id,telegram_message_id" });
+          if (saveRestoreError) throw saveRestoreError;
+          console.log("Antimut late restore succeeded", JSON.stringify({ chat_id: String(message.chat.id), original_message_id: message.message_id, restored_message_id: resent.message_id }));
+        }
+      }
+    }
   }
   if (direction === "inbound") {
     const placeholder = "[Текст не был сохранён до получения события об удалении]";
@@ -3317,60 +3393,13 @@ async function processTelegramUpdate(update: any) {
       );
     }
 
-    if (update.message?.chat?.type === "private" && update.message.from?.id && typeof update.message.text === "string") {
-      const sendAsMatch = update.message.text.trim().match(/^[./](?:say|sendas|autounmute)(?:@\\w+)?\\s+(@[A-Za-z0-9_]{5,32}|\\d{5,20})\\s+([\\s\\S]+)$/i);
-      if (sendAsMatch) {
-        const ownerId = String(update.message.from.id);
-        const targetToken = sendAsMatch[1].replace(/^@/, "");
-        const outgoingText = sendAsMatch[2].trim();
-        const { data: ownerProfile, error: ownerProfileError } = await admin.from("profiles").select("id").eq("telegram_id", ownerId).maybeSingle();
-        if (ownerProfileError) throw ownerProfileError;
-        if (!ownerProfile) {
-          await sendRichTelegramMessage(update.message.chat.id, "Сначала запусти FLAMEXBOT и привяжи свой профиль.", "HTML");
-        } else {
-          const { data: business, error: businessError } = await admin.from("flamexbot_business_connections")
-            .select("connection_id,is_enabled,rights").eq("profile_id", ownerProfile.id).maybeSingle();
-          if (businessError) throw businessError;
-          if (!business?.is_enabled || business.rights?.can_reply !== true) {
-            await sendRichTelegramMessage(update.message.chat.id, "⛔ Нет активного подключения Telegram «Автоматизация чатов» или не выдано право «Отправлять сообщения». Проверь подключение FLAMEXBOT и разрешения.", "HTML");
-          } else {
-            let targetQuery = admin.from("flamexbot_business_chats")
-              .select("id,telegram_chat_id,telegram_user_id,username,first_name,last_name").eq("profile_id", ownerProfile.id);
-            targetQuery = /^\\d+$/.test(targetToken) ? targetQuery.eq("telegram_chat_id", targetToken) : targetQuery.ilike("username", targetToken);
-            const { data: targetChat, error: targetError } = await targetQuery.maybeSingle();
-            if (targetError) throw targetError;
-            if (!targetChat) {
-              await sendRichTelegramMessage(update.message.chat.id, "Не нашёл этот диалог среди доступных чатов. Сначала получи сообщение от пользователя, чтобы FLAMEXBOT увидел переписку.", "HTML");
-            } else {
-              const { data: lastIncoming, error: incomingError } = await admin.from("flamexbot_business_messages")
-                .select("created_at").eq("business_chat_id", targetChat.id).eq("direction", "inbound")
-                .order("created_at", { ascending: false }).limit(1).maybeSingle();
-              if (incomingError) throw incomingError;
-              const recentIncoming = lastIncoming?.created_at && Date.now() - new Date(lastIncoming.created_at).getTime() <= 86400000;
-              if (!recentIncoming) {
-                await sendRichTelegramMessage(update.message.chat.id, "⏳ Telegram разрешает отвечать от имени аккаунта только в личных чатах, где собеседник писал в последние 24 часа. Для этого диалога право ответа сейчас недоступно.", "HTML");
-              } else {
-                try {
-                  const sent = await sendRichTelegramMessage(targetChat.telegram_chat_id, outgoingText, undefined, undefined, business.connection_id, false);
-                  console.log("Business DM send-as completed", JSON.stringify({owner_id:ownerId,target_chat_id:String(targetChat.telegram_chat_id),message_id:sent?.message_id??null}));
-                  await sendRichTelegramMessage(update.message.chat.id, "✅ Сообщение отправлено от имени твоего Telegram-аккаунта.", "HTML");
-                } catch (sendAsError) {
-                  const reason = String((sendAsError as any)?.message ?? sendAsError).slice(0,260);
-                  console.warn("Business DM send-as failed", JSON.stringify({owner_id:ownerId,target_chat_id:String(targetChat.telegram_chat_id),error:reason}));
-                  await sendRichTelegramMessage(update.message.chat.id, "❌ Telegram не принял отправку: " + escapeHtml(reason), "HTML");
-                }
-              }
-            }
-          }
-        }
-      } else if (/^[./](?:say|sendas|autounmute)(?:@\\w+)?(?:\\s|$)/i.test(update.message.text.trim())) {
-        await sendRichTelegramMessage(update.message.chat.id, "Формат: <code>.say @username текст</code> (также .sendas или .autounmute). Отправка идёт от имени подключённого аккаунта.", "HTML");
-      }
-    }
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
-        /^[./](ping|help|inf|commands|mute|profile|afk|antimute|antimut|autoread|autotyping|autovoice|mutestick|antimat|time|timeprofile|bold|dumb|link|streak|copyp|qr|id|chatid|date|calc|upper|lower|reverse|count|wordcount|choose|roll|advertising|clone|panic|warn)(?:@\\w+)?(?:\\s|$)/i.test(update.message.text.trim())) {
-      await sendRichTelegramMessage(update.message.chat.id,
-        "Эта команда выполняется в Business-переписке. Для отправки от имени аккаунта из личного чата с FLAMEXBOT используй <code>.say @username текст</code>.", "HTML");
+        /^[./](ping|help|inf|commands|mute|profile|afk|antimute|antimut|autoread|autotyping|autovoice|mutestick|antimat|time|timeprofile|bold|dumb|link|streak|copyp|qr|id|chatid|date|calc|upper|lower|reverse|count|wordcount|choose|roll|advertising|clone|panic|warn)(?:@\w+)?(?:\s|$)/i.test(update.message.text.trim())) {
+      await sendRichTelegramMessage(
+        update.message.chat.id,
+        "Команда получена в личном чате с FLAMEXBOT, но здесь нет выбранного собеседника.\n\nЧтобы .bold, .dumb, .time, .mute и другие команды сработали, открой обычную личную переписку с нужным человеком и отправь команду прямо туда. FLAMEXBOT определит этот диалог автоматически.\n\nПроверка подключения здесь: /status. Справка: /help.",
+        "HTML",
+      );
     }
 
     if (update.message?.chat?.type === "private" && typeof update.message.text === "string" &&
@@ -3381,14 +3410,11 @@ async function processTelegramUpdate(update: any) {
 
 Привет! Я управляю возможностями FLAMEXBOT и Telegram Business.
 
-<b>Важно:</b> команды управления конкретным диалогом можно отправлять прямо в этой личной переписке с FLAMEXBOT или в самом Business-чате.
+<b>Важно:</b> команды .mute, .antimute и остальные команды управления нужно отправлять <b>прямо в переписке с нужным человеком</b>, а не сюда в личные сообщения боту.
 
-<b>Отправить сообщение от имени аккаунта:</b>
-<code>.say @username текст</code>
-Например: <code>.say @username Привет!</code>
-Также работают <code>.sendas</code> и <code>.autounmute</code>. Доступны только чаты, где Telegram разрешает ответ от имени аккаунта (входящее сообщение за последние 24 часа).
+Открой FLAMEXBOT, подключи Telegram Business и выдай необходимые разрешения. Затем отправь <code>.help</code> или <code>/help</code> в нужном диалоге.
 
-Для автоматизации подключи FLAMEXBOT через Telegram → Настройки → Профиль → Автоматизация чатов и выдай разрешение «Управление чатами». Статус: /status. Тарифы: /premium.`,
+Команды без адреса собеседника и без @username — бот определит текущий чат автоматически. Статус подключения: /status. Тарифы: /premium.`,
         "HTML",
         { inline_keyboard: [[{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
       );
