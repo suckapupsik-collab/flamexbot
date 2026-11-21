@@ -7,7 +7,7 @@ export function explainTelegramSendError(description) {
   if (/blocked by the user|bot was blocked|user is deactivated|chat not found|peer_id_invalid/.test(lower)) {
     return "Telegram отклонил отправку: чат недоступен или получатель ограничил сообщения. FLAMEXBOT не может обходить блокировки.";
   }
-  if (/bot can\\x27t initiate conversation|bot cannot initiate|bot can\\x27t send messages to bots/.test(lower)) {
+  if (/bot can't initiate conversation|bot cannot initiate|bot can't send messages to bots/.test(lower)) {
     return "Чтобы отправить сообщение через FLAMEXBOT, собеседник должен сначала открыть бота и нажать Start. Антимут не обходит блокировки Telegram.";
   }
   if (/business_connection_invalid|business connection.*(invalid|not found|disabled)/.test(lower)) {
