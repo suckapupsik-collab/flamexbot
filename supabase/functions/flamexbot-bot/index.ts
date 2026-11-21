@@ -577,7 +577,7 @@ function calculateBusinessExpression(input: string): number | null {
     return null;
   }
 }
-async function saveBusinessMessage(message: any, connectionOverride?: any): Promise<string | null> {
+async function saveBusinessMessage(message: any, connectionOverride?: any, captureOnly = false): Promise<string | null> {
   if (!admin || !message?.business_connection_id || !message?.chat?.id || !message?.message_id) {
     throw new Error("Business message payload is incomplete");
   }
@@ -652,6 +652,7 @@ async function saveBusinessMessage(message: any, connectionOverride?: any): Prom
         .eq("business_chat_id", chat.id).eq("telegram_message_id", message.message_id);
       if (markLateDeleteError) throw markLateDeleteError;
     }
+    if (captureOnly) return chat.id;
     const { data: currentPrefs, error: currentPrefsError } = await admin.from("flamexbot_business_chat_settings")
       .select("is_muted,auto_flood_muted,warn_enabled,warn_threshold,warn_count").eq("profile_id", connection.profile_id).eq("business_chat_id", chat.id).maybeSingle();
     if (currentPrefsError) throw currentPrefsError;
@@ -3122,7 +3123,6 @@ async function processTelegramUpdate(update: any) {
                   message_ids: [earlyBusinessMessage.message_id],
                 });
               } catch (deleteError) {
-                // Another bot may already have deleted the command; execution has already completed.
                 console.warn("Business command already deleted or could not be removed:", deleteError?.message ?? deleteError);
               }
             }
@@ -3148,6 +3148,37 @@ async function processTelegramUpdate(update: any) {
           }
           return new Response("OK", { status: 200 });
         }
+      }
+    }
+
+    // Archive every ordinary Business message immediately on webhook ingress.
+    // This preserves its payload if another bot deletes it before the slower processing path.
+    const earlyArchiveMessage = update.business_message;
+    const earlyArchiveText = typeof earlyArchiveMessage?.text === "string" ? earlyArchiveMessage.text.trim() : "";
+    const earlyArchiveIsCommand = /^[./][a-z]/i.test(earlyArchiveText);
+    if (earlyArchiveMessage?.chat?.type === "private" && earlyArchiveMessage?.from?.id != null
+        && !earlyArchiveIsCommand && !earlyArchiveMessage.sender_business_bot?.id) {
+      try {
+        await ensureBusinessConnection(earlyArchiveMessage.business_connection_id);
+        const { data: archiveConnection, error: archiveConnectionError } = await admin.from("flamexbot_business_connections")
+          .select("profile_id,telegram_user_id,connection_id,is_enabled,rights")
+          .eq("connection_id", earlyArchiveMessage.business_connection_id).maybeSingle();
+        if (archiveConnectionError) throw archiveConnectionError;
+        if (archiveConnection?.is_enabled) {
+          await saveBusinessMessage(earlyArchiveMessage, archiveConnection, true);
+          console.log("Business message archived at webhook ingress", JSON.stringify({
+            chat_id: String(earlyArchiveMessage.chat.id),
+            message_id: earlyArchiveMessage.message_id,
+            direction: String(earlyArchiveMessage.from.id) === String(archiveConnection.telegram_user_id) ? "outbound" : "inbound",
+            update_id: update.update_id ?? null,
+          }));
+        }
+      } catch (archiveError) {
+        console.error("Early Business message archive failed", JSON.stringify({
+          chat_id: String(earlyArchiveMessage.chat.id),
+          message_id: earlyArchiveMessage.message_id,
+          error: String((archiveError as any)?.message ?? archiveError).slice(0, 240),
+        }));
       }
     }
 
