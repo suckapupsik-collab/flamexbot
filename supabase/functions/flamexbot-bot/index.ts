@@ -3976,10 +3976,24 @@ Deno.serve(async (req: Request) => {
         telegram("getMe", {}),
         telegram("getWebhookInfo", {}),
       ]);
+      let requiredChannelBotStatus: string | null = null;
+      let requiredChannelCheckReady = false;
+      let requiredChannelCheckError: string | null = null;
+      try {
+        const botMember = await telegram("getChatMember", { chat_id: "@flamexbot1", user_id: me.id });
+        requiredChannelBotStatus = String(botMember?.status ?? "unknown");
+        requiredChannelCheckReady = ["creator", "administrator"].includes(requiredChannelBotStatus);
+      } catch (channelError) {
+        requiredChannelCheckError = String((channelError as any)?.message ?? channelError).slice(0, 180);
+      }
       return new Response(JSON.stringify({
         ok: true,
         bot_username: me.username ?? null,
         can_connect_to_business: me.can_connect_to_business === true,
+        required_channel: "@flamexbot1",
+        required_channel_bot_status: requiredChannelBotStatus,
+        required_channel_check_ready: requiredChannelCheckReady,
+        required_channel_check_error: requiredChannelCheckError,
         webhook_url_set: Boolean(webhook.url),
         webhook_url_matches: webhook.url === WEBHOOK_URL,
         allowed_updates: webhook.allowed_updates ?? [],
