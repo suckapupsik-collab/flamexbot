@@ -366,6 +366,7 @@ async function ensureTelegramGlobalSetup() {
             { command: "commands", description: "Список доступных команд" },
             { command: "premium", description: "Купить или продлить Premium" },
             { command: "support", description: "Написать в техподдержку" },
+            { command: "say", description: "Отправить от имени аккаунта" },
             { command: "cancel_support", description: "Закрыть обращение в поддержку" },
           ],
         }),
@@ -3380,11 +3381,14 @@ async function processTelegramUpdate(update: any) {
 
 Привет! Я управляю возможностями FLAMEXBOT и Telegram Business.
 
-<b>Важно:</b> команды .mute, .antimute и остальные команды управления нужно отправлять <b>прямо в переписке с нужным человеком</b>, а не сюда в личные сообщения боту.
+<b>Важно:</b> команды управления конкретным диалогом можно отправлять прямо в этой личной переписке с FLAMEXBOT или в самом Business-чате.
 
-Открой FLAMEXBOT, подключи Telegram Business и выдай необходимые разрешения. Затем отправь <code>.help</code> или <code>/help</code> в нужном диалоге.
+<b>Отправить сообщение от имени аккаунта:</b>
+<code>.say @username текст</code>
+Например: <code>.say @username Привет!</code>
+Также работают <code>.sendas</code> и <code>.autounmute</code>. Доступны только чаты, где Telegram разрешает ответ от имени аккаунта (входящее сообщение за последние 24 часа).
 
-Команды без адреса собеседника и без @username — бот определит текущий чат автоматически. Статус подключения: /status. Тарифы: /premium.`,
+Для автоматизации подключи FLAMEXBOT через Telegram → Настройки → Профиль → Автоматизация чатов и выдай разрешение «Управление чатами». Статус: /status. Тарифы: /premium.`,
         "HTML",
         { inline_keyboard: [[{ text: "Открыть FLAMEXBOT", web_app: { url: APP_URL } }]] },
       );
