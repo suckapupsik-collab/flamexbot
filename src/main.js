@@ -150,7 +150,12 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
   webApp.ready?.();
   webApp.expand?.();
   const button = document.querySelector(linkCurrent ? '[data-telegram-link]' : '#telegram-login');
-  if (button) button.disabled = true;
+  const originalButtonHtml = button?.innerHTML || '';
+  if (button) {
+    button.disabled = true;
+    button.classList.add('is-loading');
+    if (!linkCurrent) button.innerHTML = '<span class="auth-button-spinner" aria-hidden="true"></span> Проверяем Telegram…';
+  }
   try {
     const { data, error } = await supabase.functions.invoke('telegram-auth', { body: { initData } });
     if (error) {
@@ -160,6 +165,8 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
         if (details?.reason === 'subscription_required') { renderSubscriptionGate({ reason: 'subscription_required' }); return; }
         if (details?.error) message = details.error;
       } catch {}
+      if (error.status === 409) message = 'Эти данные входа уже использованы. Закрой Mini App и открой его заново из Telegram.';
+      if (error.status === 401 && /устарели|недействительна/i.test(message)) message = 'Данные Telegram устарели. Закрой Mini App и открой его заново.';
       throw new Error(message);
     }
     if (data?.linked_existing_session) {
@@ -186,7 +193,11 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
     else toast(error.message || 'Не удалось привязать Telegram.');
   } finally {
     const current = document.querySelector(linkCurrent ? '[data-telegram-link]' : '#telegram-login');
-    if (current) current.disabled = false;
+    if (current) {
+      current.disabled = false;
+      current.classList.remove('is-loading');
+      if (current === button && originalButtonHtml) current.innerHTML = originalButtonHtml;
+    }
   }
 }
 
