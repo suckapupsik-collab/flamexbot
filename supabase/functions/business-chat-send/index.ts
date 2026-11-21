@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { explainTelegramSendError, hasBusinessRight, afkEnabledForCommand } from "./logic.js";
 
 const FOUNDER_TELEGRAM_ID = "7781170049";
 const cors = {
@@ -44,15 +45,6 @@ async function fetchWithTimeout(
 const supabaseTimedFetch = (input: RequestInfo | URL, init?: RequestInit) =>
   fetchWithTimeout(input, init, 25000, "Supabase");
 
-function explainTelegramSendError(description: unknown) {
- const raw=String(description??"ошибка Telegram API"), lower=raw.toLowerCase();
- if(/blocked by the user|bot was blocked|user is deactivated|chat not found|peer_id_invalid/.test(lower))return "Telegram отклонил отправку: чат недоступен или получатель ограничил сообщения. FLAMEXBOT не может обходить блокировки.";
- if(/bot can\x27t initiate conversation|bot cannot initiate|bot can\x27t send messages to bots/.test(lower))return "Чтобы отправить сообщение через FLAMEXBOT, собеседник должен сначала открыть бота и нажать Start. Антимут не обходит блокировки Telegram.";
- if(/business_connection_invalid|business connection.*(invalid|not found|disabled)/.test(lower))return "Telegram Business-подключение недействительно или отключено.";
- if(/not enough rights|can't write|can_reply|chat_write_forbidden|have no rights/.test(lower))return "Telegram не разрешил отправку: у Business-подключения нет нужного права или чат недоступен для ответа.";
- if(/too many requests|retry after/.test(lower))return "Telegram временно ограничил отправку. Подожди и попробуй позже вручную.";
- return `Telegram отклонил отправку: ${raw.slice(0,220)}`;
-}
 const reply = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: cors });
 
@@ -81,7 +73,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const action = typeof body?.action === "string" ? body.action : "send";
     const chatId = typeof body?.chat_id === "string" ? body.chat_id : "";
-    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    const text = typeof body?.text === "string" ? body.text.replace(/\\n/g, "\n").replace(/(^|\s)\/n(?=\s|$)/g, "$1\n").trim() : "";
     const storagePath = typeof body?.storage_path === "string" ? body.storage_path : "";
     const mediaType = typeof body?.media_type === "string" ? body.media_type : "";
     const replyTo = Number.isSafeInteger(Number(body?.reply_to_message_id)) && Number(body?.reply_to_message_id) > 0
@@ -93,7 +85,9 @@ Deno.serve(async (req: Request) => {
     const commandName = String(body?.command_name || commandMatch?.[1] || (action === "set_mute" ? (body.enabled ? "mute" : "unmute") : action === "set_antimute" ? "antimute" : "")).toLowerCase();
     const commandArgs = String(commandMatch?.[2] || "").trim().toLowerCase();
     const commandMode = body?.command_mode === true || settingAction || Boolean(commandMatch);
-    if (!["send","refresh_avatar","set_mute","set_antimute","set_preference","list_chats","list_messages"].includes(action)) return reply({ error: "Неизвестное действие Business-чата." }, 400);
+    let outgoingText = text;
+    let outgoingParseMode = "";
+    if (!["send","refresh_avatar","set_mute","set_antimute","set_preference","set_business_time","list_chats","list_messages"].includes(action)) return reply({ error: "Неизвестное действие Business-чата." }, 400);
     if (antimutMode && action !== "send") return reply({ error: "Антимут применяется только к отправке сообщения." }, 400);
     if (settingAction && typeof body?.enabled !== "boolean") return reply({ error: "Для настройки укажи enabled: true или false." }, 400);
     const preferenceKeys: Record<string,string> = {
@@ -102,7 +96,7 @@ Deno.serve(async (req: Request) => {
     };
     const preferenceKey = action === "set_preference" ? preferenceKeys[String(body?.preference ?? "")] : null;
     if (action === "set_preference" && !preferenceKey) return reply({ error: "Неизвестная настройка." }, 400);
-    if (!["refresh_avatar","list_chats","list_messages"].includes(action) && !settingAction && (!chatId || (!text && !hasMedia) || text.length > 4096)) return reply({ error: "Укажи чат и текст или вложение." }, 400);
+    if (!["refresh_avatar","set_business_time","list_chats","list_messages"].includes(action) && !settingAction && (!chatId || (!text && !hasMedia) || text.length > 4096)) return reply({ error: "Укажи чат и текст или вложение." }, 400);
     if (settingAction && !chatId) return reply({ error: "Не указан диалог." }, 400);
     if (["refresh_avatar","list_messages"].includes(action) && !chatId) return reply({ error: "Не указан диалог." }, 400);
     if (hasMedia && !["photo", "video", "audio", "voice", "animation", "document"].includes(mediaType)) {
@@ -173,6 +167,65 @@ Deno.serve(async (req: Request) => {
     if (!chat) return reply({ error: "Чат не найден или у тебя нет доступа." }, 404);
 
 
+    if (action === "set_business_time") {
+      if (String(moderation?.telegram_id || "") !== FOUNDER_TELEGRAM_ID) {
+        const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
+          .select("plan,expires_at").eq("user_id", profileId).maybeSingle();
+        if (subscriptionError) throw subscriptionError;
+        const premium = ["premium","founder"].includes(subscription?.plan) &&
+          (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+        if (!premium) return reply({ error: "Команда .time доступна только с активным Premium." }, 403);
+      }
+      const { data: business, error: businessError } = await admin.from("flamexbot_business_connections")
+        .select("connection_id,rights,is_enabled,original_first_name,original_last_name,time_name_enabled")
+        .eq("profile_id", profileId).eq("connection_id", chat.business_connection_id).maybeSingle();
+      if (businessError) throw businessError;
+      if (!business?.is_enabled) return reply({ error: "Telegram Business не подключён или отключён." }, 409);
+      if (business.rights?.can_edit_name !== true) {
+        return reply({ error: "Выдай FLAMEXBOT право Telegram Business «Изменять имя профиля»." }, 403);
+      }
+      const telegramCall = async (method: string, payload: Record<string, unknown>) => {
+        const response = await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/${method}`, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+        }, 10000, `Telegram ${method}`);
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.description || `Telegram ${method} failed`);
+        return result.result;
+      };
+      let originalFirstName = business.original_first_name;
+      let originalLastName = business.original_last_name ?? "";
+      if (!originalFirstName) {
+        const currentConnection = await telegramCall("getBusinessConnection", { business_connection_id: business.connection_id });
+        originalFirstName = String(currentConnection?.user?.first_name || "").trim();
+        originalLastName = String(currentConnection?.user?.last_name || "");
+        if (!originalFirstName) return reply({ error: "Telegram не вернул исходное имя. Переподключи Telegram Business." }, 502);
+      }
+      const enabled = !Boolean(business.time_name_enabled);
+      let firstName = originalFirstName;
+      if (enabled) {
+        const clock = new Intl.DateTimeFormat("ru-RU", {
+          timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+        }).format(new Date());
+        const suffix = " · " + clock;
+        firstName = originalFirstName.slice(0, Math.max(1, 64 - suffix.length)) + suffix;
+      }
+      await telegramCall("setBusinessAccountName", {
+        business_connection_id: business.connection_id,
+        first_name: firstName,
+        last_name: originalLastName,
+      });
+      const { error: saveError } = await admin.from("flamexbot_business_connections").update({
+        original_first_name: originalFirstName,
+        original_last_name: originalLastName,
+        time_name_enabled: enabled,
+        updated_at: new Date().toISOString(),
+      }).eq("profile_id", profileId).eq("connection_id", business.connection_id);
+      if (saveError) throw saveError;
+      return reply({ success: true, enabled, message: enabled
+        ? "🕒 Время добавлено в имя Telegram Business-профиля (МСК). Повтори команду, чтобы вернуть исходное имя."
+        : "Исходное имя Telegram-профиля восстановлено." });
+    }
+
     if (action === "refresh_avatar") {
       const telegramUserId = String(chat.telegram_user_id || chat.telegram_chat_id || "");
       if (!telegramUserId || !/^\d+$/.test(telegramUserId)) return reply({ error: "Не удалось определить Telegram ID собеседника." }, 400);
@@ -241,7 +294,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (settingAction) {
-      const enabled = body.enabled === true;
+      let enabled = body.enabled === true;
+      if (action === "set_antimute" && body.toggle === true) {
+        const { data: currentAnti, error: currentAntiError } = await admin.from("flamexbot_business_chat_settings")
+          .select("antimut_enabled").eq("profile_id", profileId).eq("business_chat_id", chat.id).maybeSingle();
+        if (currentAntiError) throw currentAntiError;
+        enabled = !Boolean(currentAnti?.antimut_enabled);
+      }
       const requiresPremium = enabled;
       if (requiresPremium) {
         const { data: subscription, error: subscriptionError } = await admin.from("user_subscriptions")
@@ -252,7 +311,7 @@ Deno.serve(async (req: Request) => {
       }
       if (action === "set_mute" && enabled && connection.rights?.can_delete_all_messages !== true) {
         return reply({ error: "Telegram Business не выдал право «Удалять все сообщения»." }, 403);
-      }      if (action === "set_antimute" && enabled && connection.rights?.can_delete_sent_messages !== true) {
+      }      if (action === "set_antimute" && enabled && !hasBusinessRight(connection.rights, "can_delete_sent_messages")) {
         return reply({ error: "Telegram Business не выдал право «Удалять отправленные сообщения»." }, 403);
       }
       if (action === "set_preference" && enabled && ["mutestick","antimat"].includes(String(body?.preference)) &&
@@ -286,10 +345,10 @@ Deno.serve(async (req: Request) => {
     if (commandName === "afk" || commandName === "unafk") {
       if (hasMedia) return reply({ error: "Команды AFK не принимают вложения." }, 400);
       const rawArgs = commandMatch?.[2]?.trim() ?? "";
-      const enabled = commandName === "afk";
-      const afkMessage = enabled
-        ? (rawArgs || "Сейчас отошёл, отвечу позже.").slice(0, 300)
-        : null;
+      const { data: currentAfk, error: currentAfkError } = await admin.from("flamexbot_business_chat_settings").select("afk_enabled").eq("profile_id", profileId).eq("business_chat_id", chat.id).maybeSingle();
+      if (currentAfkError) throw currentAfkError;
+      const enabled = afkEnabledForCommand(commandName);
+      const afkMessage = enabled ? (rawArgs || "Сейчас отошёл, отвечу позже.").slice(0, 300) : null;
       const { error: afkError } = await admin.from("flamexbot_business_chat_settings").upsert({
         profile_id: profileId,
         business_chat_id: chat.id,
@@ -306,6 +365,24 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (commandMode && commandName === "advertising") {
+      const { data: existingCode, error: codeError } = await admin.from("flamexbot_referral_codes")
+        .select("code").eq("user_id", profileId).maybeSingle();
+      if (codeError) throw codeError;
+      let referralCode = existingCode?.code;
+      if (!referralCode) {
+        const generated = crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase();
+        const { error: insertError } = await admin.from("flamexbot_referral_codes")
+          .upsert({ user_id: profileId, code: generated }, { onConflict: "user_id", ignoreDuplicates: true });
+        if (insertError) throw insertError;
+        const { data: created, error: createdError } = await admin.from("flamexbot_referral_codes")
+          .select("code").eq("user_id", profileId).single();
+        if (createdError) throw createdError;
+        referralCode = created.code;
+      }
+      outgoingText = "Я использую FLAMEXBOT! Открой бота по моей ссылке и получи Premium на 3 дня бесплатно: https://t.me/Flamexgame?start=ref_" + referralCode;
+    }
+
     if (antimutMode) {
       if (String(chat.telegram_chat_id) === "7781170049" || String(chat.telegram_user_id ?? "") === "7781170049") {
         return reply({ error: "Этот диалог защищён. Антимут и другие команды управления здесь отключены." }, 403);
@@ -318,6 +395,69 @@ Deno.serve(async (req: Request) => {
       if (settingsError) throw settingsError;
       if (!settings?.antimut_enabled) return reply({ error: "Сначала включи антимут в настройках этого чата." }, 409);
       /* Antimut is still a Telegram Business reply: send through the connected account, never the bot private chat. */
+    }
+
+    if (commandMode && !hasMedia && ["bold","dumb","link","copyp","profile","id","chatid","date","calc","upper","lower","reverse","count","wordcount","choose","roll","qr"].includes(commandName)) {
+      const rawArgs = String(commandMatch?.[2] ?? "").trim();
+      const htmlEscape = (value: string) => value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      if (commandName === "bold") {
+        if (!rawArgs) return reply({error:"Формат: .bold текст"},400);
+        outgoingText = "<b>"+htmlEscape(rawArgs)+"</b>"; outgoingParseMode = "HTML";
+      } else if (commandName === "dumb") {
+        if (!rawArgs) return reply({error:"Формат: .dumb текст"},400);
+        outgoingText = rawArgs.replace(/привет/gi,"превед").replace(/что/gi,"што").replace(/ч/gi,"4");
+      } else if (commandName === "link") {
+        if (!rawArgs) return reply({error:"Формат: .link текст"},400);
+        outgoingText = chat.username ? "https://t.me/"+chat.username+"?text="+encodeURIComponent(rawArgs) : "tg://user?id="+chat.telegram_chat_id;
+      } else if (commandName === "copyp" || commandName === "profile" || commandName === "id" || commandName === "chatid") {
+        const name = [chat.first_name,chat.last_name].filter(Boolean).join(" ") || "Telegram-пользователь";
+        const userId = String(chat.telegram_user_id || chat.telegram_chat_id);
+        const username = chat.username ? "@"+chat.username : "не указан";
+        outgoingText = commandName === "chatid"
+          ? "ID чата: "+String(chat.telegram_chat_id)
+          : commandName === "id"
+            ? "Данные собеседника\nИмя: "+name+"\nTelegram ID: "+userId+"\nЧат ID: "+String(chat.telegram_chat_id)+"\nЮзернейм: "+username
+            : "FLAMEXBOT · карточка собеседника\nИмя: "+name+"\nЮзернейм: "+username+"\nTelegram ID: "+userId+"\n"+(chat.username?"https://t.me/"+chat.username:"Публичная ссылка недоступна");
+      } else if (commandName === "date") {
+        outgoingText = "Сейчас по Москве: "+new Intl.DateTimeFormat("ru-RU",{timeZone:"Europe/Moscow",dateStyle:"full",timeStyle:"short"}).format(new Date());
+      } else if (commandName === "calc") {
+        const tokens = rawArgs.match(/\d+(?:\.\d+)?|[()+\-*/%]/g) || [];
+        if (!rawArgs || tokens.join("").replace(/\s/g,"") !== rawArgs.replace(/\s/g,"")) return reply({error:"Формат: .calc (12 + 8) * 2"},400);
+        let pos=0;
+        let expression:()=>number;
+        const factor=():number=>{const t=tokens[pos++];if(t==="+")return factor();if(t==="-")return -factor();if(t==="("){const v=expression();if(tokens[pos++]!==")")throw new Error("paren");return v;}const n=Number(t);if(!Number.isFinite(n))throw new Error("number");return n;};
+        const term=():number=>{let v=factor();while(["*","/","%"].includes(tokens[pos])){const op=tokens[pos++],r=factor();v=op==="*"?v*r:op==="/"?v/r:v%r;}return v;};
+        expression=():number=>{let v=term();while(tokens[pos]==="+"||tokens[pos]==="-"){const op=tokens[pos++],r=term();v=op==="+"?v+r:v-r;}return v;};
+        try{const value=expression();if(pos!==tokens.length||!Number.isFinite(value))throw new Error("expression");outgoingText="Результат: "+String(Number(value.toPrecision(12)));}catch{return reply({error:"Не удалось вычислить. Проверь скобки и операторы."},400);}
+      } else if (["upper","lower","reverse","count","wordcount"].includes(commandName)) {
+        if (!rawArgs || rawArgs.length>3000) return reply({error:"Добавь текст (до 3000 символов)."},400);
+        outgoingText = commandName==="upper" ? rawArgs.toLocaleUpperCase("ru-RU")
+          : commandName==="lower" ? rawArgs.toLocaleLowerCase("ru-RU")
+          : commandName==="reverse" ? Array.from(rawArgs).reverse().join("")
+          : commandName==="count" ? "Символов: "+rawArgs.length
+          : "Слов: "+(rawArgs.match(/[^\s]+/g)||[]).length;
+      } else if (commandName === "choose") {
+        const choices=rawArgs.split("|").map(x=>x.trim()).filter(Boolean).slice(0,30);
+        if(choices.length<2)return reply({error:"Формат: .choose вариант 1 | вариант 2"},400);
+        outgoingText="Выбор FLAMEXBOT: "+choices[Math.floor(Math.random()*choices.length)];
+      } else if (commandName === "roll") {
+        const max=rawArgs?Number(rawArgs):6;
+        if(!Number.isInteger(max)||max<2||max>100000)return reply({error:"Формат: .roll [максимум от 2 до 100000]"},400);
+        outgoingText="Выпало: "+(Math.floor(Math.random()*max)+1)+" (1–"+max+")";
+      } else if (commandName === "qr") {
+        if(!rawArgs||rawArgs.length>512)return reply({error:"Формат: .qr ссылка или текст (до 512 символов)."},400);
+        const qrUrl=new URL("https://api.qrserver.com/v1/create-qr-code/");
+        qrUrl.searchParams.set("size","512x512");qrUrl.searchParams.set("data",rawArgs);
+        const photoPayload=new FormData();
+        photoPayload.append("business_connection_id",connection.connection_id);
+        photoPayload.append("chat_id",String(chat.telegram_chat_id));
+        photoPayload.append("photo",qrUrl.toString());
+        photoPayload.append("caption","QR-код создан в FLAMEXBOT");
+        const photoResponse=await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/sendPhoto`,{method:"POST",body:photoPayload},15000,"Telegram sendPhoto");
+        const photoData=await photoResponse.json();
+        if(!photoResponse.ok||!photoData.ok)return reply({error:explainTelegramSendError(photoData.description||"Не удалось отправить QR-код.")},502);
+        return reply({ok:true,command:commandName,message_id:photoData.result?.message_id});
+      }
     }
 
     const { data: sendLimit, error: sendLimitError } = await admin.rpc(
@@ -360,7 +500,8 @@ Deno.serve(async (req: Request) => {
       if (text) telegramPayload.append("caption", text);
     } else {
       method = "sendMessage";
-      telegramPayload.append("text", text);
+      telegramPayload.append("text", outgoingText);
+      if (outgoingParseMode) telegramPayload.append("parse_mode", outgoingParseMode);
     }
     const tgResponse = await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/${method}`, {
       method: "POST",
@@ -378,7 +519,7 @@ Deno.serve(async (req: Request) => {
       telegram_message_id: sent.message_id,
       direction: "outbound",
       sender_profile_id: profileId,
-      content: sent.text ?? sent.caption ?? text ?? "",
+      content: sent.text ?? sent.caption ?? outgoingText ?? "",
       message_type: hasMedia ? mediaType : "text",
       media_file_id: sentMedia?.file_id ?? null,
       media_url: hasMedia ? storagePath : null,
