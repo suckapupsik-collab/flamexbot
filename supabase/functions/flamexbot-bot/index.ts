@@ -3482,6 +3482,21 @@ async function processTelegramUpdate(update: any) {
       if (earlyConnectionError) throw earlyConnectionError;
       const earlySenderIsOwner = String(earlyBusinessMessage.from.id) === String(earlyConnection?.telegram_user_id ?? "");
       if (earlySenderIsOwner && earlyConnection?.is_enabled) {
+        const earlyOwnerId = String(earlyConnection.telegram_user_id);
+        try {
+          if (!(await isRequiredChannelMember(earlyOwnerId))) {
+            try { await sendRequiredSubscriptionPrompt(Number(earlyOwnerId)); } catch (sendError) { console.warn("Early Business subscription prompt failed:", String((sendError as any)?.message ?? sendError)); }
+            return new Response("OK", { status: 200 });
+          }
+          if (!(await hasRegisteredMiniAppProfile(earlyOwnerId))) {
+            try { await sendMiniAppRegistrationPrompt(Number(earlyOwnerId)); } catch (sendError) { console.warn("Early Business registration prompt failed:", String((sendError as any)?.message ?? sendError)); }
+            return new Response("OK", { status: 200 });
+          }
+        } catch (accessError) {
+          console.error("Early Business access check failed:", String((accessError as any)?.message ?? accessError));
+          try { await sendRequiredSubscriptionPrompt(Number(earlyOwnerId), true); } catch {}
+          return new Response("OK", { status: 200 });
+        }
         const earlyBan = await getTelegramBan(earlyConnection.telegram_user_id);
         if (earlyBan) {
           console.warn("Ignored Business command from banned FLAMEXBOT owner", earlyConnection.telegram_user_id);
@@ -3593,7 +3608,7 @@ async function processTelegramUpdate(update: any) {
       if (ownerLookupError) throw ownerLookupError;
       accessTelegramUserId = ownerConnection?.telegram_user_id ?? null;
     }
-    if (accessTelegramUserId != null && !isStartEntry && !isSubscriptionCheck) {
+    if (accessTelegramUserId != null && !isStartEntry && !isSubscriptionCheck && !update.business_connection) {
       let subscribed = false;
       try {
         subscribed = await isRequiredChannelMember(accessTelegramUserId);
