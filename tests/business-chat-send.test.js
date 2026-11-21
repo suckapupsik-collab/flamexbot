@@ -23,3 +23,12 @@ test("AFK and unAFK commands set explicit states", () => {
 test("maps bot initiation restrictions to a clear next step", () => {
   assert.match(explainTelegramSendError("Forbidden: bot can't initiate conversation with a user"), /нажать Start/);
 });
+
+import { readFile } from "node:fs/promises";
+const miniAppSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+
+test("Mini App exposes the backend unAFK command", () => {
+  assert.match(miniAppSource, /\.unafk/);
+  assert.match(miniAppSource, /'afk','unafk'/);
+  assert.match(miniAppSource, /name==='unafk'/);
+});
