@@ -811,7 +811,8 @@ async function saveBusinessMessage(message: any, connectionOverride?: any, captu
     const shouldDeleteSticker = media.type === "sticker" && Boolean(chatPrefs?.mutestick_enabled);
     const shouldDeleteProfanity = Boolean(chatPrefs?.antimat_enabled) && containsBusinessProfanity(content);
     const shouldFilter = shouldDeleteSticker || shouldDeleteProfanity;
-    if (shouldHardMute || shouldFilter) {
+    // HARD SAFETY: moderation may delete incoming messages only; never delete messages authored by the connected Business account owner.
+    if (direction === "inbound" && senderId !== String(connection.telegram_user_id) && (shouldHardMute || shouldFilter)) {
       if (connection.rights?.can_delete_all_messages) {
         try {
           await telegram("deleteBusinessMessages", {
