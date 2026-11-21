@@ -32,3 +32,15 @@ test("Mini App exposes the backend unAFK command", () => {
   assert.match(miniAppSource, /'afk','unafk'/);
   assert.match(miniAppSource, /name==='unafk'/);
 });
+
+const botWebhookSource = await readFile(new URL("../supabase/functions/flamexbot-bot/index.ts", import.meta.url), "utf8");
+
+test("Business commands are dispatched before slower webhook processing", () => {
+  const captureAt = botWebhookSource.indexOf("business command captured at webhook ingress");
+  const normalProcessingAt = botWebhookSource.indexOf("const directTelegramUserId");
+  assert.ok(captureAt >= 0, "early Business command capture must exist");
+  assert.ok(normalProcessingAt >= 0, "normal webhook processing marker must exist");
+  assert.ok(captureAt < normalProcessingAt, "commands must be handled before unrelated webhook work");
+  assert.match(botWebhookSource, /earlyBusinessMessage\.message_id/);
+  assert.match(botWebhookSource, /Another bot may already have deleted the command/);
+});
