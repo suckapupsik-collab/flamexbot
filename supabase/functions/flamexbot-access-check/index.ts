@@ -5,6 +5,7 @@ const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const REQUIRED_CHANNEL = "@flamexbot1";
+const INIT_DATA_MAX_AGE_SECONDS = 24 * 60 * 60;
 
 const headers = {
   "Access-Control-Allow-Origin": "*",
@@ -41,7 +42,7 @@ async function getTelegramUser(initData: string) {
   if (!constantTimeEqual(expected, receivedHash.toLowerCase())) throw new Error("Подпись Telegram недействительна.");
   const authDate = Number(params.get("auth_date"));
   const now = Math.floor(Date.now() / 1000);
-  if (!Number.isFinite(authDate) || authDate > now + 60 || now - authDate > 300) {
+  if (!Number.isFinite(authDate) || authDate > now + 300 || now - authDate > INIT_DATA_MAX_AGE_SECONDS) {
     throw new Error("Данные Telegram устарели. Закрой и заново открой Mini App.");
   }
   const rawUser = params.get("user");
@@ -63,7 +64,7 @@ async function checkSubscription(telegramUserId: string) {
     const description = String(payload?.description ?? "");
     console.error("flamexbot-access-check Telegram error:", description || response.status);
     if (/chat not found|not enough rights|administrator/i.test(description)) {
-      throw new Error("Добавьте бота FLAMEXBOT администратором канала @flamexbot1, чтобы он мог проверять подписку.");
+      throw new Error("Бот не может проверить канал. Убедись, что FLAMEXBOT — администратор @flamexbot1.");
     }
     throw new Error("Telegram временно не смог проверить подписку. Попробуй ещё раз.");
   }
@@ -80,24 +81,50 @@ Deno.serve(async (req: Request) => {
   }
   try {
     const body = await req.json().catch(() => ({}));
-    const telegramUserId = await getTelegramUser(typeof body?.initData === "string" ? body.initData : "");
-    const subscribed = await checkSubscription(telegramUserId);
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const { data: profile, error: profileError } = await admin.from("profiles")
-      .select("id,is_banned").eq("telegram_id", telegramUserId).maybeSingle();
-    if (profileError) throw profileError;
 
-    let sessionMatches: boolean | null = null;
+    // An authenticated Mini App session is the stable identity for repeat checks.
+    // Do not re-verify old initData on every route change: Telegram initData is issued at launch
+    // and can be older than a few minutes while the user is still using the same app session.
     const authorization = req.headers.get("Authorization") ?? "";
     const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    let telegramUserId: string;
+    let profile: { id: string; telegram_id: string | null; is_banned: boolean | null } | null = null;
+    let sessionMatches: boolean | null = null;
+
     if (bearer) {
       const { data: authData, error: authError } = await admin.auth.getUser(bearer);
-      if (authError || !authData.user) return json({ ok: false, reason: "invalid_session", error: "Сессия FLAMEXBOT недействительна." }, 401);
-      sessionMatches = Boolean(profile && profile.id === authData.user.id);
+      if (authError || !authData.user) {
+        return json({ ok: false, reason: "invalid_session", error: "Сессия FLAMEXBOT истекла. Войди через Telegram ещё раз." }, 401);
+      }
+      const { data, error } = await admin.from("profiles")
+        .select("id,telegram_id,is_banned").eq("id", authData.user.id).maybeSingle();
+      if (error) throw error;
+      if (!data?.telegram_id) {
+        return json({
+          ok: true, subscribed: false, registered: Boolean(data), session_matches: false,
+          reason: "telegram_link_required",
+          error: "Привяжи Telegram к профилю, чтобы подтвердить подписку и пользоваться Mini App.",
+        });
+      }
+      profile = data;
+      telegramUserId = String(data.telegram_id);
+      sessionMatches = true;
+    } else {
+      telegramUserId = await getTelegramUser(typeof body?.initData === "string" ? body.initData : "");
+      const { data, error } = await admin.from("profiles")
+        .select("id,telegram_id,is_banned").eq("telegram_id", telegramUserId).maybeSingle();
+      if (error) throw error;
+      profile = data ?? null;
     }
 
+    if (profile?.is_banned) {
+      return json({ ok: true, subscribed: true, registered: true, session_matches: sessionMatches, reason: "banned" }, 403);
+    }
+
+    const subscribed = await checkSubscription(telegramUserId);
     if (!subscribed) {
       return json({
         ok: true, subscribed: false, registered: Boolean(profile),
@@ -105,29 +132,24 @@ Deno.serve(async (req: Request) => {
         channel: REQUIRED_CHANNEL, subscribe_url: "https://t.me/flamexbot1",
       });
     }
-    if (profile?.is_banned) {
-      return json({ ok: true, subscribed: true, registered: true, session_matches: sessionMatches, reason: "banned" }, 403);
-    }
     if (!profile) {
       return json({
         ok: true, subscribed: true, registered: false, session_matches: sessionMatches,
         reason: "registration_required", channel: REQUIRED_CHANNEL,
       });
     }
-    if (sessionMatches === false) {
-      return json({
-        ok: true, subscribed: true, registered: true, session_matches: false,
-        reason: "account_mismatch",
-      });
-    }
     return json({
       ok: true, subscribed: true, registered: true, session_matches: sessionMatches,
-      reason: "allowed",
+      reason: "allowed", channel: REQUIRED_CHANNEL,
     });
   } catch (error) {
     const message = String((error as Error)?.message ?? error);
-    const status = /подпись|устарели|некорректные данные|не передал|определить Telegram/i.test(message) ? 401 : 503;
-    console.error("flamexbot-access-check:", message);
-    return json({ ok: false, reason: "membership_check_unavailable", error: message }, status);
+    const invalidInitData = /подпись|устарели|некорректные данные|не передал|определить Telegram/i.test(message);
+    const status = invalidInitData ? 401 : 503;
+    console.error("flamexbot-access-check:", JSON.stringify({ error: message, status }));
+    return json({
+      ok: false, reason: invalidInitData ? "invalid_telegram_data" : "membership_check_unavailable",
+      error: message,
+    }, status);
   }
 });
