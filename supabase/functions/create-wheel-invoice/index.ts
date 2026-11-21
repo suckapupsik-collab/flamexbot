@@ -5,7 +5,7 @@ const SUPABASE_URL=Deno.env.get("SUPABASE_URL")??"";
 const SUPABASE_ANON_KEY=Deno.env.get("SUPABASE_ANON_KEY")??"";
 const SERVICE_ROLE_KEY=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"";
 const BOT_TOKEN=Deno.env.get("TELEGRAM_BOT_TOKEN")??"";
-const PRICE_STARS=5;
+const DEFAULT_priceStars=5;
 const corsHeaders={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Content-Type":"application/json"};
 const response=(body:Record<string,unknown>,status=200)=>new Response(JSON.stringify(body),{status,headers:corsHeaders});
 async function telegram(method:string,body:Record<string,unknown>){
@@ -28,6 +28,9 @@ Deno.serve(async(req:Request)=>{
   if(profileError)throw profileError;
   if(!profile?.telegram_id)return response({error:"Сначала привяжи Telegram в профиле."},400);
   if(profile.is_banned)return response({error:profile.ban_reason||"Аккаунт заблокирован."},403);
+  const {data:wheelSettings,error:settingsError}=await admin.from("flamexbot_wheel_settings").select("spin_price_stars").eq("id",true).single();
+  if(settingsError)throw settingsError;
+  const priceStars=Math.max(1,Math.min(10000,Number(wheelSettings?.spin_price_stars??DEFAULT_priceStars)));
   if(body?.action==="free_spin"){
     const {data:prize,error:prizeError}=await admin.rpc("redeem_flamexbot_free_wheel_spin",{p_user_id:authData.user.id});
     if(prizeError)throw prizeError;
@@ -91,17 +94,17 @@ Deno.serve(async(req:Request)=>{
   }
   const orderId=crypto.randomUUID();
   const payload="flamexbot_wheel:"+profile.id+":"+orderId;
-  const {error:insertError}=await admin.from("flamexbot_wheel_orders").insert({id:orderId,user_id:profile.id,telegram_user_id:profile.telegram_id,invoice_payload:payload,price_stars:PRICE_STARS,status:"pending"});
+  const {error:insertError}=await admin.from("flamexbot_wheel_orders").insert({id:orderId,user_id:profile.id,telegram_user_id:profile.telegram_id,invoice_payload:payload,price_stars:priceStars,status:"pending"});
   if(insertError)throw insertError;
   let invoiceLink:string;
   try{
-    invoiceLink=await telegram("createInvoiceLink",{title:"Колесо фортуны FLAMEXBOT",description:"Одна прокрутка колеса фортуны. Награда начисляется автоматически.",payload,currency:"XTR",prices:[{label:"Одна прокрутка",amount:PRICE_STARS}]});
+    invoiceLink=await telegram("createInvoiceLink",{title:"Колесо фортуны FLAMEXBOT",description:"Одна прокрутка колеса фортуны. Награда начисляется автоматически.",payload,currency:"XTR",prices:[{label:"Одна прокрутка",amount:priceStars}]});
   }catch(invoiceError){
     const {error:cleanupError}=await admin.from("flamexbot_wheel_orders")
       .delete().eq("id",orderId).eq("status","pending");
     if(cleanupError)console.warn("Could not clean up wheel order after invoice creation failure:",cleanupError.message);
     throw invoiceError;
   }
-  return response({ok:true,invoice_link:invoiceLink,order_id:orderId,price_stars:PRICE_STARS});
+  return response({ok:true,invoice_link:invoiceLink,order_id:orderId,price_stars:priceStars});
  }catch(error){console.error("create-wheel-invoice:",error?.message??error);return response({error:error?.message??"Не удалось создать счёт"},500);}
 });
