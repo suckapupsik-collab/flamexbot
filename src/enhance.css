@@ -1,0 +1,63 @@
+/* FLAMEXBOT 3.0 enhancement layer — loaded after style.css.
+   New components (PIN keypad, sheets, fortune wheel, status chips, avatars) + global motion polish. */
+:root{
+  --fx-ease:cubic-bezier(.2,.8,.2,1);
+  --fx-spring:cubic-bezier(.34,1.56,.64,1);
+  --fx-good:#43d69a;
+  --fx-bad:#ff5d5d;
+  --fx-gold:#f2b93b;
+  --fx-safe-b:env(safe-area-inset-bottom,0px);
+}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(60vmax 40vmax at 100% -10%,color-mix(in srgb,var(--orange) 13%,transparent),transparent 70%),radial-gradient(50vmax 36vmax at -10% 110%,color-mix(in srgb,var(--orange2) 8%,transparent),transparent 70%)}
+.avatar{object-fit:cover}
+.avatar.avatar-fallback{display:inline-grid;place-items:center;flex:none;overflow:hidden;background:linear-gradient(140deg,hsl(var(--ah,20) 72% 54%),hsl(calc(var(--ah,20) + 38) 68% 38%));color:#fff;font:800 .95em/1 Manrope,sans-serif;letter-spacing:0;text-shadow:0 1px 2px rgba(0,0,0,.28)}
+.avatar-lg.avatar-fallback{font-size:19px}.avatar-xl.avatar-fallback{font-size:28px}.leaderboard-avatar .avatar{width:100%;height:100%;border-radius:50%}
+button,.home-feature-card,.profile-menu-item,.chat-choice,.admin-action{-webkit-tap-highlight-color:transparent}
+.primary,.outline,.admin-action,.telegram-login,.tariff-tab,.home-feature-card,.profile-menu-item,.text-button{transition:transform .16s var(--fx-ease),box-shadow .22s var(--fx-ease),background-color .2s,border-color .2s,opacity .2s}
+.primary:active:not(:disabled),.outline:active:not(:disabled),.admin-action:active:not(:disabled),.telegram-login:active:not(:disabled),.home-feature-card:active,.profile-menu-item:active,.tariff-tab:active{transform:scale(.965)}
+.primary{position:relative;overflow:hidden}
+.primary::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.28) 50%,transparent 65%);transform:translateX(-120%);pointer-events:none}
+.primary:hover:not(:disabled)::after{transform:translateX(120%);transition:transform .7s var(--fx-ease)}
+.primary:disabled,.outline:disabled,.admin-action:disabled{cursor:not-allowed}
+:focus-visible{outline:2px solid color-mix(in srgb,var(--orange) 80%,#fff);outline-offset:2px}
+@keyframes fx-rise{from{opacity:0;transform:translate3d(0,14px,0)}to{opacity:1;transform:none}}
+.page-content.page-enter>*{animation:fx-rise .5s var(--fx-ease) both}
+.page-content.page-enter>*:nth-child(2){animation-delay:.05s}.page-content.page-enter>*:nth-child(3){animation-delay:.1s}.page-content.page-enter>*:nth-child(4){animation-delay:.15s}.page-content.page-enter>*:nth-child(5){animation-delay:.2s}.page-content.page-enter>*:nth-child(n+6){animation-delay:.25s}
+.home-feature-card,.stat-card,.admin-user-card,.streak-row,.leaderboard-row,.business-card{transition:transform .22s var(--fx-ease),border-color .22s,box-shadow .22s}
+@media(hover:hover){.home-feature-card:hover,.stat-card:hover,.admin-user-card:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--orange) 45%,var(--line));box-shadow:0 14px 34px rgba(0,0,0,.28)}}
+.toast{bottom:calc(18px + var(--fx-safe-b))}.toast.show{animation:fx-toast .42s var(--fx-spring) both}
+@keyframes fx-toast{from{opacity:0;transform:translate(-50%,18px) scale(.94)}to{opacity:1}}
+.user-flag.active{position:relative}.user-flag.active::first-letter{color:var(--fx-good)}
+.home-status-line.is-connected .status-dot,.user-flag.active{animation:fx-live 2.4s ease-in-out infinite}
+@keyframes fx-live{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
+.right-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.right-chip{padding:5px 9px;border-radius:999px;font-size:10.5px;font-weight:700;color:var(--fx-good);background:color-mix(in srgb,var(--fx-good) 12%,transparent);border:1px solid color-mix(in srgb,var(--fx-good) 28%,transparent)}
+.right-chip.is-empty{color:var(--muted);background:rgba(255,255,255,.05);border-color:var(--line)}
+.fx-sheet-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:end center;background:rgba(5,6,9,0);transition:background .26s ease;padding:0 10px}
+.fx-sheet-backdrop.open{background:rgba(5,6,9,.66);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.fx-sheet{width:min(420px,100%);padding:22px 20px calc(20px + var(--fx-safe-b));border:1px solid var(--line);border-bottom:0;border-radius:26px 26px 0 0;background:linear-gradient(180deg,color-mix(in srgb,var(--panel) 92%,var(--orange)),var(--panel));text-align:center;transform:translateY(105%);transition:transform .34s var(--fx-ease);box-shadow:0 -18px 60px rgba(0,0,0,.5)}
+.fx-sheet-backdrop.open .fx-sheet{transform:none}.fx-sheet h3{margin:6px 0 4px;font:800 21px Manrope,sans-serif}.fx-sheet p{margin:0 0 6px;font-size:13px}
+@media(min-width:700px){.fx-sheet-backdrop{place-items:center}.fx-sheet{border-radius:26px;border-bottom:1px solid var(--line);transform:translateY(24px) scale(.96);opacity:0;transition:transform .3s var(--fx-ease),opacity .3s}.fx-sheet-backdrop.open .fx-sheet{opacity:1}}
+.wheel-host{display:grid;place-items:center;padding:26px 0 18px}.wheel3{position:relative;width:min(320px,82vw);aspect-ratio:1}
+.wheel3-svg{position:relative;width:100%;height:100%;display:block;filter:drop-shadow(0 18px 30px rgba(0,0,0,.45))}
+.wheel3-svg #w-rot{will-change:transform}.wheel3-glow{position:absolute;inset:-9%;border-radius:50%;background:conic-gradient(from 0deg,var(--orange),var(--fx-gold),#c25bd0,#5b7fd6,var(--orange));filter:blur(26px);opacity:.34;animation:wheel-glow 9s linear infinite}
+@keyframes wheel-glow{to{transform:rotate(360deg)}}
+.wheel3.is-waiting .wheel3-glow,.wheel3.is-spinning .wheel3-glow{opacity:.7;animation-duration:2.2s}
+.wheel3-pointer{position:absolute;z-index:3;left:50%;top:-13px;width:30px;height:38px;margin-left:-15px;transform-origin:50% 22%;background:linear-gradient(180deg,#fff,var(--fx-gold));clip-path:polygon(50% 100%,4% 28%,22% 4%,78% 4%,96% 28%);filter:drop-shadow(0 4px 6px rgba(0,0,0,.5))}
+.wheel3-pointer.tick{animation:wheel-tick .13s ease-out}
+@keyframes wheel-tick{0%{transform:rotate(0)}40%{transform:rotate(-17deg)}100%{transform:rotate(0)}}
+.wheel3-hub{position:absolute;left:50%;top:50%;width:19%;aspect-ratio:1;transform:translate(-50%,-50%);display:grid;place-items:center;border-radius:50%;color:var(--fx-gold);font-size:clamp(18px,6vw,24px);pointer-events:none;background:radial-gradient(circle at 35% 30%,#2b3346,#0e121a)}
+.wheel3.is-spinning .wheel3-hub{animation:pin-pulse .7s ease-in-out infinite}
+.wbulb{fill:#fff7d6;animation:wheel-bulb 1.4s ease-in-out infinite;animation-delay:var(--d,0s)}
+@keyframes wheel-bulb{0%,100%{opacity:.35}50%{opacity:1}}
+.wsec{transition:opacity .4s}.wheel3.is-landed .wsec:not(.win){opacity:.38}.wsec.win>path:first-child{animation:wheel-win .5s ease-in-out 3}
+@keyframes wheel-win{50%{filter:brightness(1.55)}}.wheel3.is-landed{animation:wheel-land .5s var(--fx-spring)}
+@keyframes wheel-land{40%{transform:scale(1.045)}}
+.wheel-card .wheel-odds span{padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.035)}
+.prize-sheet .prize-burst{width:96px;height:96px;margin:2px auto 10px;display:grid;place-items:center;border-radius:50%;font-size:50px;background:radial-gradient(circle,color-mix(in srgb,var(--fx-gold) 34%,transparent),transparent 70%);animation:prize-pop .7s var(--fx-spring) both}
+@keyframes prize-pop{from{transform:scale(.2) rotate(-25deg);opacity:0}to{transform:none;opacity:1}}
+.prize-sheet .primary{margin-top:14px}.fx-confetti{position:fixed;inset:0;z-index:1100;pointer-events:none}
+.page-loading strong,.app-boot-loading h2{background:linear-gradient(90deg,var(--text) 30%,var(--orange) 50%,var(--text) 70%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:fx-shimmer 1.8s linear infinite}
+@keyframes fx-shimmer{from{background-position:120% 0}to{background-position:-100% 0}}
+@media(max-width:720px){.admin-action,.outline.small,.primary.small{min-height:40px}.page-content{padding-bottom:calc(28px + var(--fx-safe-b))}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
