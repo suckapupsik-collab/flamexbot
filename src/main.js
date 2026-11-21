@@ -997,7 +997,7 @@ async function openBusinessChat(id) {
     const command=!file&&text.startsWith('.')?text.trim():'';
     if(command){
       const [rawName,...rest]=command.slice(1).split(/\s+/);const name=(rawName||'').toLowerCase();const args=rest.join(' ').trim();
-      if(['help','inf'].includes(name)){toast('.mute · .antimute · .autoread · .autotyping · .autovoice · .mutestick · .antimat · .afk причина · .time · .copyp · .qr текст. Повтори команду, чтобы выключить режим.');button.disabled=false;return;}
+      if(['help','inf'].includes(name)){toast('.mute · .antimute · .autoread · .autotyping · .autovoice · .mutestick · .antimat · .afk причина · .unafk · .time · .copyp · .qr текст.');button.disabled=false;return;}
       const freeCommand=['qr','mute'].includes(name);
       if(!isPremium()&&!freeCommand){toast('Эта команда доступна только в Premium.');button.disabled=false;return;}
       if(name==='mute'){
@@ -1044,7 +1044,7 @@ async function openBusinessChat(id) {
         if(timeError||timeData?.error){toast(timeData?.error||timeError?.message||'Не удалось изменить имя Telegram-профиля');return;}
         toast(timeData?.message||'Имя Telegram-профиля обновлено');form.reset();return;
       }
-      if(['advertising','copyp','profile','qr','afk','id','chatid','date','calc','upper','lower','reverse','count','wordcount','choose','roll','bold','dumb','link'].includes(name)){
+      if(['advertising','copyp','profile','qr','afk','unafk','id','chatid','date','calc','upper','lower','reverse','count','wordcount','choose','roll','bold','dumb','link'].includes(name)){
         if(name==='qr'&&!args){button.disabled=false;toast('Формат: .qr ссылка или текст');return;}
         if(['calc','upper','lower','reverse','count','wordcount','choose','bold','dumb','link'].includes(name)&&!args){button.disabled=false;toast('Добавь аргументы после .'+name);return;}
         const {data:utilityData,error:utilityError}=await supabase.functions.invoke('business-chat-send',{body:{chat_id:id,text,command_mode:true,command_name:name}});
@@ -1055,6 +1055,7 @@ async function openBusinessChat(id) {
         else if(name==='advertising')toast('Персональная ссылка отправлена');
         else if(name==='qr')toast('Создаём QR-код…');
         else if(name==='afk')toast(utilityData?.message||'AFK включён только в этом диалоге');
+        else if(name==='unafk')toast(utilityData?.message||'AFK выключен в этом диалоге');
 
         await refreshBusinessMessages(id);return;
       }
