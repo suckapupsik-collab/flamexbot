@@ -91,14 +91,20 @@ const formatMskTime = (value = new Date()) => new Intl.DateTimeFormat('ru-RU',{t
 const formatMskDateTime = (value,options={day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) => new Intl.DateTimeFormat('ru-RU',{...options,timeZone:'Europe/Moscow'}).format(new Date(value));
 
 async function checkRequiredAppAccess() {
-  const session = state.session;
   const initData = window.Telegram?.WebApp?.initData;
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const session = sessionData?.session || state.session || null;
+  if (sessionError && !session) {
+    return { ok: false, reason: "invalid_session", error: "Не удалось обновить сессию. Войди через Telegram ещё раз." };
+  }
+  state.session = session;
   if (!session?.access_token && !initData) {
     return { ok: false, reason: "telegram_required", error: "Открой FLAMEXBOT через Telegram Mini App." };
   }
-  // Supabase FunctionsClient supplies the freshest session token itself.
-  // Only omit initData from repeat checks when the client already has a session.
-  const options = session?.access_token ? { body: {} } : { body: { initData } };
+  // getSession refreshes the short-lived access token before it is sent to the server.
+  const options = session?.access_token
+    ? { body: {}, headers: { Authorization: `Bearer ${session.access_token}` } }
+    : { body: { initData } };
   const { data, error } = await supabase.functions.invoke("flamexbot-access-check", options);
   if (error) {
     let details = null;
