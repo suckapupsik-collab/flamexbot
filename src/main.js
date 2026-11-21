@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
+import './pin-enhance.css';
 import { gatePin as gatePinV2, promptPinSetup, promptPinVerify } from './features/pin.js';
 import { createWheel, buildSectors, findSector, confetti } from './features/wheel.js';
 
