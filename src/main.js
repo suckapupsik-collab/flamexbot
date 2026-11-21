@@ -96,9 +96,9 @@ async function checkRequiredAppAccess() {
   if (!session?.access_token && !initData) {
     return { ok: false, reason: "telegram_required", error: "Открой FLAMEXBOT через Telegram Mini App." };
   }
-  const options = session?.access_token
-    ? { body: {}, headers: { Authorization: `Bearer ${session.access_token}` } }
-    : { body: { initData } };
+  // Supabase FunctionsClient supplies the freshest session token itself.
+  // Only omit initData from repeat checks when the client already has a session.
+  const options = session?.access_token ? { body: {} } : { body: { initData } };
   const { data, error } = await supabase.functions.invoke("flamexbot-access-check", options);
   if (error) {
     let details = null;
