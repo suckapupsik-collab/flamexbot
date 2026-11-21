@@ -110,14 +110,18 @@ async function checkRequiredAppAccess() {
 
 function renderSubscriptionGate(access = {}) {
   const telegramRequired = access.reason === "telegram_required";
+  const linkRequired = access.reason === "telegram_link_required";
   const technicalError = access.reason === "membership_check_unavailable" || access.reason === "configuration_error" || access.reason === "invalid_telegram_data" || access.ok === false;
-  const headline = telegramRequired ? "Открой Mini App в Telegram" : technicalError ? "Не удалось проверить доступ" : "Подписка обязательна";
+  const headline = telegramRequired ? "Открой Mini App в Telegram" : linkRequired ? "Привяжи Telegram к профилю" : technicalError ? "Не удалось проверить доступ" : "Подписка обязательна";
   const description = telegramRequired
     ? "FLAMEXBOT работает только внутри Telegram Mini App. Открой приложение кнопкой в боте."
-    : technicalError
-      ? (access.error || "Сейчас не получилось проверить подписку. Проверь подключение и повтори попытку.")
-      : "Чтобы пользоваться FLAMEXBOT, подпишись на официальный канал. После проверки можно будет зарегистрироваться и открыть приложение.";
-  app.innerHTML = "<main class=\"subscription-gate\"><div class=\"subscription-gate-card\"><div class=\"subscription-gate-mark\">✦</div><div class=\"eyebrow\">FLAMEXBOT ACCESS</div><h1>" + esc(headline) + "</h1><p>" + esc(description) + "</p><a class=\"primary subscription-channel-link\" id=\"subscribe-channel\" href=\"https://t.me/flamexbot1\">Открыть канал @flamexbot1 <b>↗</b></a><button class=\"outline subscription-check-button\" type=\"button\" id=\"retry-subscription\">Я подписался — проверить</button><small>Проверка выполняется через Telegram. Без подписки доступ к командам и Mini App закрыт.</small></div></main><div class=\"toast\"></div>";
+    : linkRequired
+      ? (access.error || "Привяжи Telegram к этому профилю. Текущий аккаунт сохранится — дубликат не создаётся.")
+      : technicalError
+        ? (access.error || "Сейчас не получилось проверить подписку. Проверь подключение и повтори попытку.")
+        : "Чтобы пользоваться FLAMEXBOT, подпишись на официальный канал. После проверки можно будет зарегистрироваться и открыть приложение.";
+  app.innerHTML = "<main class=\"subscription-gate\"><div class=\"subscription-gate-card\"><div class=\"subscription-gate-mark\">✦</div><div class=\"eyebrow\">FLAMEXBOT ACCESS</div><h1>" + esc(headline) + "</h1><p>" + esc(description) + "</p>" + (linkRequired ? "<button class=\"primary subscription-channel-link\" type=\"button\" id=\"gate-telegram-link\">Привязать Telegram к этому профилю</button>" : "") + "<a class=\"primary subscription-channel-link\" id=\"subscribe-channel\" href=\"https://t.me/flamexbot1\">Открыть канал @flamexbot1 <b>↗</b></a><button class=\"outline subscription-check-button\" type=\"button\" id=\"retry-subscription\">Я подписался — проверить</button><small>Проверка выполняется через Telegram. Без подписки доступ к командам и Mini App закрыт.</small></div></main><div class=\"toast\"></div>";
+  document.querySelector("#gate-telegram-link")?.addEventListener("click", () => telegramAuthFlow({ linkCurrent: true }));
   document.querySelector("#subscribe-channel")?.addEventListener("click", event => {
     const webApp = window.Telegram?.WebApp;
     if (webApp?.openTelegramLink) { event.preventDefault(); webApp.openTelegramLink("https://t.me/flamexbot1"); }
@@ -177,6 +181,7 @@ async function telegramAuthFlow({ linkCurrent = false } = {}) {
       state.profileBadges=(badges||[]).map(x=>x.badge_code);
       updateHeaderProfile();
       toast('Telegram успешно привязан к аккаунту.');
+      await boot(state.session);
       return;
     }
     if (!data?.token_hash) throw new Error('Сервер не вернул токен входа.');
