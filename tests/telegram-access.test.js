@@ -25,7 +25,7 @@ test("Mini App session checks are not tied to the five-minute initData window", 
   assert.match(accessSource, /INIT_DATA_MAX_AGE_SECONDS = 24 \* 60 \* 60/);
   assert.doesNotMatch(accessSource, /now - authDate > 300/);
   assert.match(appSource, /session\?\.access_token/);
-  assert.match(appSource, /body: \{\}, headers:/);
+  assert.match(appSource, /const options = session\?\.access_token \? \{ body: \{\} \} : \{ body: \{ initData \} \}/);
 });
 
 test("Telegram login checks subscription before creating or linking a profile", () => {
