@@ -1,0 +1,34 @@
+/* FLAMEXBOT 3.0 PIN keypad and modal polish */
+:root{--fx-ease:cubic-bezier(.2,.8,.2,1);--fx-spring:cubic-bezier(.34,1.56,.64,1);--fx-good:#43d69a;--fx-bad:#ff5d5d;--fx-gold:#f2b93b;--fx-safe-b:env(safe-area-inset-bottom,0px)}
+.pin-screen{position:relative;min-height:100dvh;display:grid;place-items:center;padding:20px 16px calc(20px + var(--fx-safe-b));overflow:hidden}
+.pin-bg span{position:absolute;border-radius:50%;filter:blur(70px);opacity:.5;animation:pin-drift 14s ease-in-out infinite alternate}
+.pin-bg span:nth-child(1){width:46vmax;height:46vmax;left:-14vmax;top:-12vmax;background:color-mix(in srgb,var(--orange) 55%,transparent)}
+.pin-bg span:nth-child(2){width:38vmax;height:38vmax;right:-12vmax;bottom:-10vmax;background:color-mix(in srgb,var(--orange2) 40%,#7a3cff 30%);animation-delay:-5s}
+.pin-bg span:nth-child(3){width:22vmax;height:22vmax;left:40%;top:55%;background:rgba(255,255,255,.06);animation-delay:-9s}
+@keyframes pin-drift{to{transform:translate3d(6vmax,4vmax,0) scale(1.15)}}
+.pin-card{position:relative;width:min(360px,100%);padding:28px 22px 18px;text-align:center;border:1px solid rgba(255,255,255,.1);border-radius:30px;background:color-mix(in srgb,var(--panel) 78%,transparent);backdrop-filter:blur(22px) saturate(1.3);-webkit-backdrop-filter:blur(22px) saturate(1.3);box-shadow:0 30px 80px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08);animation:pin-in .6s var(--fx-ease) both}
+@keyframes pin-in{from{opacity:0;transform:translateY(26px) scale(.95)}to{opacity:1;transform:none}}
+.pin-card h2{margin:6px 0 2px;font:800 23px Manrope,sans-serif}.pin-card .muted{margin:0;font-size:13px;min-height:18px}
+.pin-emblem{position:relative;width:76px;height:76px;margin:0 auto 14px;display:grid;place-items:center;border-radius:50%;color:#fff;font-size:28px;background:linear-gradient(140deg,var(--orange),var(--orange2));box-shadow:0 10px 34px color-mix(in srgb,var(--orange) 50%,transparent)}
+.pin-emblem span{animation:pin-pulse 2.6s ease-in-out infinite}.pin-emblem i,.pin-emblem b{position:absolute;inset:-7px;border:1.5px solid color-mix(in srgb,var(--orange) 55%,transparent);border-radius:50%;border-top-color:transparent;border-left-color:transparent;animation:pin-orbit 4s linear infinite}
+.pin-emblem b{inset:-14px;opacity:.45;animation-duration:7s;animation-direction:reverse}.pin-emblem.sm{width:54px;height:54px;font-size:21px;margin-bottom:10px}
+@keyframes pin-orbit{to{transform:rotate(360deg)}}@keyframes pin-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}
+.pin-dots{display:flex;justify-content:center;gap:14px;margin:20px 0 6px;min-height:16px}.pin-dots i{width:14px;height:14px;border-radius:50%;border:2px solid color-mix(in srgb,var(--text) 34%,transparent);transition:transform .2s var(--fx-spring),background .15s,border-color .15s,box-shadow .2s}
+.pin-dots i.on{background:var(--orange);border-color:var(--orange);transform:scale(1.2);box-shadow:0 0 14px color-mix(in srgb,var(--orange) 70%,transparent)}
+.pin-error{min-height:18px;margin:6px 0 4px;color:var(--fx-bad);font-size:12.5px;font-weight:600}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:270px;margin:8px auto 0}
+.pin-key{aspect-ratio:1;max-height:74px;width:100%;border:1px solid rgba(255,255,255,.09);border-radius:50%;justify-self:center;background:rgba(255,255,255,.055);color:var(--text);font:700 25px Manrope,sans-serif;transition:transform .12s var(--fx-ease),background .15s,box-shadow .2s;touch-action:manipulation;user-select:none}
+.pin-key:active{transform:scale(.88);background:color-mix(in srgb,var(--orange) 34%,transparent);box-shadow:0 0 22px color-mix(in srgb,var(--orange) 40%,transparent)}
+.pin-key.is-back{background:none;border-color:transparent;font-size:22px;color:var(--muted)}
+.pin-foot{display:flex;justify-content:space-between;gap:10px;margin-top:16px}.pin-link{border:0;background:none;padding:10px 8px;color:var(--orange);font:700 13px inherit}.pin-link.danger{color:var(--muted)}
+.pin-card.is-shaking,.fx-sheet.is-shaking{animation:pin-shake .42s ease}.pin-card.is-shaking .pin-dots i{border-color:var(--fx-bad)}
+@keyframes pin-shake{0%,100%{transform:translateX(0)}18%{transform:translateX(-10px)}36%{transform:translateX(9px)}54%{transform:translateX(-6px)}72%{transform:translateX(4px)}}
+.pin-card.is-unlocked{animation:pin-out .34s var(--fx-ease) forwards}.pin-card.is-unlocked .pin-emblem{background:linear-gradient(140deg,#2fbf83,var(--fx-good))}
+@keyframes pin-out{to{opacity:0;transform:scale(1.07);filter:blur(6px)}}.pin-card.is-locked .pin-pad{opacity:.35;pointer-events:none;filter:grayscale(1)}
+.fx-sheet-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:end center;background:rgba(5,6,9,0);transition:background .26s ease;padding:0 10px}
+.fx-sheet-backdrop.open{background:rgba(5,6,9,.66);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.fx-sheet{width:min(420px,100%);padding:22px 20px calc(20px + var(--fx-safe-b));border:1px solid var(--line);border-bottom:0;border-radius:26px 26px 0 0;background:linear-gradient(180deg,color-mix(in srgb,var(--panel) 92%,var(--orange)),var(--panel));text-align:center;transform:translateY(105%);transition:transform .34s var(--fx-ease);box-shadow:0 -18px 60px rgba(0,0,0,.5)}
+.fx-sheet-backdrop.open .fx-sheet{transform:none}.fx-sheet h3{margin:6px 0 4px;font:800 21px Manrope,sans-serif}.fx-sheet p{margin:0 0 6px;font-size:13px}
+@media(min-width:700px){.fx-sheet-backdrop{place-items:center}.fx-sheet{border-radius:26px;border-bottom:1px solid var(--line);transform:translateY(24px) scale(.96);opacity:0;transition:transform .3s var(--fx-ease),opacity .3s}.fx-sheet-backdrop.open .fx-sheet{opacity:1}}
+@media(max-height:640px){.pin-card{padding:18px 18px 10px}.pin-emblem{width:56px;height:56px;font-size:21px;margin-bottom:8px}.pin-pad{gap:8px;max-width:230px}.pin-key{font-size:21px}}
+@media(prefers-reduced-motion:reduce){.pin-bg span,.pin-card,.pin-emblem span,.pin-emblem i,.pin-emblem b{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
