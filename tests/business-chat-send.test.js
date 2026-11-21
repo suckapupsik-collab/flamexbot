@@ -19,3 +19,7 @@ test("AFK and unAFK commands set explicit states", () => {
   assert.equal(afkEnabledForCommand("unafk"), false);
   assert.equal(afkEnabledForCommand("profile"), null);
 });
+
+test("maps bot initiation restrictions to a clear next step", () => {
+  assert.match(explainTelegramSendError("Forbidden: bot can't initiate conversation with a user"), /нажать Start/);
+});
