@@ -1,26 +1,7 @@
--- Refreshes the clock in Telegram Business names set by .time once a minute.
--- Requires pg_cron and pg_net.
--- Set FLAMEXBOT_TIME_TICK_SECRET as a Supabase Edge Function secret. Use the same value in the
--- SQL editor placeholder below. Do not use or commit the Telegram webhook token here.
--- This is a manual template; it is not an active migration.
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
-
-select cron.unschedule('flamexbot-time-tick')
-where exists (select 1 from cron.job where jobname = 'flamexbot-time-tick');
-
-select cron.schedule(
-  'flamexbot-time-tick',
-  '* * * * *',
-  $$
-  select net.http_post(
-    url := 'https://yxmfhnbqzudoiwjlrpui.supabase.co/functions/v1/flamexbot-bot',
-    headers := jsonb_build_object(
-      'content-type', 'application/json',
-      'x-flamexbot-job', 'time-tick',
-      'x-flamexbot-job-secret', '<FLAMEXBOT_TIME_TICK_SECRET>'
-    ),
-    body := '{}'::jsonb
-  );
-  $$
-);
+-- The .time minute job is installed by the production migration
+-- flamexbot_time_tick_vault_auth. Its random auth secret is stored in Supabase Vault.
+-- Do not place a token or secret value in this file or in cron.job.command.
+-- Read-only status check:
+select jobname, schedule, active
+from cron.job
+where jobname = 'flamexbot-time-tick';

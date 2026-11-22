@@ -97,8 +97,14 @@ test("Home and profile status use live Telegram Business verification", () => {
   assert.match(miniAppSource, /homeBusinessUnknown/);
 });
 
-test(".time scheduled updates use a separate server-only secret", () => {
-  assert.ok(botWebhookSource.includes('Deno.env.get("FLAMEXBOT_TIME_TICK_SECRET")'));
-  assert.ok(botWebhookSource.includes('req.headers.get("x-flamexbot-job-secret") === TIME_TICK_SECRET'));
+test(".time scheduled updates verify a separate Vault secret through a service-role RPC", () => {
+  assert.match(botWebhookSource, /if \(req\.headers\.get\("x-flamexbot-job"\) === "time-tick"\) \{/);
+  assert.match(botWebhookSource, /admin\.rpc\(\s*"verify_flamexbot_time_tick_secret"/);
+  assert.match(botWebhookSource, /p_candidate:\s*tickSecret/);
+  assert.match(botWebhookSource, /if \(tickAuthorized !== true\) return new Response\("Unauthorized", \{ status: 401 \}\)/);
+  assert.ok(!botWebhookSource.includes('Deno.env.get("FLAMEXBOT_TIME_TICK_SECRET")'));
   assert.ok(!botWebhookSource.includes('req.headers.get("x-flamexbot-job-secret") === WEBHOOK_SECRET'));
+  const tickRouteAt = botWebhookSource.indexOf('if (req.headers.get("x-flamexbot-job") === "time-tick")');
+  const telegramAuthAt = botWebhookSource.indexOf('if (req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET)');
+  assert.ok(tickRouteAt >= 0 && telegramAuthAt > tickRouteAt, "invalid scheduler calls must be rejected before webhook processing");
 });
