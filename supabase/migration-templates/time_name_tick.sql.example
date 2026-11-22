@@ -1,8 +1,7 @@
 -- Refreshes the clock in Telegram Business names set by .time once a minute.
 -- Requires pg_cron and pg_net.
--- Do not commit a real secret here. Replace the placeholder in the SQL editor only after
--- setting FLAMEXBOT_TIME_TICK_SECRET as a Supabase Edge Function secret and deploying the bot
--- handler to validate that dedicated secret (the Telegram webhook secret is not for cron).
+-- Set FLAMEXBOT_TIME_TICK_SECRET as a Supabase Edge Function secret. Use the same value in the
+-- SQL editor placeholder below. Do not use or commit the Telegram webhook token here.
 -- This is a manual template; it is not an active migration.
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
