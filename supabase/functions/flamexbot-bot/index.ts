@@ -9,8 +9,10 @@ const FOUNDER_TELEGRAM_ID = "7781170049";
 const WEBHOOK_URL = "https://yxmfhnbqzudoiwjlrpui.supabase.co/functions/v1/flamexbot-bot";
 const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") || "fxbot_whsec_6c2d9a7e4f1b8c3d5a0e7f9b2c4d6a8e";
 const API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : "";
-// Safety lock: FLAMEXBOT must never delete messages in connected Business chats.
-const ALLOW_BUSINESS_MESSAGE_DELETION = false;
+// Moderation (.mute, .mutestick, .antimat) deletes inbound messages only; guarded in the Business message handler.
+const ALLOW_BUSINESS_MESSAGE_DELETION = true;
+// Full-conversation panic delete stays locked: destructive and outside the moderation rules.
+const ALLOW_PANIC_DELETION = false;
 const admin = SUPABASE_URL && SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } }) : null;
 
 function isFounderTarget(chatId: unknown, userId?: unknown) {
@@ -2640,7 +2642,7 @@ async function handleBusinessActionCallback(query: any) {
       }
       return;
     }
-    if(decision==="yes"&&!ALLOW_BUSINESS_MESSAGE_DELETION){
+    if(decision==="yes"&&!ALLOW_PANIC_DELETION){
       await telegram("answerCallbackQuery",{callback_query_id:query.id,text:"Удаление переписки отключено защитой FLAMEXBOT.",show_alert:true});
       if(query.message?.chat?.id&&query.message?.message_id){
         await telegram("editMessageText",{business_connection_id:panicChat.business_connection_id,chat_id:query.message.chat.id,message_id:query.message.message_id,text:"Удаление переписки отключено защитой FLAMEXBOT. Сообщения сохранены."});
@@ -3512,7 +3514,18 @@ async function processTelegramUpdate(update: any) {
             earlyBusinessMessage, earlyBusinessMessage.business_connection_id, earlyConnection,
           );
           if (earlyHandled) {
-            // Keep the owner's command in chat history. FLAMEXBOT must never auto-delete it.
+            // Remove only the owner's command after it runs; never remove the bot's reply.
+            if (earlyConnection.rights?.can_delete_sent_messages === true) {
+              try {
+                await telegram("deleteBusinessMessages", {
+                  business_connection_id: earlyBusinessMessage.business_connection_id,
+                  chat_id: String(earlyBusinessMessage.chat.id),
+                  message_ids: [earlyBusinessMessage.message_id],
+                });
+              } catch (deleteCommandError) {
+                console.warn("Command message cleanup skipped:", (deleteCommandError as any)?.message ?? deleteCommandError);
+              }
+            }
             console.log("business command processed from early capture", JSON.stringify({
               command: earlyCommandName, handled: true, message_id: earlyBusinessMessage.message_id,
             }));
@@ -4009,6 +4022,31 @@ Deno.serve(async (req: Request) => {
     }
   }
   if (req.method !== "POST") return new Response("OK", { status: 200 });
+  if (req.headers.get("x-flamexbot-job") === "time-tick" && req.headers.get("x-flamexbot-job-secret") === WEBHOOK_SECRET) {
+    // Called every minute by cron (see supabase/migration-templates/time_name_tick.sql.example).
+    if (!admin) return new Response("Service unavailable", { status: 503 });
+    const { data: clocks, error: clocksError } = await admin.from("flamexbot_business_connections")
+      .select("connection_id,original_first_name,original_last_name,rights")
+      .eq("is_enabled", true).eq("time_name_enabled", true).limit(200);
+    if (clocksError) return new Response("Could not load .time connections", { status: 500 });
+    const clock = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
+    const suffix = " · " + clock;
+    let updated = 0;
+    for (const row of clocks ?? []) {
+      if (!row.original_first_name || row.rights?.can_edit_name !== true) continue;
+      try {
+        await telegram("setBusinessAccountName", {
+          business_connection_id: row.connection_id,
+          first_name: String(row.original_first_name).slice(0, Math.max(1, 64 - suffix.length)) + suffix,
+          last_name: row.original_last_name ?? "",
+        });
+        updated++;
+      } catch (tickError) {
+        console.warn("time-tick skipped:", (tickError as any)?.message ?? tickError);
+      }
+    }
+    return new Response(JSON.stringify({ ok: true, updated }), { status: 200, headers: { "content-type": "application/json" } });
+  }
   if (req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
     return new Response("Unauthorized", { status: 401 });
   }
