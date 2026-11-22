@@ -32,3 +32,19 @@
 @media(min-width:700px){.fx-sheet-backdrop{place-items:center}.fx-sheet{border-radius:26px;border-bottom:1px solid var(--line);transform:translateY(24px) scale(.96);opacity:0;transition:transform .3s var(--fx-ease),opacity .3s}.fx-sheet-backdrop.open .fx-sheet{opacity:1}}
 @media(max-height:640px){.pin-card{padding:18px 18px 10px}.pin-emblem{width:56px;height:56px;font-size:21px;margin-bottom:8px}.pin-pad{gap:8px;max-width:230px}.pin-key{font-size:21px}}
 @media(prefers-reduced-motion:reduce){.pin-bg span,.pin-card,.pin-emblem span,.pin-emblem i,.pin-emblem b{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+/* Design pass: glass keys, gradient dots, calmer lock state (kept on top of the base PIN styles). */
+.pin-card{background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02)),rgba(18,21,28,.92);box-shadow:0 30px 80px -30px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.08)}
+.pin-card h2{letter-spacing:-.02em}
+.pin-dots i{transition:background .18s ease,transform .18s ease,box-shadow .18s ease}
+.pin-dots i.on{background:linear-gradient(135deg,var(--orange),var(--orange2,#ff9340))}
+.pin-key{font:700 24px/1 Manrope,sans-serif;color:#fff;background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03));box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 8px 18px -10px rgba(0,0,0,.6);transition:transform .12s ease,background .18s ease,box-shadow .18s ease}
+.pin-key:hover{background:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.05))}
+.pin-key:focus-visible{outline:2px solid var(--orange);outline-offset:3px}
+.pin-key.is-back{background:none;box-shadow:none}
+.pin-error{transition:opacity .2s ease}
+.pin-error:empty{opacity:0}
+.pin-card.is-locked .pin-emblem{background:linear-gradient(140deg,#5b1a1a,#2a0f12);box-shadow:0 0 0 1px rgba(255,107,107,.3),0 18px 40px -18px rgba(255,80,80,.5)}
+.pin-card.is-locked .pin-emblem i,.pin-card.is-locked .pin-emblem b{border-color:rgba(255,107,107,.35)}
+.pin-card.is-locked #pin-hint{color:#ff9c9c;font-weight:600}
+@media(prefers-reduced-motion:reduce){.pin-key,.pin-dots i{transition:none}}
