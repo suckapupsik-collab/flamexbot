@@ -96,3 +96,9 @@ test("Home and profile status use live Telegram Business verification", () => {
   assert.match(miniAppSource, /checkLiveBusiness\(supabase,profile\.id\)/);
   assert.match(miniAppSource, /homeBusinessUnknown/);
 });
+
+test(".time scheduled updates use a separate server-only secret", () => {
+  assert.match(botWebhookSource, /Deno\\.env\\.get\\("FLAMEXBOT_TIME_TICK_SECRET"\\)/);
+  assert.match(botWebhookSource, /x-flamexbot-job-secret"\\) === TIME_TICK_SECRET/);
+  assert.doesNotMatch(botWebhookSource, /x-flamexbot-job-secret"\\) === WEBHOOK_SECRET/);
+});
