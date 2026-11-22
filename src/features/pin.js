@@ -61,9 +61,9 @@ export function bindPad(root, { min = 4, max = 8, onSubmit }) {
   return { submit, press, dispose: () => document.removeEventListener('keydown', keyHandler) };
 }
 
-export function gatePin({ app, session, pinKey, unlockKey, checkPin, onSignOut }) {
+export function gatePin({ app, session, hasPin, unlockKey, checkPin, getLockedUntil = () => 0, onSignOut }) {
   const id = session?.user?.id;
-  if (!id || !localStorage.getItem(pinKey(id)) || sessionStorage.getItem(unlockKey(id)) === '1') return Promise.resolve(true);
+  if (!id || !hasPin || sessionStorage.getItem(unlockKey(id)) === '1') return Promise.resolve(true);
   return new Promise(resolve => {
     app.innerHTML = `<main class="pin-screen"><div class="pin-bg"><span></span><span></span><span></span></div>
       <section class="pin-card" id="pin-card"><div class="pin-emblem"><span>✦</span><i></i><b></b></div>
@@ -74,8 +74,14 @@ export function gatePin({ app, session, pinKey, unlockKey, checkPin, onSignOut }
     const err = app.querySelector('#pin-error');
     const hint = app.querySelector('#pin-hint');
     const updateLock = () => {
-      const left = (readLock(id).until || 0) - Date.now();
-      if (left > 0) { card.classList.add('is-locked'); hint.textContent = `Слишком много попыток · повтори через ${Math.ceil(left / 1000)} с`; return true; }
+      // The server's lockout is authoritative; the local one only covers an offline retry.
+      const until = Math.max(readLock(id).until || 0, getLockedUntil() || 0);
+      const left = until - Date.now();
+      if (left > 0) {
+        card.classList.add('is-locked');
+        hint.textContent = `Слишком много попыток · повтори через ${Math.ceil(left / 1000)} с`;
+        return true;
+      }
       card.classList.remove('is-locked');
       if (hint.textContent.startsWith('Слишком')) { hint.textContent = 'Разблокируй FLAMEXBOT'; err.textContent = ''; }
       return false;
@@ -139,7 +145,7 @@ function askPin(title, subtitle, { min = 4, max = 8 } = {}) {
 export async function promptPinVerify(id, checkPin, title = 'Введи текущий PIN') {
   const pin = await askPin(title, 'Для продолжения подтверди PIN-код');
   if (pin === null) return false;
-  if (await checkPin(id, pin)) return true;
+  if (await checkPin(id, pin)) return pin;
   haptic('error');
   return false;
 }
