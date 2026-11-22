@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import './style.css';
 import './enhance.css';
 import './pin-enhance.css';
+import './home-enhance.css';
 import { gatePin as gatePinV2, promptPinSetup, promptPinVerify } from './features/pin.js';
 import { loadBusinessStatuses, checkLiveBusiness, rightsChips, grantedRights } from './features/status.js';
 import { createWheel, buildSectors, findSector, confetti } from './features/wheel.js';
@@ -25,11 +26,20 @@ const renderRightsChips = rightsChips;
 const avatarHue = name => { let h=0; for(const c of String(name||'F')) h=(h*31+c.charCodeAt(0))%360; return h; };
 const avatarFallback = (name,size='') => `<span class="avatar avatar-fallback ${size}" style="--ah:${avatarHue(name)}" aria-label="Аватар пользователя">${esc((name||'F').trim().slice(0,1).toUpperCase())}</span>`;
 const avatar = (url,name,size='') => url ? `<img class="avatar ${size}" src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.insertAdjacentHTML('afterend',this.dataset.fb);this.remove()" data-fb="${esc(avatarFallback(name,size))}" />` : avatarFallback(name,size);
-const pinKey=id=>'flamexbot.pin.v1.'+id, pinUnlockKey=id=>'flamexbot.pin.unlock.'+id;
-async function pinHash(pin,salt){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:150000,hash:'SHA-256'},key,256);return [...new Uint8Array(bits)].map(x=>x.toString(16).padStart(2,'0')).join('');}
-async function setPin(id,pin){const salt=crypto.getRandomValues(new Uint8Array(16));localStorage.setItem(pinKey(id),JSON.stringify({salt:btoa(String.fromCharCode(...salt)),hash:await pinHash(pin,salt)}));}
-async function checkPin(id,pin){try{const v=JSON.parse(localStorage.getItem(pinKey(id))||'null');if(!v)return false;return await pinHash(pin,Uint8Array.from(atob(v.salt),c=>c.charCodeAt(0)))===v.hash;}catch{return false;}}
-async function gatePin(session){return gatePinV2({app,session,pinKey,unlockKey:pinUnlockKey,checkPin,onSignOut:()=>supabase.auth.signOut()});}
+const pinUnlockKey=id=>'flamexbot.pin.unlock.'+id;
+// PIN lives on the server (pin-guard edge function): the hash never reaches the browser, lockouts are enforced there.
+let pinEnabledCache=null;
+async function pinGuard(action,body={}){
+  const {data,error}=await supabase.functions.invoke('pin-guard',{body:{action,...body}});
+  if(error){let details=null;try{details=await error.context?.json?.();}catch{}const e=new Error(details?.error||error.message||'PIN-сервис недоступен');e.details=details;throw e;}
+  return data;
+}
+let pinLockedUntil=0; // epoch ms, from the server's lockout
+async function loadPinStatus(){const d=await pinGuard('status');pinEnabledCache=Boolean(d.enabled);pinLockedUntil=d.locked_until?Date.parse(d.locked_until)||0:0;return pinEnabledCache;}
+async function setPin(id,pin,currentPin){const d=await pinGuard('set',{pin,currentPin});pinEnabledCache=true;pinLockedUntil=0;return d;}
+async function checkPin(id,pin){try{const d=await pinGuard('verify',{pin});pinLockedUntil=0;return d.ok===true;}catch(error){if(error.details?.reason==='locked')pinLockedUntil=Date.parse(error.details.locked_until)||0;return false;}}
+async function removePin(pin){const d=await pinGuard('remove',{pin});pinEnabledCache=false;pinLockedUntil=0;return d;}
+async function gatePin(session){const hasPin=await loadPinStatus();return gatePinV2({app,session,hasPin,unlockKey:pinUnlockKey,checkPin,getLockedUntil:()=>pinLockedUntil,onSignOut:()=>supabase.auth.signOut()});}
 
 async function fetchBusinessConnectionForProfile(profile){
   if(!profile?.id)return {data:null,error:null,live:false};
@@ -63,21 +73,20 @@ function bindHomePinSettings(host){
     const current=String(data.get('current_pin')||'');
     const pin=String(data.get('pin')||'');
     const confirm=String(data.get('confirm')||'');
-    const existing=Boolean(localStorage.getItem(pinKey(id)));
-    if(existing&&!(await checkPin(id,current))){toast('Неверный текущий PIN');form.classList.remove('is-shaking');void form.offsetWidth;form.classList.add('is-shaking');return;}
+    const existing=pinEnabledCache===true;
     if(pin!==confirm){toast('Новые PIN-коды не совпадают');form.classList.remove('is-shaking');void form.offsetWidth;form.classList.add('is-shaking');return;}
-    await setPin(id,pin);
+    try{await setPin(id,pin,existing?current:undefined);}
+    catch(error){toast(error.details?.error==='Current PIN is wrong'||/текущий/i.test(error.message)?'Неверный текущий PIN':(error.message||'Не удалось сохранить PIN'));form.classList.remove('is-shaking');void form.offsetWidth;form.classList.add('is-shaking');return;}
     sessionStorage.setItem(pinUnlockKey(id),'1');
     toast(existing?'PIN-код обновлён':'PIN-код установлен');
     loadPage();
   });
   remove?.addEventListener('click',async()=>{
-    if(localStorage.getItem(pinKey(id))){
+    if(pinEnabledCache===true){
       const current=prompt('Введите текущий PIN-код');
       if(current===null)return;
-      if(!(await checkPin(id,current))){toast('Неверный PIN-код');return;}
+      try{await removePin(current);}catch{toast('Неверный PIN-код');return;}
     }
-    localStorage.removeItem(pinKey(id));
     sessionStorage.removeItem(pinUnlockKey(id));
     toast('Защита PIN отключена');
     loadPage();
@@ -2224,9 +2233,9 @@ async function renderProfile(host) {
       <button class="outline small" type="button" id="refresh-business">↻ Проверить подключение</button>
       <p class="business-note">Разрешения можно проверить или отозвать в настройках Telegram Business.</p>
     </section>
-    <section class="profile-security-card"><div class="profile-security-head"><div><div class="eyebrow">БЕЗОПАСНОСТЬ</div><h2>PIN-защита</h2><p class="muted">Блокировка Mini App при повторном входе на этом устройстве.</p></div><button type="button" class="security-toggle ${localStorage.getItem(pinKey(state.session.user.id))?'is-on':''}" id="profile-pin-toggle" aria-pressed="${Boolean(localStorage.getItem(pinKey(state.session.user.id)))}"><span></span></button></div><small id="profile-pin-status">${localStorage.getItem(pinKey(state.session.user.id))?'PIN-защита включена':'PIN-защита выключена'}</small></section>`;
+    <section class="profile-security-card"><div class="profile-security-head"><div><div class="eyebrow">БЕЗОПАСНОСТЬ</div><h2>PIN-защита</h2><p class="muted">Блокировка Mini App при повторном входе на этом устройстве.</p></div><button type="button" class="security-toggle ${pinEnabledCache===true?'is-on':''}" id="profile-pin-toggle" aria-pressed="${pinEnabledCache===true}"><span></span></button></div><small id="profile-pin-status">${pinEnabledCache===true?'PIN-защита включена':'PIN-защита выключена'}</small></section>`;
   const pinToggle=document.querySelector('#profile-pin-toggle');
-  pinToggle?.addEventListener('click',async()=>{const id=state.session.user.id,enabled=Boolean(localStorage.getItem(pinKey(id))),status=document.querySelector('#profile-pin-status');if(enabled){if(!(await promptPinVerify(id,checkPin,'Введи текущий PIN'))){toast('PIN не подтверждён');return;}localStorage.removeItem(pinKey(id));localStorage.removeItem('flamexbot.pin.lock.'+id);sessionStorage.removeItem(pinUnlockKey(id));pinToggle.classList.remove('is-on');pinToggle.setAttribute('aria-pressed','false');status.textContent='PIN-защита выключена';toast('PIN-защита отключена');return;}const res=await promptPinSetup();if(!res)return;if(res.mismatch){toast('PIN-коды не совпадают');return;}await setPin(id,res.pin);sessionStorage.setItem(pinUnlockKey(id),'1');pinToggle.classList.add('is-on');pinToggle.setAttribute('aria-pressed','true');status.textContent='PIN-защита включена';toast('🔒 PIN-защита включена');});
+  pinToggle?.addEventListener('click',async()=>{const id=state.session.user.id,enabled=pinEnabledCache===true,status=document.querySelector('#profile-pin-status');if(enabled){const verifiedPin=await promptPinVerify(id,checkPin,'Введи текущий PIN');if(!verifiedPin){toast('PIN не подтверждён');return;}try{await removePin(verifiedPin);}catch{toast('PIN не подтверждён');return;}sessionStorage.removeItem(pinUnlockKey(id));pinToggle.classList.remove('is-on');pinToggle.setAttribute('aria-pressed','false');status.textContent='PIN-защита выключена';toast('PIN-защита отключена');return;}const res=await promptPinSetup();if(!res)return;if(res.mismatch){toast('PIN-коды не совпадают');return;}await setPin(id,res.pin);sessionStorage.setItem(pinUnlockKey(id),'1');pinToggle.classList.add('is-on');pinToggle.setAttribute('aria-pressed','true');status.textContent='PIN-защита включена';toast('🔒 PIN-защита включена');});
   document.querySelector('[data-telegram-link]').addEventListener('click', () => telegramAuthFlow({ linkCurrent: true }));
   document.querySelector('#refresh-business').addEventListener('click', async e => {
     const btn=e.currentTarget;btn.disabled=true;btn.textContent='Проверяем в Telegram…';
@@ -3311,7 +3320,15 @@ async function boot(session) {
   const data=profileResult.data;
   state.profile={...(data||{username:session.user.email?.split('@')[0]||'Flame user'}),timezone_offset:preferencesResult.data?.timezone_offset??3};
   state.profileBadges=(badgesResult.data||[]).map(x=>x.badge_code);
-  if(!(await gatePin(session)))return;
+  try {
+    if(!(await gatePin(session)))return;
+  } catch(error) {
+    console.error('FLAMEXBOT PIN service:',error?.message||error);
+    app.innerHTML=`<main class="config-screen"><div class="brand"><span class="brand-mark">✦</span> FLAMEXBOT</div><h1>Проверка PIN временно недоступна</h1><p>Не удалось безопасно проверить защиту аккаунта. Доступ не открыт. Проверь подключение и повтори попытку.</p><button class="primary" id="retry-pin-service" type="button">Повторить проверку</button><button class="outline" id="logout-pin-service" type="button">Выйти из аккаунта</button></main>`;
+    document.querySelector('#retry-pin-service')?.addEventListener('click',()=>boot(session));
+    document.querySelector('#logout-pin-service')?.addEventListener('click',async()=>{await supabase.auth.signOut();});
+    return;
+  }
   if(isFounderProfile(state.profile)&&!state.webhookSetupAttempted){
     state.webhookSetupAttempted=true;
     supabase.functions.invoke('setup-flamexbot-webhook').then(({error})=>{
