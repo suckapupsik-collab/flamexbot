@@ -8,6 +8,7 @@ const APP_URL = "https://flamexbot.pages.dev";
 const FOUNDER_TELEGRAM_ID = "7781170049";
 const WEBHOOK_URL = "https://yxmfhnbqzudoiwjlrpui.supabase.co/functions/v1/flamexbot-bot";
 const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") || "fxbot_whsec_6c2d9a7e4f1b8c3d5a0e7f9b2c4d6a8e";
+const TIME_TICK_SECRET = Deno.env.get("FLAMEXBOT_TIME_TICK_SECRET") ?? "";
 const API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : "";
 // Moderation (.mute, .mutestick, .antimat) deletes inbound messages only; guarded in the Business message handler.
 const ALLOW_BUSINESS_MESSAGE_DELETION = true;
@@ -4022,7 +4023,7 @@ Deno.serve(async (req: Request) => {
     }
   }
   if (req.method !== "POST") return new Response("OK", { status: 200 });
-  if (req.headers.get("x-flamexbot-job") === "time-tick" && req.headers.get("x-flamexbot-job-secret") === WEBHOOK_SECRET) {
+  if (req.headers.get("x-flamexbot-job") === "time-tick" && Boolean(TIME_TICK_SECRET) && req.headers.get("x-flamexbot-job-secret") === TIME_TICK_SECRET) {
     // Called every minute by cron (see supabase/migration-templates/time_name_tick.sql.example).
     if (!admin) return new Response("Service unavailable", { status: 503 });
     const { data: clocks, error: clocksError } = await admin.from("flamexbot_business_connections")
