@@ -35,15 +35,17 @@ test("Mini App exposes the backend unAFK command", () => {
 
 const botWebhookSource = await readFile(new URL("../supabase/functions/flamexbot-bot/index.ts", import.meta.url), "utf8");
 
-test("Business commands are dispatched early and never auto-delete the command", () => {
+test("Business commands are dispatched early and the owner's command message is removed after it runs", () => {
   const captureAt = botWebhookSource.indexOf("business command captured at webhook ingress");
   const normalProcessingAt = botWebhookSource.indexOf("const directTelegramUserId");
   assert.ok(captureAt >= 0, "early Business command capture must exist");
   assert.ok(normalProcessingAt >= 0, "normal webhook processing marker must exist");
   assert.ok(captureAt < normalProcessingAt, "commands must be handled before unrelated webhook work");
   assert.match(botWebhookSource, /earlyBusinessMessage\.message_id/);
-  assert.match(botWebhookSource, /Keep the owner.*command in chat history\. FLAMEXBOT must never auto-delete it/);
-  assert.match(botWebhookSource, /const ALLOW_BUSINESS_MESSAGE_DELETION = false/);
+  assert.match(botWebhookSource, /can_delete_sent_messages === true/);
+  assert.match(botWebhookSource, /message_ids: \[earlyBusinessMessage\.message_id\]/);
+  assert.match(botWebhookSource, /const ALLOW_BUSINESS_MESSAGE_DELETION = true/);
+  assert.match(botWebhookSource, /const ALLOW_PANIC_DELETION = false/);
 });
 
 test("ordinary Business messages are archived before slower webhook processing", () => {
