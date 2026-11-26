@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = async path => readFile(new URL(path, import.meta.url), "utf8");
-const [supportInbox, wheelInvoice, premiumRefund, wheelRefund] = await Promise.all([
+const [supportInbox, wheelInvoice, premiumRefund, wheelRefund, botSource] = await Promise.all([
   read("../supabase/functions/flamexbot-support-inbox/index.ts"),
   read("../supabase/functions/create-wheel-invoice/index.ts"),
   read("../supabase/functions/admin-premium-refund/index.ts"),
   read("../supabase/functions/admin-wheel-refund/index.ts"),
+  read("../supabase/functions/flamexbot-bot/index.ts"),
 ]);
 
 test("admin support inbox source includes inbox text and attachment actions", () => {
@@ -31,4 +32,15 @@ test("refund endpoints enforce founder identity and record refund state", () => 
     assert.match(source, /prepare_flamexbot_star_refund/);
     assert.match(source, /complete_flamexbot_star_refund/);
   }
+});
+
+
+test("channel membership timeouts fail closed and let Telegram retry without a second prompt request", () => {
+  const checkAt = botSource.indexOf('console.error("Required channel membership check failed:"');
+  const nextBranch = botSource.indexOf("      if (!subscribed) {", checkAt);
+  assert.ok(checkAt >= 0, "bot must log channel membership lookup failures");
+  assert.ok(nextBranch > checkAt, "membership error handling must precede the normal not-subscribed path");
+  const catchBlock = botSource.slice(checkAt, nextBranch);
+  assert.match(catchBlock, /return new Response\("Temporary channel membership check failure", \{ status: 503 \}\)/);
+  assert.doesNotMatch(catchBlock, /sendRequiredSubscriptionPrompt/);
 });
