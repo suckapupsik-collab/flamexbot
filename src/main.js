@@ -1762,7 +1762,7 @@ async function renderTariffs(host, initialTab='premium') {
      <li><b>+2 бесплатные прокрутки колеса каждую неделю</b></li><li><b>+10% к весам редких наград колеса</b></li><li>Бейдж Premium и ранний доступ к новым функциям</li><li>Экспорт выбранной Business-переписки в JSON</li>
     </ul>
     <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
-    <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
+    <span class="business-status ${premium?'is-connected':''}">${premium?'Тариф '+planLabel()+' активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
     ${lifetime||pro?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
     <small class="premium-payment-note">Оплата проходит через Telegram Stars. Срок — 30 дней; повторная покупка продлевает доступ. Автосписания и автопродления нет — продлевай вручную здесь или командой /premium.</small>
    </section>
