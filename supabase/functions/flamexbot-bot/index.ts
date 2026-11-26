@@ -3628,9 +3628,8 @@ async function processTelegramUpdate(update: any) {
         subscribed = await isRequiredChannelMember(accessTelegramUserId);
       } catch (subscriptionError) {
         console.error("Required channel membership check failed:", String((subscriptionError as any)?.message ?? subscriptionError));
-        const targetChat = update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? accessTelegramUserId;
-        await sendRequiredSubscriptionPrompt(targetChat, true);
-        return new Response("OK", { status: 200 });
+        // Membership could not be verified; fail closed and let Telegram retry later.
+        return new Response("Temporary channel membership check failure", { status: 503 });
       }
       if (!subscribed) {
         const targetChat = update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? accessTelegramUserId;
