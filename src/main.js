@@ -250,8 +250,8 @@ function renderAuth({ registration = false } = {}) {
 }
 
 function navItem(page, icon, label) { return `<button class="nav-item ${state.page === page ? 'selected' : ''}" data-page="${page}"><span>${icon}</span>${label}</button>`; }
-function isPremium() { return ['premium','founder'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
-function planLabel() { return isPremium()?'PREMIUM':'FREE'; }
+function isPremium() { return ['premium','pro'].includes(state.subscription?.plan) && (!state.subscription.expires_at || new Date(state.subscription.expires_at).getTime() > Date.now()); }
+function planLabel() { return state.subscription?.plan==='pro'&&isPremium()?'PRO':isPremium()?'PREMIUM':'FREE'; }
 async function notifyTelegramAboutAdminAction(targetUserId, action, badgeCode=null, auditId=null) {
   try {
     const {data,error}=await supabase.functions.invoke('flamexbot-user-notify',{
@@ -1699,8 +1699,9 @@ async function animateFortuneWheel(prize) {
 
 async function renderTariffs(host, initialTab='premium') {
  const premium=isPremium();
- const weeklySpins=premium?2:0;
- const rareLuck=premium?10:0;
+ const pro=state.subscription?.plan==='pro'&&premium;
+ const weeklySpins=pro?2:premium?1:0;
+ const rareLuck=pro?10:0;
  const [{data:wheelOddsConfig,error:wheelOddsError},{data:wheelPublicSettings}]=await Promise.all([supabase.rpc('get_flamexbot_wheel_odds'),supabase.rpc('get_flamexbot_wheel_public_settings')]);
  const wheelPriceStars=Number(wheelPublicSettings?.spin_price_stars||5);
  const wheelWeeklySpins=Number(wheelPublicSettings?.premium_weekly_spins||0);
@@ -1730,7 +1731,7 @@ async function renderTariffs(host, initialTab='premium') {
  const trialUsed=Boolean(trialRecord);
  const lifetime=premium&&!state.subscription?.expires_at;
  const expires=state.subscription?.expires_at?formatMskDate(state.subscription.expires_at):'Без срока';
- const buyLabel=premium?'↻ Продлить Premium за 100 ⭐':'⭐ Оплатить 100 Stars';
+ const buyLabel=pro?'PRO активен':premium?'↻ Продлить Premium за 100 ⭐':'⭐ Оплатить 100 Stars';
  const protectionExpires=state.profile?.command_protection_expires_at||null;
  const protectionActive=Boolean(protectionExpires&&new Date(protectionExpires).getTime()>Date.now());
  const protectionFounder=isFounderProfile(state.profile);
@@ -1762,7 +1763,7 @@ async function renderTariffs(host, initialTab='premium') {
     </ul>
     <div class="premium-price-line"><b>100 ⭐</b><span>30 дней · разовая оплата</span></div>
     <span class="business-status ${premium?'is-connected':''}">${premium?'Premium активен · '+(lifetime?'бессрочно':'до '+expires):'Подписка не активна'}</span>
-    ${lifetime?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
+    ${lifetime||pro?'':'<button class="primary premium-buy-button" id="buy-premium" type="button">'+buyLabel+'</button>'}
     <small class="premium-payment-note">Оплата проходит через Telegram Stars. Срок — 30 дней; повторная покупка продлевает доступ. Автосписания и автопродления нет — продлевай вручную здесь или командой /premium.</small>
    </section>
    
