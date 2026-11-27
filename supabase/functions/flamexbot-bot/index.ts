@@ -7,7 +7,6 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const APP_URL = "https://flamexbot.pages.dev";
 const FOUNDER_TELEGRAM_ID = "7781170049";
 const WEBHOOK_URL = "https://yxmfhnbqzudoiwjlrpui.supabase.co/functions/v1/flamexbot-bot";
-const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") || "fxbot_whsec_6c2d9a7e4f1b8c3d5a0e7f9b2c4d6a8e";
 
 const API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : "";
 // Moderation (.mute, .mutestick, .antimat) deletes inbound messages only; guarded in the Business message handler.
@@ -15,6 +14,24 @@ const ALLOW_BUSINESS_MESSAGE_DELETION = true;
 // Full-conversation panic delete stays locked: destructive and outside the moderation rules.
 const ALLOW_PANIC_DELETION = false;
 const admin = SUPABASE_URL && SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } }) : null;
+
+let telegramWebhookSecretCache: string | null = null;
+async function getTelegramWebhookSecret() {
+  if (telegramWebhookSecretCache) return telegramWebhookSecretCache;
+  if (!admin) throw new Error("Supabase service role is unavailable for webhook setup");
+  const { data, error } = await admin.rpc("get_flamexbot_telegram_webhook_secret");
+  if (error) throw new Error("Could not read the Telegram webhook secret from Vault: " + error.message);
+  if (typeof data !== "string" || data.length < 32 || data.length > 256) {
+    throw new Error("The Vault Telegram webhook secret is missing or invalid");
+  }
+  telegramWebhookSecretCache = data;
+  return data;
+}
+async function retireLegacyTelegramWebhookSecret() {
+  if (!admin) return;
+  const { error } = await admin.rpc("retire_flamexbot_telegram_webhook_legacy_secret");
+  if (error) console.warn("Legacy Telegram webhook token retirement skipped:", error.message);
+}
 
 function isFounderTarget(chatId: unknown, userId?: unknown) {
   return String(chatId ?? "") === FOUNDER_TELEGRAM_ID || String(userId ?? "") === FOUNDER_TELEGRAM_ID;
@@ -354,11 +371,14 @@ async function sendBusinessReply(
   return sendRichTelegramMessage(chatId, body, parseMode, replyMarkup, connectionId);
 }
 async function enableBusinessUpdates() {
+  const webhookSecret = await getTelegramWebhookSecret();
   await telegram("setWebhook", {
-    url: WEBHOOK_URL, secret_token: WEBHOOK_SECRET,
+    url: WEBHOOK_URL, secret_token: webhookSecret,
     allowed_updates: ["message", "callback_query", "pre_checkout_query", "business_connection", "business_message", "edited_business_message", "deleted_business_messages"],
     drop_pending_updates: false,
   });
+  await retireLegacyTelegramWebhookSecret();
+  console.info("FLAMEXBOT_TELEGRAM_WEBHOOK_SECRET_ROTATED_FROM_VAULT");
 }
 let telegramGlobalSetupPromise: Promise<void> | null = null;
 const telegramChatMenuSetup = new Map<string, Promise<void>>();
@@ -4058,9 +4078,24 @@ Deno.serve(async (req: Request) => {
     }
     return new Response(JSON.stringify({ ok: true, updated }), { status: 200, headers: { "content-type": "application/json" } });
   }
-  if (req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
+  const webhookHeader = req.headers.get("x-telegram-bot-api-secret-token") ?? "";
+  if (!webhookHeader || webhookHeader.length > 256 || !admin) {
     return new Response("Unauthorized", { status: 401 });
   }
+  const environmentWebhookSecret = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
+  let webhookAuthorized = Boolean(environmentWebhookSecret && webhookHeader === environmentWebhookSecret);
+  if (!webhookAuthorized) {
+    const { data: secretAuthorized, error: secretAuthError } = await admin.rpc(
+      "verify_flamexbot_telegram_webhook_secret",
+      { p_candidate: webhookHeader },
+    );
+    if (secretAuthError) {
+      console.error("Telegram webhook secret verification unavailable:", secretAuthError.message);
+      return new Response("Service unavailable", { status: 503 });
+    }
+    webhookAuthorized = secretAuthorized === true;
+  }
+  if (!webhookAuthorized) return new Response("Unauthorized", { status: 401 });
 
   let update: any;
   try {
