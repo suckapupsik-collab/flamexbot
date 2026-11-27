@@ -105,6 +105,6 @@ test(".time scheduled updates verify a separate Vault secret through a service-r
   assert.ok(!botWebhookSource.includes('Deno.env.get("FLAMEXBOT_TIME_TICK_SECRET")'));
   assert.ok(!botWebhookSource.includes('req.headers.get("x-flamexbot-job-secret") === WEBHOOK_SECRET'));
   const tickRouteAt = botWebhookSource.indexOf('if (req.headers.get("x-flamexbot-job") === "time-tick")');
-  const telegramAuthAt = botWebhookSource.indexOf('if (req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET)');
+  const telegramAuthAt = botWebhookSource.indexOf('const webhookHeader = req.headers.get("x-telegram-bot-api-secret-token")');
   assert.ok(tickRouteAt >= 0 && telegramAuthAt > tickRouteAt, "invalid scheduler calls must be rejected before webhook processing");
 });
